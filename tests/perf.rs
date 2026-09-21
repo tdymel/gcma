@@ -1,11 +1,11 @@
 //! Opt-in performance test comparing the object backends on a large generated history.
 //!
 //! ```text
-//! cargo test --release --features gix --test perf -- --ignored --nocapture
-//! GHMA_PERF_COMMITS=50000 cargo test --release --features gix --test perf -- --ignored --nocapture
+//! cargo test --release --test perf -- --ignored --nocapture
+//! GHMA_PERF_COMMITS=50000 cargo test --release --test perf -- --ignored --nocapture
 //! ```
 //!
-//! Without `--features gix` only the `git` backend runs. With it, both run on identical copies of
+//! Both backends run (only `git` with `--no-default-features`) on identical copies of
 //! the history and must produce the very same commits (same ids), proving the backends are
 //! interchangeable. `GHMA_PERF_BUDGET_SECS` optionally fails the test when a backend's `apply`
 //! exceeds the budget.

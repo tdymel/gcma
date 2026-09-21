@@ -124,15 +124,29 @@ enum HookCmd {
     },
 }
 
-/// Loads the config and switches `git` to the selected backend
-/// (`--backend`, then `GHMA_BACKEND`, then the config's `backend:`, then `git`).
-fn setup(git: &mut Git, config: &Option<PathBuf>, backend: Option<Backend>) -> Result<Config> {
-    let cfg = load_config(git, config)?;
-    let env = match std::env::var("GHMA_BACKEND") {
-        Ok(v) if !v.trim().is_empty() => Some(v.parse::<Backend>()?),
+/// `--backend`, then `GHMA_BACKEND`, then the config's `backend:`, then the build's default
+/// (`gix` when compiled in, otherwise `git`).
+fn resolve_backend(
+    flag: Option<Backend>,
+    env: Option<&str>,
+    cfg: Option<Backend>,
+) -> Result<Backend> {
+    let env = match env.map(str::trim) {
+        Some(v) if !v.is_empty() => Some(v.parse::<Backend>()?),
         _ => None,
     };
-    let want = backend.or(env).or(cfg.backend).unwrap_or_default();
+    Ok(flag.or(env).or(cfg).unwrap_or(if cfg!(feature = "gix") {
+        Backend::Gix
+    } else {
+        Backend::Git
+    }))
+}
+
+/// Loads the config and switches `git` to the selected backend.
+fn setup(git: &mut Git, config: &Option<PathBuf>, backend: Option<Backend>) -> Result<Config> {
+    let cfg = load_config(git, config)?;
+    let env = std::env::var("GHMA_BACKEND").ok();
+    let want = resolve_backend(backend, env.as_deref(), cfg.backend)?;
     if want != git.backend() {
         *git = git.clone().with_backend(want)?;
     }
@@ -374,5 +388,35 @@ pub fn main() -> i32 {
             eprintln!("ghma: {e}");
             e.exit_code()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backend_precedence_is_flag_env_config_default() {
+        let default = if cfg!(feature = "gix") {
+            Backend::Gix
+        } else {
+            Backend::Git
+        };
+        assert_eq!(resolve_backend(None, None, None).unwrap(), default);
+        // Opting out of the default: via config, via env, and the flag beats both.
+        assert_eq!(
+            resolve_backend(None, None, Some(Backend::Git)).unwrap(),
+            Backend::Git
+        );
+        assert_eq!(
+            resolve_backend(None, Some("git"), Some(Backend::Gix)).unwrap(),
+            Backend::Git
+        );
+        assert_eq!(
+            resolve_backend(Some(Backend::Gix), Some("git"), Some(Backend::Git)).unwrap(),
+            Backend::Gix
+        );
+        assert_eq!(resolve_backend(None, Some("  "), None).unwrap(), default);
+        assert!(resolve_backend(None, Some("bogus"), None).is_err());
     }
 }

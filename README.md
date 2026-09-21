@@ -59,17 +59,21 @@ ghma apply  --plan plan.json
 
 ## Backends and performance
 
-By default every git operation spawns the `git` binary, which costs about 2 ms per written commit (5,000 commits: ~11 s).
-Build with `--features gix` to write commits in-process through gitoxide instead (5,000 commits: ~0.3 s, identical commits):
+Commits are read and written in-process through gitoxide (`gix`) by default: 5,000 commits apply in ~0.3 s.
+The `git` backend spawns the `git` binary for every written commit (~2 ms each; 5,000 commits: ~11 s) and produces
+byte-identical commits. Opt out of `gix` with any of:
 
 ```sh
-cargo build --release --features gix
-ghma --backend gix apply            # or GHMA_BACKEND=gix, or `backend: gix` in .git-hide-my-ass.yml
+ghma --backend git apply        # one run
+GHMA_BACKEND=git ghma apply     # environment
+# .git-hide-my-ass.yml
+backend: git
 ```
 
-Precedence: `--backend`, `GHMA_BACKEND`, config `backend:`, then `git`. Only batch object reads and commit writes move;
-refs, signing and hooks always use git. Measure on your machine with
-`cargo test --release --features gix --test perf -- --ignored --nocapture` (`GHMA_PERF_COMMITS=50000` for more).
+Precedence: `--backend`, `GHMA_BACKEND`, config `backend:`, then the build default. A binary built with
+`--no-default-features` has no gix and defaults to `git`; asking it for `gix` is an error. Only batch object reads and
+commit writes move between backends; refs, signing and hooks always use git. Measure on your machine with
+`cargo test --release --test perf -- --ignored --nocapture` (`GHMA_PERF_COMMITS=50000` for more).
 
 ## Hook
 

@@ -25,7 +25,8 @@ thiserror = "2"
 gix = { version = "0.88", default-features = false, features = ["sha1", "revision", "parallel"], optional = true }
 
 [features]
-# Optional in-process object backend (`--backend gix`); the git CLI stays the default.
+default = ["gix"]
+# In-process object backend (the default backend). Build with `--no-default-features` for a git-CLI-only binary.
 gix = ["dep:gix"]
 
 [dev-dependencies]
