@@ -6,3 +6,4 @@ pub mod git;
 pub mod messages;
 pub mod config;
 pub mod schedule;
+pub mod conform;
