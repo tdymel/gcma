@@ -10,3 +10,4 @@ pub mod conform;
 pub mod plan;
 pub mod apply;
 pub mod llm;
+pub mod hook;
