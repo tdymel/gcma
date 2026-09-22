@@ -86,8 +86,8 @@ pub trait RefStore {
 pub trait History {
     fn merge_base(&self, a: &str, b: &str) -> Result<Option<String>>;
     fn is_ancestor(&self, ancestor: &str, descendant: &str) -> Result<bool>;
-    /// The range as (commit, parents), parents first.
-    fn list_range(&self, range: &RevRange) -> Result<Vec<(String, Vec<String>)>>;
+    /// The commits of the range, parents first.
+    fn list_range(&self, range: &RevRange) -> Result<Vec<String>>;
     fn count_reachable(&self, rev: &str) -> Result<usize>;
     /// Of `oids`, those NOT reachable from `upstream`.
     fn unpushed_among(&self, oids: &[String], upstream: &str) -> Result<HashSet<String>>;

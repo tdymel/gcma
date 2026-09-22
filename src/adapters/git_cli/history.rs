@@ -15,8 +15,8 @@ impl History for GitCli {
         self.succeeds(&["merge-base", "--is-ancestor", ancestor, descendant])
     }
 
-    fn list_range(&self, range: &RevRange) -> Result<Vec<(String, Vec<String>)>> {
-        let mut args: Vec<String> = ["rev-list", "--parents", "--topo-order", "--reverse"]
+    fn list_range(&self, range: &RevRange) -> Result<Vec<String>> {
+        let mut args: Vec<String> = ["rev-list", "--topo-order", "--reverse"]
             .map(String::from)
             .to_vec();
         args.push(range.tip.clone());
@@ -31,11 +31,7 @@ impl History for GitCli {
         Ok(out
             .lines()
             .filter(|l| !l.is_empty())
-            .map(|l| {
-                let mut it = l.split(' ').map(String::from);
-                let oid = it.next().unwrap_or_default();
-                (oid, it.collect())
-            })
+            .map(String::from)
             .collect())
     }
 

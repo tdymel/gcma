@@ -127,7 +127,7 @@ impl History for GitRepository {
     fn is_ancestor(&self, ancestor: &str, descendant: &str) -> Result<bool> {
         self.cli.is_ancestor(ancestor, descendant)
     }
-    fn list_range(&self, range: &RevRange) -> Result<Vec<(String, Vec<String>)>> {
+    fn list_range(&self, range: &RevRange) -> Result<Vec<String>> {
         self.cli.list_range(range)
     }
     fn count_reachable(&self, rev: &str) -> Result<usize> {

@@ -57,15 +57,11 @@ pub(super) fn resolve(repo: &dyn Repository, opts: &PlanOptions) -> Result<Range
             let exclude = base.iter().cloned().collect();
             (branch_ref, tip, base, upstream, exclude, None)
         };
-    let order = repo
-        .list_range(&RevRange {
-            tip: tip.clone(),
-            exclude_commits,
-            exclude_remotes,
-        })?
-        .into_iter()
-        .map(|(oid, _)| oid)
-        .collect();
+    let order = repo.list_range(&RevRange {
+        tip: tip.clone(),
+        exclude_commits,
+        exclude_remotes,
+    })?;
     Ok(RangeInfo {
         branch_ref,
         tip,
