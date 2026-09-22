@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use super::{GitCli, lines_input};
+use super::runner::{GitCli, lines_input};
 use crate::application::ports::{History, RemoteScope, RevRange};
 use crate::domain::error::{Error, Result};
 

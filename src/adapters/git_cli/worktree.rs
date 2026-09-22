@@ -1,6 +1,6 @@
 //! `WorkTree` over `rev-parse`, `for-each-ref` and `diff --cached`.
 
-use super::GitCli;
+use super::runner::GitCli;
 use crate::application::ports::WorkTree;
 use crate::domain::error::Result;
 

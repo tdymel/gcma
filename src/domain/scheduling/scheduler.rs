@@ -106,9 +106,9 @@ pub fn schedule<R: RngExt>(
 
 #[cfg(test)]
 mod tests {
+    use super::super::seed::rng_from_seed;
+    use super::super::testkit::{ts, weekdays};
     use super::*;
-    use crate::domain::scheduling::rng_from_seed;
-    use crate::domain::scheduling::testkit::{ts, weekdays};
     use chrono::{Datelike, TimeZone, Weekday};
     use chrono_tz::Tz;
 

@@ -1,6 +1,6 @@
 //! Resolving which commits a plan covers.
 
-use super::PlanOptions;
+use super::types::PlanOptions;
 use crate::application::ports::{Repository, RevRange};
 use crate::domain::error::{Error, Result};
 

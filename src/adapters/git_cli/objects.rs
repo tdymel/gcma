@@ -3,7 +3,7 @@
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 
-use super::{GitCli, lines_input};
+use super::runner::{GitCli, lines_input};
 use crate::application::ports::CommitStore;
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::{Commit, NewCommit, build_commit_buffer, format_tz};

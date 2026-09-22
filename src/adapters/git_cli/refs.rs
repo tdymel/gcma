@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use super::GitCli;
+use super::runner::GitCli;
 use crate::application::ports::{RefStore, RefUpdate};
 use crate::domain::error::{Error, Result};
 

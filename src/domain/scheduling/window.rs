@@ -146,8 +146,8 @@ impl Window {
 
 #[cfg(test)]
 mod tests {
+    use super::super::testkit::{ts, weekdays};
     use super::*;
-    use crate::domain::scheduling::testkit::{ts, weekdays};
 
     #[test]
     fn window_membership_is_half_open_and_weekday_limited() {

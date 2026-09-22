@@ -6,7 +6,7 @@ use super::entries::build_entries;
 use super::preconditions::check_preconditions;
 use super::range::resolve;
 use super::timing::{Schedule, load_external_parents, window_for};
-use super::{Built, PlanOptions};
+use super::types::{Built, PlanOptions};
 use crate::application::ports::Repository;
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::{Commit, SIGNATURE_HEADERS};
