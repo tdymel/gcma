@@ -33,4 +33,5 @@ default = ["gix"]
 gix = ["dep:gix"]
 
 [dev-dependencies]
+archunit = "0.0.2"
 tempfile = "3"
