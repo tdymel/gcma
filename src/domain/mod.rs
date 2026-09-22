@@ -3,6 +3,7 @@
 
 pub mod error;
 pub mod history;
+pub mod paths;
 pub mod scheduling;
 pub mod settings;
 pub mod text;

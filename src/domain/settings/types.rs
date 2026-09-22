@@ -67,6 +67,45 @@ pub struct MessagesCfg {
     pub add_trailers: Vec<String>,
 }
 
+/// What happens to a commit that touched nothing but excluded paths.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum OnlyExcluded {
+    /// The commit is removed from history.
+    #[default]
+    Drop,
+    /// The commit stays, as an empty commit.
+    Keep,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PathsCfg {
+    /// gitignore-style patterns of the paths to remove from every rewritten commit.
+    #[serde(default)]
+    pub exclude: Vec<String>,
+    /// Add the patterns to `.gitignore`, starting with the first kept commit that had such paths,
+    /// so the files stay in the working copy but out of git.
+    #[serde(default = "default_true")]
+    pub gitignore: bool,
+    #[serde(default)]
+    pub only_excluded_commits: OnlyExcluded,
+}
+
+impl Default for PathsCfg {
+    fn default() -> Self {
+        PathsCfg {
+            exclude: Vec::new(),
+            gitignore: true,
+            only_excluded_commits: OnlyExcluded::Drop,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Signing {

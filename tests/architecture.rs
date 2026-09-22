@@ -55,6 +55,8 @@ fn domain_is_layered_internally() {
         .defined_by("src/domain/error.rs")
         .layer("text")
         .defined_by("src/domain/text/**")
+        .layer("paths")
+        .defined_by("src/domain/paths/**")
         .layer("settings")
         .defined_by("src/domain/settings/**")
         .layer("scheduling")
@@ -65,12 +67,14 @@ fn domain_is_layered_internally() {
         .may_only_depend_on_layers(&[])
         .where_layer("text")
         .may_only_depend_on_layers(&["error"])
+        .where_layer("paths")
+        .may_only_depend_on_layers(&["error"])
         .where_layer("settings")
-        .may_only_depend_on_layers(&["text", "error"])
+        .may_only_depend_on_layers(&["paths", "text", "error"])
         .where_layer("scheduling")
         .may_only_depend_on_layers(&["settings", "error"])
         .where_layer("history")
-        .may_only_depend_on_layers(&["scheduling", "settings", "text", "error"]);
+        .may_only_depend_on_layers(&["scheduling", "settings", "paths", "text", "error"]);
     assert_passes!(rule);
 }
 

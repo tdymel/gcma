@@ -108,6 +108,30 @@ mod tests {
     }
 
     #[test]
+    fn path_rules_parse_and_validate() {
+        let c = parse(
+            "version: 1\npaths:\n  exclude: [\"secrets/\", \"*.env\"]\n  only_excluded_commits: keep\n  gitignore: false\n",
+        )
+        .unwrap();
+        assert_eq!(c.paths.exclude.len(), 2);
+        assert!(!c.paths.gitignore);
+        assert_eq!(
+            c.paths.only_excluded_commits,
+            crate::domain::settings::OnlyExcluded::Keep
+        );
+        assert!(c.path_filter().unwrap().is_some());
+        // Defaults: nothing excluded, drop and ignore when something is.
+        let d = parse("version: 1\n").unwrap();
+        assert!(d.path_filter().unwrap().is_none() && d.paths.gitignore);
+        for bad in ["\"# comment\"", "\" x\"", "\"\"", "\".gitignore\"", "\"*\""] {
+            assert!(
+                parse(&format!("version: 1\npaths:\n  exclude: [{bad}]\n")).is_err(),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
     fn starter_config_is_valid() {
         parse(starter_config()).unwrap();
     }

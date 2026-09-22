@@ -8,13 +8,14 @@ use chrono_tz::Tz;
 use serde::Deserialize;
 
 use crate::domain::error::{Error, Result};
+use crate::domain::paths::{GITIGNORE, PathFilter};
 use crate::domain::text::messages;
 
 use calendar::parse_instant;
 pub use calendar::{parse_days, parse_hours, weekday_index};
 pub use types::{
-    Backend, Distribution, HookCfg, HookMode, IdentityRule, MatchSpec, MessagesCfg, ScheduleCfg,
-    SetSpec, Signing,
+    Backend, Distribution, HookCfg, HookMode, IdentityRule, MatchSpec, MessagesCfg, OnlyExcluded,
+    PathsCfg, ScheduleCfg, SetSpec, Signing,
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -29,6 +30,8 @@ pub struct Config {
     pub identity: Vec<IdentityRule>,
     #[serde(default)]
     pub messages: MessagesCfg,
+    #[serde(default)]
+    pub paths: PathsCfg,
     #[serde(default)]
     pub signing: Signing,
     #[serde(default)]
@@ -47,6 +50,7 @@ impl Default for Config {
             schedule: None,
             identity: Vec::new(),
             messages: MessagesCfg::default(),
+            paths: PathsCfg::default(),
             signing: Signing::Strip,
             hook: HookCfg::default(),
             backend: None,
@@ -109,6 +113,7 @@ impl Config {
                 return bad(format!("messages.strip_trailers: invalid key {k:?}"));
             }
         }
+        self.path_filter()?;
         for line in &self.messages.add_trailers {
             let Some(key) = messages::trailer_key(line.as_bytes()) else {
                 return bad(format!(
@@ -132,6 +137,28 @@ impl Config {
             }
         }
         Ok(())
+    }
+
+    /// The filter for `paths.exclude`, `None` when nothing is excluded.
+    pub fn path_filter(&self) -> Result<Option<PathFilter>> {
+        let patterns = &self.paths.exclude;
+        if patterns.is_empty() {
+            return Ok(None);
+        }
+        for p in patterns {
+            if p.trim() != p || p.is_empty() || p.starts_with('#') {
+                return Err(Error::Usage(format!(
+                    "paths.exclude: {p:?} must not be empty, start with `#` or have surrounding whitespace"
+                )));
+            }
+        }
+        let filter = PathFilter::new(patterns)?;
+        if filter.excludes(GITIGNORE, false) {
+            return Err(Error::Usage(
+                "paths.exclude: the patterns would exclude `.gitignore` itself".into(),
+            ));
+        }
+        Ok(Some(filter))
     }
 
     /// The message after the configured trailer rules.
