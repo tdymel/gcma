@@ -1,0 +1,33 @@
+# ghma configuration. Everything is off until you enable it; see the README for the details.
+# Lines starting with `#~ ` are optional features: remove the marker to switch them on.
+version: 1
+
+#~ # Spread the commits over a time window (original times are kept without this).
+#~ from: 2026-04-01          # lower bound, required with `schedule`
+#~ to: now                   # `now` or a date (end of that day)
+#~ timezone: UTC             # IANA name, e.g. Europe/Berlin
+#~ schedule:
+#~   days: [mon, tue, wed, thu, fri]
+#~   hours: "09:30-18:00"
+#~   distribution: uniform   # uniform | weekday-weighted | bursty
+#~   seed: 42
+
+#~ # Rewrite identities (first match wins).
+#~ identity:
+#~   - match: { email: me@home.org }
+#~     set:   { name: Jane Doe, email: jane@work.com }
+
+messages:
+  strip_trailers: []         # e.g. [Co-Authored-By]
+  add_trailers: []           # e.g. ["Assisted-By: Claude <noreply@anthropic.com>"]
+
+#~ # Remove paths from history (gitignore syntax); they are added to .gitignore instead.
+#~ paths:
+#~   exclude: ["secrets/", "*.env"]
+#~   gitignore: true
+#~   only_excluded_commits: drop   # drop | keep
+
+signing: strip               # strip | resign
+hook:
+  mode: verify               # verify | rewrite
+# backend: git               # object backend: gix (default) | git

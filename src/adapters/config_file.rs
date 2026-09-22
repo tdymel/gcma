@@ -20,25 +20,7 @@ pub fn parse(text: &str) -> Result<Config> {
 }
 
 pub fn starter_config() -> &'static str {
-    "# ghma configuration. See DESIGN.md.\n\
-version: 1\n\
-from: 2026-04-01        # schedule lower bound (required when `schedule` is set)\n\
-to: now                 # `now` or a date\n\
-timezone: UTC           # IANA name, e.g. Europe/Berlin\n\
-schedule:\n\
-\x20 days: [mon, tue, wed, thu, fri]\n\
-\x20 hours: \"09:30-18:00\"\n\
-\x20 distribution: uniform   # uniform | weekday-weighted | bursty\n\
-\x20 seed: 42\n\
-# identity:\n\
-#   - match: { email: me@home.org }\n\
-#     set:   { name: Jane Doe, email: jane@work.com }\n\
-messages:\n\
-\x20 strip_trailers: []     # e.g. [Co-Authored-By]\n\
-\x20 add_trailers: []       # e.g. [\"Assisted-By: Claude <noreply@anthropic.com>\"]\n\
-signing: strip          # strip | resign\n\
-hook:\n\
-\x20 mode: verify          # verify | rewrite\n"
+    include_str!("starter_config.yml")
 }
 
 #[cfg(test)]
@@ -132,7 +114,15 @@ mod tests {
     }
 
     #[test]
-    fn starter_config_is_valid() {
-        parse(starter_config()).unwrap();
+    fn starter_config_is_valid_and_inert() {
+        let c = parse(starter_config()).unwrap();
+        assert!(c.is_inert(), "a fresh config must not change anything");
+    }
+
+    #[test]
+    fn starter_config_features_are_valid_when_switched_on() {
+        let on = starter_config().replace("#~ ", "");
+        let c = parse(&on).unwrap();
+        assert!(c.schedule.is_some() && !c.identity.is_empty() && !c.paths.exclude.is_empty());
     }
 }

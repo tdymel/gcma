@@ -4,11 +4,23 @@ Reshape the history of the **current branch**: spread commits over a time range 
 believable distribution), rewrite author/committer identities, and clean or rewrite messages — without ever losing a commit
 or touching its content. Every rewritten commit keeps its tree; every run is verified before any ref moves and leaves a backup.
 
+## Install
+
+Needs a Unix system (Linux, macOS) and `git` on the `PATH` (refs, signing and hooks always go through it; 2.30 or newer
+recommended). Rust 1.90 or newer to build:
+
+```sh
+cargo install --path .           # or: cargo build --release  ->  target/release/ghma
 ```
-ghma init                       # write a starter .git-hide-my-ass.yml
+
+## Usage
+
+```
+ghma init                       # write a starter .git-hide-my-ass.yml (inert until you enable something)
 ghma plan  [--from <rev|root>]  # dry run; add --out plan.json to save, --check to exit 6 if anything is nonconforming
 ghma apply [--from <rev|root>]  # verify, back up, rewrite
-ghma restore [<id>] [--force|--prune]
+ghma restore [<id>] [--force|--prune]   # list, undo, or forget a backup
+-C <dir>, --config <file>, --backend git|gix    # global options
 ghma export / import            # compact JSONL for LLM-written messages (see below)
 ghma hook install|uninstall     # pre-push hook
 ```
@@ -56,6 +68,13 @@ local edits to it. `plan` lists dropped commits. Only unpushed commits are rewri
 re-derives every tree from the rules and re-checks that nothing but `.gitignore` differs from the old tip minus the excluded
 paths, so a hand-edited plan cannot change content. This is the one feature that changes trees; the backup keeps the originals.
 
+### Purging removed paths for real
+
+Backups are the safety net, so the original commits (and anything in the excluded paths) stay reachable from
+`refs/ghma/backup/…`, the reflog, tags, other branches and any remote that already has them; `git push --mirror` or a
+`refs/*` refspec would upload the backup refs. If excluded files held secrets, rotate them. To purge the old history
+locally: `ghma restore <id> --prune`, then `git reflog expire --expire=now --all && git gc --prune=now`.
+
 ## Safety model
 
 - New commits are built from the old tree (minus excluded paths, if configured) with remapped parents; before any ref moves,
@@ -63,8 +82,15 @@ paths, so a hand-edited plan cannot change content. This is the one feature that
   are still reachable.
 - One atomic ref transaction creates `refs/ghma/backup/<branch>/<id>/{old,new}` and moves the branch with compare-and-swap.
   Backups are never pruned automatically. `ghma restore <id>` goes back; it refuses if the branch moved on (unless `--force`).
+- `apply` only moves the checked-out branch named in the plan, a plan from a file must carry the same path rules as the
+  config, and every object id and the branch ref in it are validated; `.gitignore` is never written through a symlink.
+  The config file (`.git-hide-my-ass.yml`) is trusted like a script: with the hook in `rewrite` mode, a config pulled from
+  an untrusted branch can rewrite your unpushed history on push (backups exist). `ghma init` keeps it out of commits via
+  `.git/info/exclude`.
+- `restore` also puts the index (and ghma's `.gitignore` change) back when path rules had changed the content.
 - Refused (exit 3): shallow clones, replace refs/grafts, detached HEAD, staged changes, rebase/merge/cherry-pick in progress.
-- Exit codes: 0 ok, 1 internal, 2 usage/config, 3 refused, 4 branch moved, 5 pushed commits, 6 nonconforming, 7 bad LLM reply.
+- Exit codes: 0 ok, 1 internal, 2 usage/config, 3 refused, 4 branch moved, 5 pushed commits (also for a dry run), 6 nonconforming,
+  7 bad LLM reply. `ghma restore --force` parks what it discards at `refs/ghma/discarded/…`.
 
 ## LLM workflow
 
@@ -97,7 +123,8 @@ commit writes move between backends; refs, signing and hooks always use git. Mea
 ## Hook
 
 `ghma hook install` adds a `pre-push` hook. In `verify` mode it blocks pushes of nonconforming commits ("run `ghma apply`").
-In `rewrite` mode it rewrites them and aborts the push so you push again. Deletes and pushes of other branches are ignored; `git push origin HEAD` counts as the checked-out branch.
+In `rewrite` mode it rewrites them and aborts the push so you push again. Deletes and pushes of other branches are ignored; `git push origin HEAD` and a revision of the branch
+(`HEAD~1:main`) count as the checked-out branch. Skip it once with `git push --no-verify`. Remember that config errors block pushes too.
 
 ## Architecture
 

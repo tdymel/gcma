@@ -212,3 +212,22 @@ fn a_config_whose_to_precedes_from_is_a_usage_error() {
     r.config("version: 1\nfrom: 2026-01-01\nto: 2025-01-01\nschedule: {}\n");
     assert_eq!(Repo::code(&r.ghma(&["plan", "--from", "root"])), 2);
 }
+
+#[test]
+fn init_keeps_the_config_out_of_commits_and_starts_inert() {
+    let r = Repo::new();
+    r.linear(2, 1_600_000_000);
+    r.ghma_ok(&["init"]);
+    assert!(
+        r.git(&["status", "--porcelain"]).is_empty(),
+        "the config is excluded"
+    );
+    let o = r.ghma(&["plan", "--from", "root"]);
+    assert!(o.status.success());
+    assert!(
+        stderr(&o).contains("no rules are configured"),
+        "{}",
+        stderr(&o)
+    );
+    assert!(String::from_utf8_lossy(&o.stdout).contains("Nothing to do"));
+}

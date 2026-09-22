@@ -24,6 +24,7 @@ use crate::application::rewrite::{
     apply, ensure_plan_matches_config, list_backups, prune, restore,
 };
 use crate::domain::error::{Error, Result};
+use crate::domain::settings::Config;
 
 /// `strict` also refuses a dirty index or a running operation; read-only commands skip that
 /// (`apply` enforces it again before writing).
@@ -56,6 +57,15 @@ fn parse_pushed_refs(stdin: &str) -> Vec<PushedRef> {
         .collect()
 }
 
+fn warn_if_inert(cfg: &Config) {
+    if cfg.is_inert() {
+        eprintln!(
+            "warning: no rules are configured, so nothing will change \
+             (write {CONFIG_FILE} with `ghma init` and enable what you need)"
+        );
+    }
+}
+
 /// The process exit code of an error.
 fn exit_code(e: &Error) -> i32 {
     match e {
@@ -76,7 +86,8 @@ fn run(cli: Cli) -> Result<()> {
     };
     match cli.cmd {
         Cmd::Init { force } => {
-            let path = GitCli::open(&start)?.dir().join(CONFIG_FILE);
+            let cli_repo = GitCli::open(&start)?;
+            let path = cli_repo.dir().join(CONFIG_FILE);
             if path.exists() && !force {
                 return Err(Error::Precondition(format!(
                     "{} already exists (use --force)",
@@ -85,9 +96,27 @@ fn run(cli: Cli) -> Result<()> {
             }
             fsutil::write_regular(&path, starter_config().as_bytes())?;
             println!("wrote {}", path.display());
+            // The config names identities and paths you want hidden: keep it out of commits.
+            let exclude = cli_repo.git_path("info/exclude")?;
+            let line = format!("/{CONFIG_FILE}");
+            let current = fsutil::read_regular(&exclude)?.unwrap_or_default();
+            if !String::from_utf8_lossy(&current).lines().any(|l| l == line) {
+                let mut text = String::from_utf8_lossy(&current).to_string();
+                if !text.is_empty() && !text.ends_with('\n') {
+                    text.push('\n');
+                }
+                text.push_str(&line);
+                text.push('\n');
+                if let Some(dir) = exclude.parent() {
+                    std::fs::create_dir_all(dir)?;
+                }
+                fsutil::write_regular(&exclude, text.as_bytes())?;
+                println!("added {line} to .git/info/exclude so it is not committed by accident");
+            }
         }
         Cmd::Plan { range, out, check } => {
             let (repo, cfg) = open(&start, &cli.config, cli.backend)?;
+            warn_if_inert(&cfg);
             let built = build_plan(&repo, &cfg, &opts(&range, false))?;
             print_plan(&repo, &built)?;
             if let Some(out) = out {
@@ -103,6 +132,7 @@ fn run(cli: Cli) -> Result<()> {
         }
         Cmd::Apply { range, plan } => {
             let (repo, cfg) = open(&start, &cli.config, cli.backend)?;
+            warn_if_inert(&cfg);
             let plan = match plan {
                 Some(p) => {
                     let plan = plan_file::load(&p)?;

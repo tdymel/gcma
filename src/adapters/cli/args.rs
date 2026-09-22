@@ -44,6 +44,7 @@ pub struct RangeArgs {
 pub enum Cmd {
     /// Write a starter config file.
     Init {
+        /// Overwrite an existing config file.
         #[arg(long)]
         force: bool,
     },
@@ -62,7 +63,7 @@ pub enum Cmd {
     Apply {
         #[command(flatten)]
         range: RangeArgs,
-        /// Apply a saved plan instead of planning now.
+        /// Apply a saved plan instead of planning now (its path rules must match the config).
         #[arg(long)]
         plan: Option<PathBuf>,
     },
@@ -70,15 +71,19 @@ pub enum Cmd {
     Export {
         #[command(flatten)]
         range: RangeArgs,
+        /// Export a saved plan instead of planning now.
         #[arg(long)]
         plan: Option<PathBuf>,
+        /// Export at most this many commits (the prompt goes to stderr, the rows to stdout).
         #[arg(long)]
         batch: Option<usize>,
+        /// Index of the first commit to export.
         #[arg(long, default_value_t = 0)]
         offset: usize,
     },
     /// Import an LLM reply (JSONL) into a saved plan.
     Import {
+        /// The saved plan the reply belongs to.
         #[arg(long)]
         plan: PathBuf,
         /// Write the updated plan here (default: overwrite --plan).
@@ -89,6 +94,7 @@ pub enum Cmd {
     },
     /// List backups, restore one, or prune one.
     Restore {
+        /// Backup id (a unique prefix is enough); without it the backups are listed.
         id: Option<String>,
         /// Restore even if the branch has moved on since.
         #[arg(long)]
@@ -106,13 +112,17 @@ pub enum Cmd {
 
 #[derive(Subcommand)]
 pub enum HookCmd {
+    /// Install the pre-push hook (bypass it for one push with `git push --no-verify`).
     Install {
+        /// Overwrite a pre-push hook that ghma did not write.
         #[arg(long)]
         force: bool,
     },
+    /// Remove the pre-push hook if ghma wrote it.
     Uninstall,
     /// Entry point used by the installed shim.
     Run {
+        /// The hook name git passes (only `pre-push`).
         name: String,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,

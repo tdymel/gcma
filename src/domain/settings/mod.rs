@@ -151,6 +151,16 @@ impl Config {
         Ok(())
     }
 
+    /// True when no rule is configured, so nothing would ever be rewritten.
+    pub fn is_inert(&self) -> bool {
+        self.schedule.is_none()
+            && self.identity.is_empty()
+            && self.messages.strip_trailers.is_empty()
+            && self.messages.add_trailers.is_empty()
+            && self.paths.exclude.is_empty()
+            && self.signing == Signing::Strip
+    }
+
     /// The filter for `paths.exclude`, `None` when nothing is excluded.
     pub fn path_filter(&self) -> Result<Option<PathFilter>> {
         let patterns = &self.paths.exclude;
