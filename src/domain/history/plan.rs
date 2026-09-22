@@ -48,6 +48,17 @@ pub enum Parent {
     Base(String),
 }
 
+impl Parent {
+    /// The commit id this parent stands for once the new commits exist (`new_oids[i]` is the id
+    /// of entry `i`).
+    pub fn resolve(&self, new_oids: &[String]) -> String {
+        match self {
+            Parent::In(j) => new_oids[*j].clone(),
+            Parent::Base(b) => b.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
     pub old_oid: String,

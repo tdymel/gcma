@@ -4,12 +4,12 @@ use std::collections::{HashMap, HashSet};
 
 use super::entries::{build_entries, dropped_parents};
 use super::pathplan::{self, PathOutcome};
-use super::preconditions::check_preconditions;
 use super::range::resolve;
 use super::timing::{Schedule, load_external_parents, window_for};
 use super::types::{Built, PlanOptions};
 use crate::application::pathrules::TreeRewriter;
 use crate::application::ports::Repository;
+use crate::application::preconditions::check_preconditions;
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::{Commit, SIGNATURE_HEADERS};
 use crate::domain::history::conform::{self, Ctx};
@@ -45,7 +45,7 @@ pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Re
         .collect();
 
     // Schedule mode: the window, and the committer times of parents outside the range.
-    let now = opts.now.unwrap_or_else(|| chrono::Utc::now().timestamp());
+    let now = opts.now;
     let window = window_for(cfg, now)?;
     let filter = cfg.path_filter()?;
     let rewriter = filter.as_ref().map(|f| TreeRewriter::new(repo, f));

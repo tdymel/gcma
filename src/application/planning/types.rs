@@ -15,17 +15,31 @@ pub struct RangeSpec {
     pub base: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PlanOptions {
     pub from_rev: Option<String>,
     pub rewrite_pushed: bool,
     /// Treat every commit in the range as nonconforming (rewrite everything).
     pub all: bool,
     pub range: Option<RangeSpec>,
-    /// Override "now" (tests).
-    pub now: Option<i64>,
+    /// The current time (unix seconds); the end of a schedule that says `to: now`.
+    pub now: i64,
     /// Refuse on dirty index / operations in progress (apply and plan); the hook verifier relaxes this.
     pub strict: bool,
+}
+
+impl PlanOptions {
+    /// Defaults for everything but the clock, which every caller must supply.
+    pub fn new(now: i64) -> PlanOptions {
+        PlanOptions {
+            from_rev: None,
+            rewrite_pushed: false,
+            all: false,
+            range: None,
+            now,
+            strict: false,
+        }
+    }
 }
 
 #[derive(Debug)]

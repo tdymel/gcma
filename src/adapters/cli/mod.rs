@@ -2,6 +2,7 @@
 
 mod args;
 mod backend;
+mod render;
 mod report;
 
 use std::io::Read;
@@ -16,11 +17,12 @@ use crate::adapters::config_file::{CONFIG_FILE, starter_config};
 use crate::adapters::fsutil;
 use crate::adapters::git_cli::GitCli;
 use crate::adapters::{hook_installer, plan_file};
+use crate::application::llm;
 use crate::application::planning::{PlanOptions, build_plan};
+use crate::application::push_guard::{self, PushedRef};
 use crate::application::rewrite::{
     apply, ensure_plan_matches_config, list_backups, prune, restore,
 };
-use crate::application::{llm, push_guard};
 use crate::domain::error::{Error, Result};
 
 /// `strict` also refuses a dirty index or a running operation; read-only commands skip that
@@ -31,7 +33,39 @@ fn opts(r: &RangeArgs, strict: bool) -> PlanOptions {
         rewrite_pushed: r.rewrite_pushed,
         all: r.all,
         strict,
-        ..Default::default()
+        ..PlanOptions::new(now())
+    }
+}
+
+fn now() -> i64 {
+    chrono::Utc::now().timestamp()
+}
+
+/// git's pre-push input: `<local ref> <local sha> <remote ref> <remote sha>` per line.
+fn parse_pushed_refs(stdin: &str) -> Vec<PushedRef> {
+    stdin
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            (parts.len() == 4).then(|| PushedRef {
+                local_ref: parts[0].to_string(),
+                local_sha: parts[1].to_string(),
+                remote_sha: parts[3].to_string(),
+            })
+        })
+        .collect()
+}
+
+/// The process exit code of an error.
+fn exit_code(e: &Error) -> i32 {
+    match e {
+        Error::Internal(_) | Error::Git(_) | Error::Io(_) => 1,
+        Error::Usage(_) => 2,
+        Error::Precondition(_) => 3,
+        Error::TipMoved(_) => 4,
+        Error::Pushed(_) => 5,
+        Error::Nonconforming(_) => 6,
+        Error::LlmInvalid(_) => 7,
     }
 }
 
@@ -83,7 +117,7 @@ fn run(cli: Cli) -> Result<()> {
                     built.plan
                 }
             };
-            let report = apply(&repo, &plan, range.rewrite_pushed)?;
+            let report = apply(&repo, &plan, range.rewrite_pushed, now())?;
             if report.noop {
                 println!("Nothing to do.");
             } else {
@@ -219,7 +253,8 @@ other branches) refers to them; see the README on purging history.",
                     &repo,
                     &cfg,
                     args.first().map(String::as_str).unwrap_or(""),
-                    &stdin,
+                    &parse_pushed_refs(&stdin),
+                    now(),
                 )?;
             }
         },
@@ -233,7 +268,7 @@ pub fn main() -> i32 {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("ghma: {e}");
-            e.exit_code()
+            exit_code(&e)
         }
     }
 }

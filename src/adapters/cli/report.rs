@@ -1,6 +1,7 @@
 //! Human-readable output.
 
-use crate::application::planning::{Built, render};
+use super::render::render;
+use crate::application::planning::Built;
 use crate::application::ports::CommitStore;
 use crate::domain::error::Result;
 

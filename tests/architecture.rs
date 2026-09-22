@@ -8,7 +8,7 @@
 
 use archunit::{FileInfo, assert_passes, project_files, project_layers};
 
-const MAX_NON_BLANK_LINES: usize = 450;
+const MAX_NON_BLANK_LINES: usize = 350;
 
 #[test]
 fn layers_only_depend_inwards() {
@@ -85,6 +85,8 @@ fn application_is_layered_internally() {
     let rule = project_layers()
         .layer("ports")
         .defined_by("src/application/ports.rs")
+        .layer("preconditions")
+        .defined_by("src/application/preconditions.rs")
         .layer("pathrules")
         .defined_by("src/application/pathrules.rs")
         .layer("planning")
@@ -99,15 +101,71 @@ fn application_is_layered_internally() {
         .may_only_depend_on_layers(&[])
         .where_layer("pathrules")
         .may_only_depend_on_layers(&["ports"])
+        .where_layer("preconditions")
+        .may_only_depend_on_layers(&["ports"])
         .where_layer("planning")
-        .may_only_depend_on_layers(&["pathrules", "ports"])
+        .may_only_depend_on_layers(&["preconditions", "pathrules", "ports"])
         .where_layer("rewrite")
-        .may_only_depend_on_layers(&["planning", "pathrules", "ports"])
+        .may_only_depend_on_layers(&["preconditions", "pathrules", "planning", "ports"])
         .where_layer("llm")
         .may_only_depend_on_layers(&["ports"])
         .where_layer("push_guard")
         .may_only_depend_on_layers(&["planning", "rewrite", "ports"]);
     assert_passes!(rule);
+}
+
+/// Where an adapter file may live. A file outside these places would escape the layer rules.
+const ADAPTER_PLACES: &[&str] = &[
+    "src/adapters/mod.rs",
+    "src/adapters/cli/",
+    "src/adapters/git_cli/",
+    "src/adapters/gix_store.rs",
+    "src/adapters/config_file.rs",
+    "src/adapters/plan_file.rs",
+    "src/adapters/hook_installer.rs",
+    "src/adapters/convert.rs",
+    "src/adapters/fsutil.rs",
+    "src/adapters/repository.rs",
+];
+
+#[test]
+fn every_adapter_file_belongs_to_a_known_place() {
+    let rule = project_files()
+        .in_path("src/adapters/**")
+        .should()
+        .adhere_to(
+            |file: &FileInfo| ADAPTER_PLACES.iter().any(|p| file.path.starts_with(p)),
+            "live in a place the layer rules know about",
+        );
+    assert_passes!(rule);
+}
+
+/// archunit sees `std` only as a whole, so I/O and the clock are checked on the source text.
+const FORBIDDEN_IN_INNER_LAYERS: &[&str] = &[
+    "std::fs",
+    "std::process",
+    "std::env",
+    "Utc::now",
+    "Local::now",
+    "SystemTime::now",
+    "Instant::now",
+    "serde_yaml",
+    "clap::",
+];
+
+#[test]
+fn domain_and_application_do_no_io_and_read_no_clock() {
+    for scope in ["src/domain/**", "src/application/**"] {
+        let rule = project_files().in_path(scope).should().adhere_to(
+            |file: &FileInfo| {
+                !FORBIDDEN_IN_INNER_LAYERS
+                    .iter()
+                    .any(|bad| file.content.contains(bad))
+            },
+            "not touch the file system, processes, the environment, the clock or the CLI",
+        );
+        assert_passes!(rule);
+    }
 }
 
 #[test]
@@ -160,7 +218,7 @@ fn no_dependency_cycles() {
 fn files_stay_small_enough_to_have_one_responsibility() {
     let rule = project_files().in_path("src/**").should().adhere_to(
         |file: &FileInfo| file.non_blank_line_count <= MAX_NON_BLANK_LINES,
-        "contain at most 450 non-blank lines",
+        "contain at most 350 non-blank lines",
     );
     assert_passes!(rule);
 }

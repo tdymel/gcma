@@ -2,10 +2,10 @@
 
 use super::backups::BACKUP_PREFIX;
 use super::paths::{check_dropped, expected_tree, plan_filter, sync_worktree};
-use super::verify::{check_plan_against_history, resolve, verify};
+use super::verify::{check_plan_against_history, verify};
 use crate::application::pathrules::TreeRewriter;
-use crate::application::planning::check_preconditions;
 use crate::application::ports::{RefUpdate, Repository};
+use crate::application::preconditions::check_preconditions;
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::{NewCommit, SIGNATURE_HEADERS};
 use crate::domain::history::plan::{Parent, Plan};
@@ -54,7 +54,12 @@ const SECRETS_NOTE: &str = "paths were removed from the rewritten commits only. 
      them; to purge the old history run `ghma restore <id> --prune`, `git reflog expire --expire=now \
      --all` and `git gc --prune=now`.";
 
-pub fn apply(repo: &dyn Repository, plan: &Plan, rewrite_pushed: bool) -> Result<ApplyReport> {
+pub fn apply(
+    repo: &dyn Repository,
+    plan: &Plan,
+    rewrite_pushed: bool,
+    now: i64,
+) -> Result<ApplyReport> {
     plan.validate()?;
     if plan.is_empty() {
         return Ok(noop(0));
@@ -125,7 +130,7 @@ pub fn apply(repo: &dyn Repository, plan: &Plan, rewrite_pushed: bool) -> Result
     // 2. Write the new commits (unreferenced objects; nothing is visible yet).
     let mut new_oids: Vec<String> = Vec::with_capacity(plan.entries.len());
     for ((e, o), tree) in plan.entries.iter().zip(&old).zip(&trees) {
-        let parents: Vec<String> = e.parents.iter().map(|p| resolve(p, &new_oids)).collect();
+        let parents: Vec<String> = e.parents.iter().map(|p| p.resolve(&new_oids)).collect();
         let message = e.message()?;
         let message_changed = message != o.message;
         let extra = o
@@ -153,19 +158,31 @@ pub fn apply(repo: &dyn Repository, plan: &Plan, rewrite_pushed: bool) -> Result
     verify(repo, plan, &old, &new_oids, &trees)?;
     let new_tip = plan
         .tip_target()
-        .map(|p| resolve(&p, &new_oids))
+        .map(|p| p.resolve(&new_oids))
         .expect("checked above");
     if new_tip == plan.tip_oid {
         return Ok(noop(plan.entries.len()));
     }
 
     // 4. One transaction: backups and the branch update (compare-and-swap).
-    let id = format!(
-        "{}-{}-{}",
-        chrono::Utc::now().format("%Y%m%dT%H%M%S%3fZ"),
+    let stamp = chrono::DateTime::from_timestamp(now, 0)
+        .unwrap_or_default()
+        .format("%Y%m%dT%H%M%SZ");
+    let stem = format!(
+        "{stamp}-{}-{}",
         &plan.tip_oid[..plan.tip_oid.len().min(8)],
         &new_tip[..new_tip.len().min(8)]
     );
+    // The same rewrite undone and redone within a second would otherwise collide.
+    let mut id = stem.clone();
+    let mut n = 1;
+    while repo
+        .ref_value(&format!("{BACKUP_PREFIX}{}/{id}/old", plan.branch_name()))?
+        .is_some()
+    {
+        n += 1;
+        id = format!("{stem}-{n}");
+    }
     let base = format!("{BACKUP_PREFIX}{}/{id}", plan.branch_name());
     repo.update_refs(
         "ghma apply",

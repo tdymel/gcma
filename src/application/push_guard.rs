@@ -7,16 +7,29 @@ use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::is_zero_oid;
 use crate::domain::settings::{Config, HookMode};
 
-/// `Ok(())` lets the push proceed; an error aborts it. `stdin` is git's pre-push input.
-pub fn run_pre_push(repo: &dyn Repository, cfg: &Config, remote: &str, stdin: &str) -> Result<()> {
+/// One ref a push is about to update, as git reports it to the hook.
+#[derive(Debug, Clone)]
+pub struct PushedRef {
+    pub local_ref: String,
+    pub local_sha: String,
+    pub remote_sha: String,
+}
+
+/// `Ok(())` lets the push proceed; an error aborts it. `now` is the current unix time.
+pub fn run_pre_push(
+    repo: &dyn Repository,
+    cfg: &Config,
+    remote: &str,
+    pushed: &[PushedRef],
+    now: i64,
+) -> Result<()> {
     let remotes = repo.remotes()?;
-    for line in stdin.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() != 4 {
-            continue;
-        }
-        let (local_ref, local_sha, _remote_ref, remote_sha) =
-            (parts[0], parts[1], parts[2], parts[3]);
+    for p in pushed {
+        let (local_ref, local_sha, remote_sha) = (
+            p.local_ref.as_str(),
+            p.local_sha.as_str(),
+            p.remote_sha.as_str(),
+        );
         if is_zero_oid(local_sha) {
             continue; // a delete push
         }
@@ -68,7 +81,7 @@ pub fn run_pre_push(repo: &dyn Repository, cfg: &Config, remote: &str, stdin: &s
         let opts = PlanOptions {
             range: Some(range),
             strict: rewrite,
-            ..Default::default()
+            ..PlanOptions::new(now)
         };
         let built = build_plan(repo, cfg, &opts)?;
         if built.plan.is_empty() {
@@ -76,7 +89,7 @@ pub fn run_pre_push(repo: &dyn Repository, cfg: &Config, remote: &str, stdin: &s
         }
         let n = built.plan.entries.len() + built.plan.dropped.len();
         if rewrite {
-            let report = apply(repo, &built.plan, false)?;
+            let report = apply(repo, &built.plan, false, now)?;
             if !report.noop {
                 return Err(Error::Nonconforming(format!(
                     "ghma rewrote {} unpushed commit(s) of {branch_ref} to follow the rules; run `git push` again",

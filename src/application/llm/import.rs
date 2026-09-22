@@ -223,7 +223,7 @@ mod tests {
         let reply =
             "{\"i\":0,\"t\":\"ok\"}\n{\"i\":1,\"t\":\"two\\nlines\"}\n{\"i\":9,\"t\":\"x\"}\n";
         let e = import(&mut p, reply, &Config::default()).unwrap_err();
-        assert_eq!(e.exit_code(), 7);
+        assert!(matches!(e, Error::LlmInvalid(_)));
         assert!(e.to_string().contains("retry rows: [1, 9]"), "{e}");
         assert_eq!(msg(&p, 0), "a\n", "nothing applied");
     }

@@ -5,7 +5,7 @@ use crate::domain::history::plan::Plan;
 use crate::domain::text::messages;
 
 /// Human-readable plan table.
-pub fn render(plan: &Plan, old: &[Commit], dropped: &[Commit]) -> String {
+pub(super) fn render(plan: &Plan, old: &[Commit], dropped: &[Commit]) -> String {
     use chrono::TimeZone;
     let fmt = |t: i64, off: i32| -> String {
         match chrono::FixedOffset::east_opt(off * 60).and_then(|o| o.timestamp_opt(t, 0).single()) {

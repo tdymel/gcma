@@ -184,7 +184,7 @@ mod tests {
         let w = Window::build(tz, &weekdays(), (9 * 60, 18 * 60), from, to);
         assert_eq!(w.capacity(floor), 0);
         let e = schedule(1, &w, floor, Distribution::Uniform, &mut rng_from_seed(1)).unwrap_err();
-        assert_eq!(e.exit_code(), 3);
+        assert!(matches!(e, crate::domain::error::Error::Precondition(_)));
         assert!(
             schedule(0, &w, floor, Distribution::Uniform, &mut rng_from_seed(1))
                 .unwrap()

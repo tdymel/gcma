@@ -71,7 +71,7 @@ pub fn verify(
                 o.oid
             )));
         }
-        let expected: Vec<String> = e.parents.iter().map(|p| resolve(p, new_oids)).collect();
+        let expected: Vec<String> = e.parents.iter().map(|p| p.resolve(new_oids)).collect();
         if n.parents != expected {
             return Err(verify_fail(format!(
                 "parents of entry {i} ({}) are wrong",
@@ -99,7 +99,7 @@ pub fn verify(
     }
     let new_tip = plan
         .tip_target()
-        .map(|p| resolve(&p, new_oids))
+        .map(|p| p.resolve(new_oids))
         .ok_or_else(|| verify_fail("the plan does not say where the branch ends up".into()))?;
     let expected_count = repo
         .count_reachable(&plan.tip_oid)?
@@ -145,12 +145,4 @@ pub fn verify(
         ));
     }
     Ok(())
-}
-
-/// The commit id a plan parent stands for once the new commits exist.
-pub(super) fn resolve(p: &Parent, new_oids: &[String]) -> String {
-    match p {
-        Parent::In(j) => new_oids[*j].clone(),
-        Parent::Base(b) => b.clone(),
-    }
 }
