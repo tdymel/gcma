@@ -123,6 +123,7 @@ const ADAPTER_PLACES: &[&str] = &[
     "src/adapters/config_file.rs",
     "src/adapters/plan_file.rs",
     "src/adapters/hook_installer.rs",
+    "src/adapters/llm_jsonl.rs",
     "src/adapters/convert.rs",
     "src/adapters/fsutil.rs",
     "src/adapters/repository.rs",
@@ -198,7 +199,7 @@ fn domain_uses_no_io_or_framework_crates() {
 
 #[test]
 fn application_uses_no_adapter_crates() {
-    for banned in ["clap", "gix", "serde_yaml"] {
+    for banned in ["clap", "gix", "serde_yaml", "serde_json"] {
         let rule = project_files()
             .in_path("src/application/**")
             .should_not()

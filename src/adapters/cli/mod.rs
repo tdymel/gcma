@@ -16,7 +16,7 @@ use self::report::{print_plan, sanitize};
 use crate::adapters::config_file::{CONFIG_FILE, starter_config};
 use crate::adapters::fsutil;
 use crate::adapters::git_cli::GitCli;
-use crate::adapters::{hook_installer, plan_file};
+use crate::adapters::{hook_installer, llm_jsonl, plan_file};
 use crate::application::llm;
 use crate::application::planning::{PlanOptions, build_plan};
 use crate::application::push_guard::{self, PushedRef};
@@ -180,7 +180,8 @@ fn run(cli: Cli) -> Result<()> {
                 Some(p) => plan_file::load(&p)?,
                 None => build_plan(&repo, &cfg, &opts(&range, false))?.plan,
             };
-            let (prelude, rows) = llm::export(&repo, &plan, batch, offset)?;
+            let (prelude, rows) =
+                llm_jsonl::render_export(&llm::export(&repo, &plan, batch, offset)?)?;
             eprintln!("{}", sanitize(&prelude));
             for r in rows {
                 println!("{r}");
@@ -197,7 +198,7 @@ fn run(cli: Cli) -> Result<()> {
                 std::fs::read_to_string(Path::new(&reply))
                     .map_err(|e| Error::Usage(format!("cannot read {reply}: {e}")))?
             };
-            let rep = llm::import(&mut p, &text, &cfg)?;
+            let rep = llm::import(&mut p, llm_jsonl::parse_reply(&text), &cfg)?;
             let dest = out.unwrap_or(plan);
             plan_file::save(&p, &dest)?;
             println!(

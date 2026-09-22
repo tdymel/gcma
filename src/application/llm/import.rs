@@ -2,20 +2,21 @@
 
 use std::collections::HashSet;
 
-use serde::Deserialize;
-
 use crate::domain::error::{Error, Result};
 use crate::domain::history::plan::Plan;
 use crate::domain::settings::Config;
 use crate::domain::text::messages;
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Reply {
-    i: usize,
-    t: String,
-    b: Option<String>,
+/// One parsed row of an LLM's reply: a new message for the entry at `index`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reply {
+    pub index: usize,
+    pub title: String,
+    pub body: Option<String>,
 }
+
+/// A reply row, or why its line could not be read (already worded, with the line number).
+pub type ReplyLine = std::result::Result<Reply, String>;
 
 #[derive(Debug)]
 pub struct ImportReport {
@@ -37,41 +38,34 @@ fn protected_trailers(old: &[u8], strip: &[String]) -> Vec<Vec<u8>> {
 }
 
 /// Validates the whole reply first; applies it only if every row is valid (all or nothing).
-pub fn import(plan: &mut Plan, reply: &str, cfg: &Config) -> Result<ImportReport> {
+pub fn import(plan: &mut Plan, reply: Vec<ReplyLine>, cfg: &Config) -> Result<ImportReport> {
     let mut errors: Vec<String> = Vec::new();
     let mut retry: Vec<usize> = Vec::new();
     let mut seen: HashSet<usize> = HashSet::new();
     let mut updates: Vec<(usize, Vec<u8>)> = Vec::new();
     let mut unchanged = 0;
 
-    for (ln, line) in reply.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let row: Reply = match serde_json::from_str(line) {
+    for line in reply {
+        let row = match line {
             Ok(r) => r,
             Err(e) => {
-                errors.push(format!(
-                    "line {}: not a valid reply row ({e}); prose or code fences are not allowed",
-                    ln + 1
-                ));
+                errors.push(e);
                 continue;
             }
         };
         let mut bad = |m: String| {
-            errors.push(format!("row i={}: {m}", row.i));
-            retry.push(row.i);
+            errors.push(format!("row i={}: {m}", row.index));
+            retry.push(row.index);
         };
-        if row.i >= plan.entries.len() {
+        if row.index >= plan.entries.len() {
             bad(format!("unknown index (valid: 0..{})", plan.entries.len()));
             continue;
         }
-        if !seen.insert(row.i) {
+        if !seen.insert(row.index) {
             bad("duplicate index".into());
             continue;
         }
-        let title = row.t.trim();
+        let title = row.title.trim();
         if title.is_empty() {
             bad("empty title".into());
             continue;
@@ -85,7 +79,7 @@ pub fn import(plan: &mut Plan, reply: &str, cfg: &Config) -> Result<ImportReport
             continue;
         }
         let mut msg = title.as_bytes().to_vec();
-        if let Some(b) = row.b.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
+        if let Some(b) = row.body.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
             msg.extend_from_slice(b"\n\n");
             msg.extend_from_slice(b.as_bytes());
         }
@@ -94,7 +88,7 @@ pub fn import(plan: &mut Plan, reply: &str, cfg: &Config) -> Result<ImportReport
             bad("the message contains control characters".into());
             continue;
         }
-        let old = &plan.entries[row.i].message;
+        let old = &plan.entries[row.index].message;
         if let Some(missing) = protected_trailers(old, &cfg.messages.strip_trailers)
             .into_iter()
             .find(|t| !msg.split(|&c| c == b'\n').any(|l| l == t.as_slice()))
@@ -125,7 +119,7 @@ pub fn import(plan: &mut Plan, reply: &str, cfg: &Config) -> Result<ImportReport
         if msg == *old {
             unchanged += 1;
         } else {
-            updates.push((row.i, msg));
+            updates.push((row.index, msg));
         }
     }
     if !errors.is_empty() {
@@ -199,12 +193,20 @@ mod tests {
         String::from_utf8(p.entries[i].message.clone()).unwrap()
     }
 
+    fn row(index: usize, title: &str, body: Option<&str>) -> ReplyLine {
+        Ok(Reply {
+            index,
+            title: title.into(),
+            body: body.map(String::from),
+        })
+    }
+
     #[test]
     fn imports_valid_rows_and_may_omit_some() {
         let mut p = plan_with(&["wip\n", "fix\n"]);
         let r = import(
             &mut p,
-            "{\"i\":0,\"t\":\"Add parser\",\"b\":\"Because.\"}\n",
+            vec![row(0, "Add parser", Some("Because."))],
             &Config::default(),
         )
         .unwrap();
@@ -216,8 +218,11 @@ mod tests {
     #[test]
     fn all_or_nothing_with_retry_list() {
         let mut p = plan_with(&["a\n", "b\n", "c\n"]);
-        let reply =
-            "{\"i\":0,\"t\":\"ok\"}\n{\"i\":1,\"t\":\"two\\nlines\"}\n{\"i\":9,\"t\":\"x\"}\n";
+        let reply = vec![
+            row(0, "ok", None),
+            row(1, "two\nlines", None),
+            row(9, "x", None),
+        ];
         let e = import(&mut p, reply, &Config::default()).unwrap_err();
         assert!(matches!(e, Error::LlmInvalid(_)));
         assert!(e.to_string().contains("retry rows: [1, 9]"), "{e}");
@@ -225,35 +230,33 @@ mod tests {
     }
 
     #[test]
-    fn rejects_prose_dupes_empty_titles_and_unknown_keys() {
+    fn unreadable_lines_dupes_and_empty_titles_are_rejected() {
         let cfg = Config::default();
         let mut p = plan_with(&["a\n"]);
-        assert!(import(&mut p, "Sure! Here you go:\n{\"i\":0,\"t\":\"x\"}", &cfg).is_err());
-        assert!(import(&mut p, "{\"i\":0,\"t\":\"x\"}\n{\"i\":0,\"t\":\"y\"}", &cfg).is_err());
-        assert!(import(&mut p, "{\"i\":0,\"t\":\"  \"}", &cfg).is_err());
-        assert!(import(&mut p, "{\"i\":0,\"t\":\"x\",\"z\":1}", &cfg).is_err());
-        assert!(import(&mut p, "```json\n{\"i\":0,\"t\":\"x\"}\n```", &cfg).is_err());
+        let unreadable = Err("line 1: not a valid reply row".to_string());
+        assert!(import(&mut p, vec![unreadable, row(0, "x", None)], &cfg).is_err());
+        assert!(import(&mut p, vec![row(0, "x", None), row(0, "y", None)], &cfg).is_err());
+        assert!(import(&mut p, vec![row(0, "  ", None)], &cfg).is_err());
     }
 
     #[test]
     fn protected_trailers_must_survive() {
         let mut p = plan_with(&["wip\n\nSigned-off-by: A <a@x>\n"]);
         let cfg = Config::default();
-        let e = import(&mut p, "{\"i\":0,\"t\":\"Better\"}", &cfg).unwrap_err();
+        let e = import(&mut p, vec![row(0, "Better", None)], &cfg).unwrap_err();
         assert!(e.to_string().contains("trailer"), "{e}");
         // Including the trailer in the body keeps it.
         assert!(
             import(
                 &mut p,
-                "{\"i\":0,\"t\":\"Better\",\"b\":\"Signed-off-by: A <a@x>\"}",
+                vec![row(0, "Better", Some("Signed-off-by: A <a@x>"))],
                 &cfg
             )
             .is_ok()
         );
         // A strip rule makes dropping it legitimate.
         let mut q = plan_with(&["wip\n\nSigned-off-by: A <a@x>\n"]);
-        let cfg2 = strip_cfg();
-        assert!(import(&mut q, "{\"i\":0,\"t\":\"Better\"}", &cfg2).is_ok());
+        assert!(import(&mut q, vec![row(0, "Better", None)], &strip_cfg()).is_ok());
     }
 
     #[test]
@@ -262,23 +265,22 @@ mod tests {
         let mut p = plan_with(&["a\n"]);
         let e = import(
             &mut p,
-            "{\"i\":0,\"t\":\"x\",\"b\":\"Signed-off-by: Mallory <m@x>\"}",
+            vec![row(0, "x", Some("Signed-off-by: Mallory <m@x>"))],
             &cfg,
         )
         .unwrap_err();
         assert!(e.to_string().contains("is new"), "{e}");
-        assert!(import(&mut p, "{\"i\":0,\"t\":\"x\\u0000y\"}", &cfg).is_err());
-        assert!(import(&mut p, "{\"i\":0,\"t\":\"x\",\"b\":\"\\u001b[2J\"}", &cfg).is_err());
+        assert!(import(&mut p, vec![row(0, "x\0y", None)], &cfg).is_err());
+        assert!(import(&mut p, vec![row(0, "x", Some("\u{1b}[2J"))], &cfg).is_err());
     }
 
     #[test]
     fn reply_must_keep_the_message_conforming() {
-        let cfg = strip_cfg();
         let mut p = plan_with(&["a\n"]);
         let e = import(
             &mut p,
-            "{\"i\":0,\"t\":\"x\",\"b\":\"Signed-off-by: me\"}",
-            &cfg,
+            vec![row(0, "x", Some("Signed-off-by: me"))],
+            &strip_cfg(),
         )
         .unwrap_err();
         assert!(e.to_string().contains("strip_trailers"), "{e}");
