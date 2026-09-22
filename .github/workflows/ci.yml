@@ -6,24 +6,32 @@ on:
   pull_request:
   workflow_call:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - name: clippy (default features)
-        run: cargo clippy --all-targets
+        run: cargo clippy --locked --all-targets -- -D warnings
       - name: clippy (git CLI only)
-        run: cargo clippy --all-targets --no-default-features
+        run: cargo clippy --locked --all-targets --no-default-features -- -D warnings
 
   test:
     name: test (${{ matrix.os }}, ${{ matrix.features }})
@@ -35,6 +43,8 @@ jobs:
         features: [default, git-only]
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -48,9 +58,9 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.features }}" = "git-only" ]; then
-            cargo test --no-default-features
+            cargo test --locked --no-default-features
           else
-            cargo test
+            cargo test --locked
           fi
 
   build:
@@ -58,6 +68,8 @@ jobs:
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --locked

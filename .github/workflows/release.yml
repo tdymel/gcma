@@ -1,6 +1,7 @@
 name: Release
 
-# Optional: run it from the Actions tab ("Run workflow") with a version, or push a `vX.Y.Z` tag.
+# Optional: run it from the Actions tab ("Run workflow") on the default branch with a version, or
+# push a `vX.Y.Z` tag. A version with a suffix (`1.2.0-rc.1`) becomes a pre-release.
 on:
   workflow_dispatch:
     inputs:
@@ -8,45 +9,54 @@ on:
         description: Version to release, without the leading v (must match Cargo.toml)
         required: true
         type: string
-      prerelease:
-        description: Mark the GitHub release as a pre-release
-        type: boolean
-        default: false
   push:
     tags: ["v*"]
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
 
-permissions:
-  contents: write
-
 jobs:
   prepare:
+    # A manual release is cut from the default branch only.
+    if: github.ref_type == 'tag' || github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - id: meta
         shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            tag="${GITHUB_REF_NAME}"
-            version="${tag#v}"
+            version="${GITHUB_REF_NAME#v}"
           else
-            version="${{ inputs.version }}"
-            tag="v${version#v}"
-            version="${tag#v}"
+            version="${INPUT_VERSION#v}"
+          fi
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "not a version: $version" >&2
+            exit 1
           fi
           crate="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
           if [ "$crate" != "$version" ]; then
             echo "Cargo.toml says $crate but the release is $version" >&2
             exit 1
           fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          prerelease=false
+          [[ "$version" == *-* ]] && prerelease=true
+          {
+            echo "tag=v$version"
+            echo "version=$version"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
 
   ci:
     needs: prepare
@@ -60,12 +70,15 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          # Built on the oldest runner images so the binaries run on older glibc and macOS.
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
           - { os: macos-15-intel, target: x86_64-apple-darwin }
           - { os: macos-latest, target: aarch64-apple-darwin }
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -75,10 +88,13 @@ jobs:
       - run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Package
         shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TARGET: ${{ matrix.target }}
         run: |
-          name="ghma-${{ needs.prepare.outputs.version }}-${{ matrix.target }}"
+          name="ghma-${VERSION}-${TARGET}"
           mkdir "$name"
-          cp "target/${{ matrix.target }}/release/ghma" README.md "$name/"
+          cp "target/${TARGET}/release/ghma" README.md "$name/"
           tar czf "$name.tar.gz" "$name"
           shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
       - uses: actions/upload-artifact@v4
@@ -90,8 +106,9 @@ jobs:
   publish:
     needs: [prepare, binaries]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: dist-*
@@ -101,9 +118,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.prepare.outputs.tag }}
-          PRERELEASE: ${{ inputs.prerelease }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |
-          flags=""
-          [ "$PRERELEASE" = "true" ] && flags="--prerelease"
+          flags=()
+          [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
           # Creates the tag at this commit when it does not exist yet.
-          gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --generate-notes $flags
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "$TAG" --generate-notes "${flags[@]}"
