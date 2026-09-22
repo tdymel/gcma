@@ -12,7 +12,7 @@ use crate::conform::{self, Ctx};
 use crate::error::{Error, Result};
 use crate::git::{Commit, Git, RawIdent};
 use crate::messages;
-use crate::schedule::{Rng, Window, fnv, schedule};
+use crate::schedule::{Window, derive_seed, rng_from_seed, schedule};
 
 pub const PLAN_VERSION: u32 = 1;
 
@@ -389,7 +389,7 @@ pub fn build_plan(git: &Git, cfg: &Config, opts: &PlanOptions) -> Result<Built> 
                 "`to` ({to}) is not after the floor ({outside}, the latest commit kept as-is); nothing can be scheduled"
             )));
         }
-        let seed = fnv(&[
+        let seed = derive_seed(&[
             s.seed.to_string().as_bytes(),
             base_oid.as_deref().unwrap_or("").as_bytes(),
         ]);
@@ -398,7 +398,7 @@ pub fn build_plan(git: &Git, cfg: &Config, opts: &PlanOptions) -> Result<Built> 
             w,
             outside,
             s.distribution,
-            &mut Rng::new(seed),
+            &mut rng_from_seed(seed),
         )?;
     }
 

@@ -1,58 +1,32 @@
 //! The time model (`Window`) and the pure scheduler. Nothing here knows about git.
 
 use std::collections::HashSet;
+use std::hash::Hasher;
 
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Offset, TimeZone, Weekday};
 use chrono_tz::Tz;
+use fnv::FnvHasher;
+use rand::{RngExt, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 
 use crate::config::{Distribution, weekday_index};
 use crate::error::{Error, Result};
 
-/// Deterministic SplitMix64 generator (stable across platforms and crate versions).
-pub struct Rng(u64);
+/// The generator used by the scheduler (ChaCha8: value-stable across platforms and versions).
+pub type ScheduleRng = ChaCha8Rng;
 
-impl Rng {
-    pub fn new(seed: u64) -> Rng {
-        Rng(seed)
-    }
-
-    pub fn next_u64(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
-    }
-
-    /// Uniform in [0, n). n must be > 0.
-    pub fn below(&mut self, n: u64) -> u64 {
-        // Rejection sampling to avoid modulo bias.
-        let zone = u64::MAX - (u64::MAX % n);
-        loop {
-            let v = self.next_u64();
-            if v < zone {
-                return v % n;
-            }
-        }
-    }
-
-    pub fn unit(&mut self) -> f64 {
-        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
-    }
+pub fn rng_from_seed(seed: u64) -> ScheduleRng {
+    ScheduleRng::seed_from_u64(seed)
 }
 
-/// FNV-1a over a list of byte strings (stable seed derivation).
-pub fn fnv(parts: &[&[u8]]) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+/// FNV-1a over a list of byte strings (stable seed derivation); parts cannot run together.
+pub fn derive_seed(parts: &[&[u8]]) -> u64 {
+    let mut h = FnvHasher::default();
     for p in parts {
-        for b in *p {
-            h ^= *b as u64;
-            h = h.wrapping_mul(0x0000_0100_0000_01b3);
-        }
-        h ^= 0xff;
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        h.write(p);
+        h.write_u8(0xff);
     }
-    h
+    h.finish()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -223,12 +197,12 @@ impl Space {
 
 /// Produces `n` sorted instants, every one inside the window and >= `floor`.
 /// Equal timestamps are allowed. Deterministic for a given seed.
-pub fn schedule(
+pub fn schedule<R: RngExt>(
     n: usize,
     window: &Window,
     floor: i64,
     dist: Distribution,
-    rng: &mut Rng,
+    rng: &mut R,
 ) -> Result<Vec<i64>> {
     if n == 0 {
         return Ok(Vec::new());
@@ -244,7 +218,7 @@ pub fn schedule(
     match dist {
         Distribution::Uniform => {
             for _ in 0..n {
-                times.push(space.at(rng.below(space.total)));
+                times.push(space.at(rng.random_range(0..space.total)));
             }
         }
         Distribution::WeekdayWeighted => {
@@ -255,7 +229,7 @@ pub fn schedule(
                 .collect();
             let total: f64 = weights.iter().sum();
             for _ in 0..n {
-                let mut x = rng.unit() * total;
+                let mut x = rng.random::<f64>() * total;
                 let mut idx = weights.len() - 1;
                 for (k, w) in weights.iter().enumerate() {
                     if x < *w {
@@ -265,7 +239,7 @@ pub fn schedule(
                     x -= w;
                 }
                 let iv = &space.ivs[idx];
-                times.push(iv.start + rng.below(iv.len()) as i64);
+                times.push(iv.start + rng.random_range(0..iv.len()) as i64);
             }
         }
         Distribution::Bursty => {
@@ -275,14 +249,14 @@ pub fn schedule(
             let mut left = n;
             while left > 0 {
                 let mut size = 1;
-                while size < 8 && rng.unit() < 0.75 {
+                while size < 8 && rng.random::<f64>() < 0.75 {
                     size += 1;
                 }
                 let size = size.min(left);
                 left -= size;
-                let start = rng.below(space.total - span + 1);
+                let start = rng.random_range(0..space.total - span + 1);
                 for _ in 0..size {
-                    times.push(space.at(start + rng.below(span)));
+                    times.push(space.at(start + rng.random_range(0..span)));
                 }
             }
         }
@@ -312,16 +286,14 @@ mod tests {
 
     #[test]
     fn rng_is_deterministic_and_bounded() {
-        let mut a = Rng::new(42);
-        let mut b = Rng::new(42);
+        let (mut a, mut b) = (rng_from_seed(42), rng_from_seed(42));
         for _ in 0..100 {
-            assert_eq!(a.next_u64(), b.next_u64());
+            assert_eq!(a.random_range(0..u64::MAX), b.random_range(0..u64::MAX));
         }
-        let mut r = Rng::new(1);
+        let mut r = rng_from_seed(1);
         for _ in 0..1000 {
-            assert!(r.below(7) < 7);
-            let u = r.unit();
-            assert!((0.0..1.0).contains(&u));
+            assert!(r.random_range(0..7u64) < 7);
+            assert!((0.0..1.0).contains(&r.random::<f64>()));
         }
     }
 
@@ -386,7 +358,7 @@ mod tests {
         let to = ts(tz, 2026, 10, 26, 0, 0);
         let w = Window::build(tz, &[Weekday::Sun], (0, 4 * 60), from, to);
         assert_eq!(w.capacity(from), 5 * 3600);
-        let mut r = Rng::new(3);
+        let mut r = rng_from_seed(3);
         let times = schedule(200, &w, from, Distribution::Uniform, &mut r).unwrap();
         assert!(times.iter().all(|t| w.contains(*t)));
     }
@@ -402,7 +374,7 @@ mod tests {
             Distribution::WeekdayWeighted,
             Distribution::Bursty,
         ] {
-            let mut r = Rng::new(99);
+            let mut r = rng_from_seed(99);
             let times = schedule(500, &w, from, dist, &mut r).unwrap();
             assert_eq!(times.len(), 500);
             assert!(times.windows(2).all(|p| p[0] <= p[1]), "sorted");
@@ -422,9 +394,9 @@ mod tests {
         let from = ts(tz, 2026, 1, 1, 0, 0);
         let to = ts(tz, 2026, 3, 1, 0, 0);
         let w = Window::build(tz, &weekdays(), (9 * 60, 18 * 60), from, to);
-        let a = schedule(50, &w, from, Distribution::Bursty, &mut Rng::new(5)).unwrap();
-        let b = schedule(50, &w, from, Distribution::Bursty, &mut Rng::new(5)).unwrap();
-        let c = schedule(50, &w, from, Distribution::Bursty, &mut Rng::new(6)).unwrap();
+        let a = schedule(50, &w, from, Distribution::Bursty, &mut rng_from_seed(5)).unwrap();
+        let b = schedule(50, &w, from, Distribution::Bursty, &mut rng_from_seed(5)).unwrap();
+        let c = schedule(50, &w, from, Distribution::Bursty, &mut rng_from_seed(6)).unwrap();
         assert_eq!(a, b);
         assert_ne!(a, c);
     }
@@ -436,7 +408,7 @@ mod tests {
         let to = ts(tz, 2026, 3, 1, 0, 0);
         let w = Window::build(tz, &weekdays(), (9 * 60, 18 * 60), from, to);
         let floor = ts(tz, 2026, 2, 10, 12, 0);
-        let times = schedule(100, &w, floor, Distribution::Uniform, &mut Rng::new(1)).unwrap();
+        let times = schedule(100, &w, floor, Distribution::Uniform, &mut rng_from_seed(1)).unwrap();
         assert!(times.iter().all(|t| *t >= floor));
     }
 
@@ -449,10 +421,10 @@ mod tests {
         let to = ts(tz, 2026, 4, 6, 8, 0); // Monday
         let w = Window::build(tz, &weekdays(), (9 * 60, 18 * 60), from, to);
         assert_eq!(w.capacity(floor), 0);
-        let e = schedule(1, &w, floor, Distribution::Uniform, &mut Rng::new(1)).unwrap_err();
+        let e = schedule(1, &w, floor, Distribution::Uniform, &mut rng_from_seed(1)).unwrap_err();
         assert_eq!(e.exit_code(), 3);
         assert!(
-            schedule(0, &w, floor, Distribution::Uniform, &mut Rng::new(1))
+            schedule(0, &w, floor, Distribution::Uniform, &mut rng_from_seed(1))
                 .unwrap()
                 .is_empty()
         );
@@ -463,7 +435,7 @@ mod tests {
         let tz = chrono_tz::UTC;
         let w = Window::build(tz, &weekdays(), (540, 1080), 100, 50);
         assert!(!w.contains(75));
-        assert!(schedule(1, &w, 0, Distribution::Uniform, &mut Rng::new(1)).is_err());
+        assert!(schedule(1, &w, 0, Distribution::Uniform, &mut rng_from_seed(1)).is_err());
     }
 
     #[test]
@@ -486,7 +458,7 @@ mod tests {
             &w,
             from,
             Distribution::WeekdayWeighted,
-            &mut Rng::new(11),
+            &mut rng_from_seed(11),
         )
         .unwrap();
         let mut counts = [0usize; 7];
@@ -511,7 +483,7 @@ mod tests {
             Distribution::Bursty,
         ] {
             for seed in 0..20 {
-                let times = schedule(300, &w, from, dist, &mut Rng::new(seed)).unwrap();
+                let times = schedule(300, &w, from, dist, &mut rng_from_seed(seed)).unwrap();
                 let last = *times.last().unwrap();
                 let at_last = times.iter().filter(|t| **t == last).count();
                 assert!(
@@ -533,13 +505,13 @@ mod tests {
         let from = ts(tz, 2026, 1, 5, 9, 0);
         let to = ts(tz, 2026, 1, 5, 9, 30); // 30 minutes only
         let w = Window::build(tz, &weekdays(), (9 * 60, 18 * 60), from, to);
-        let times = schedule(40, &w, from, Distribution::Bursty, &mut Rng::new(2)).unwrap();
+        let times = schedule(40, &w, from, Distribution::Bursty, &mut rng_from_seed(2)).unwrap();
         assert!(times.iter().all(|t| w.contains(*t)));
     }
 
     #[test]
-    fn fnv_is_stable() {
-        assert_eq!(fnv(&[b"a"]), fnv(&[b"a"]));
-        assert_ne!(fnv(&[b"a", b"b"]), fnv(&[b"ab"]));
+    fn seed_derivation_is_stable_and_unambiguous() {
+        assert_eq!(derive_seed(&[b"a"]), derive_seed(&[b"a"]));
+        assert_ne!(derive_seed(&[b"a", b"b"]), derive_seed(&[b"ab"]));
     }
 }

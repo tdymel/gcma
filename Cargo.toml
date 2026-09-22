@@ -23,6 +23,9 @@ serde_yaml = "0.9"
 thiserror = "2"
 
 gix = { version = "0.88", default-features = false, features = ["sha1", "revision", "parallel"], optional = true }
+rand = "0.10"
+rand_chacha = "0.10"
+fnv = "1"
 
 [features]
 default = ["gix"]
