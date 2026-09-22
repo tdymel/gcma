@@ -2,6 +2,7 @@
 //! spawns processes or knows about git's storage.
 
 pub mod error;
+pub mod history;
 pub mod scheduling;
 pub mod settings;
 pub mod text;

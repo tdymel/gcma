@@ -1,115 +1,16 @@
 //! The Plan: the seam between planning stages and `apply`.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::path::Path;
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD as B64;
-use serde::{Deserialize, Serialize};
-
-use crate::conform::{self, Ctx};
 use crate::domain::error::{Error, Result};
+use crate::domain::history::commit::{Commit, RawIdent};
+use crate::domain::history::conform::{self, Ctx};
+use crate::domain::history::linearize::linearize;
+use crate::domain::history::plan::{Entry, PIdent, PLAN_VERSION, Parent, Plan};
 use crate::domain::scheduling::{Window, derive_seed, rng_from_seed, schedule};
 use crate::domain::settings::{Config, Signing, parse_days, parse_hours};
 use crate::domain::text::messages;
-use crate::git::{Commit, Git, RawIdent};
-
-pub const PLAN_VERSION: u32 = 1;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PIdent {
-    pub name: String,
-    pub email: String,
-    pub time: i64,
-    /// UTC offset in minutes.
-    pub tz: i32,
-}
-
-impl PIdent {
-    pub fn to_raw(&self) -> RawIdent {
-        RawIdent {
-            name: self.name.clone().into_bytes(),
-            email: self.email.clone().into_bytes(),
-            time: self.time,
-            tz: self.tz,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum Parent {
-    /// Index into `entries` (a rewritten commit).
-    In(usize),
-    /// A commit that keeps its OID (frozen, or outside the range).
-    Base(String),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Entry {
-    pub old_oid: String,
-    pub parents: Vec<Parent>,
-    pub author: PIdent,
-    pub committer: PIdent,
-    pub message_b64: String,
-}
-
-impl Entry {
-    pub fn message(&self) -> Result<Vec<u8>> {
-        Ok(B64.decode(&self.message_b64)?)
-    }
-
-    pub fn set_message(&mut self, m: &[u8]) {
-        self.message_b64 = B64.encode(m);
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Plan {
-    pub version: u32,
-    pub branch_ref: String,
-    pub tip_oid: String,
-    pub signing: Signing,
-    /// Suffix commits only, in write order (parents before children).
-    pub entries: Vec<Entry>,
-}
-
-impl Plan {
-    pub fn save(&self, path: &Path) -> Result<()> {
-        std::fs::write(path, serde_json::to_vec_pretty(self)?)?;
-        Ok(())
-    }
-
-    pub fn load(path: &Path) -> Result<Plan> {
-        let data = std::fs::read(path)
-            .map_err(|e| Error::Usage(format!("cannot read plan {}: {e}", path.display())))?;
-        let p: Plan = serde_json::from_slice(&data)?;
-        if p.version != PLAN_VERSION {
-            return Err(Error::Usage(format!(
-                "unsupported plan version {}",
-                p.version
-            )));
-        }
-        for (i, e) in p.entries.iter().enumerate() {
-            for par in &e.parents {
-                if let Parent::In(j) = par
-                    && *j >= i
-                {
-                    return Err(Error::Usage(format!(
-                        "plan entry {i} has a forward parent reference"
-                    )));
-                }
-            }
-        }
-        Ok(p)
-    }
-
-    pub fn branch_name(&self) -> &str {
-        self.branch_ref
-            .strip_prefix("refs/heads/")
-            .unwrap_or(&self.branch_ref)
-    }
-}
+use crate::git::Git;
 
 /// An explicit range (used by the pre-push hook): commits reachable from `tip` but not from `exclude`.
 #[derive(Debug, Clone)]
@@ -159,66 +60,6 @@ pub fn check_preconditions(git: &Git, strict: bool) -> Result<()> {
         }
     }
     Ok(())
-}
-
-/// Deterministic parents-first order of the suffix, independent of dates:
-/// ready commits are taken by (first-parent depth, oid).
-fn linearize(suffix: &[String], commits: &HashMap<String, Commit>) -> Vec<String> {
-    let set: HashSet<&String> = suffix.iter().collect();
-    // First-parent depth within the suffix, computed independently of the input order.
-    let mut depth: HashMap<&String, usize> = HashMap::new();
-    for oid in suffix {
-        let mut chain: Vec<&String> = Vec::new();
-        let mut cur = oid;
-        let mut base = 0;
-        loop {
-            if let Some(d) = depth.get(cur) {
-                base = *d + 1;
-                break;
-            }
-            chain.push(cur);
-            match commits[cur].parents.first() {
-                Some(p) if set.contains(p) => cur = p,
-                _ => break,
-            }
-        }
-        for (k, c) in chain.iter().rev().enumerate() {
-            depth.insert(c, base + k);
-        }
-    }
-    let mut indeg: HashMap<&String, usize> = HashMap::new();
-    let mut children: HashMap<&String, Vec<&String>> = HashMap::new();
-    for oid in suffix {
-        let ps: BTreeSet<&String> = commits[oid]
-            .parents
-            .iter()
-            .filter(|p| set.contains(p))
-            .collect();
-        indeg.insert(oid, ps.len());
-        for p in ps {
-            children.entry(p).or_default().push(oid);
-        }
-    }
-    let mut ready: BTreeSet<(usize, &String)> = suffix
-        .iter()
-        .filter(|o| indeg[o] == 0)
-        .map(|o| (depth[o], o))
-        .collect();
-    let mut out = Vec::with_capacity(suffix.len());
-    while let Some(&(d, o)) = ready.iter().next() {
-        ready.remove(&(d, o));
-        out.push(o.clone());
-        if let Some(ch) = children.get(o) {
-            for c in ch {
-                let n = indeg.get_mut(c).unwrap();
-                *n -= 1;
-                if *n == 0 {
-                    ready.insert((depth[c], c));
-                }
-            }
-        }
-    }
-    out
 }
 
 fn utf8(b: &[u8], what: &str, oid: &str) -> Result<String> {
@@ -516,87 +357,4 @@ pub fn render(plan: &Plan, old: &[Commit]) -> String {
         ));
     }
     s
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn c(oid: &str, parents: &[&str]) -> Commit {
-        let id = RawIdent {
-            name: b"n".to_vec(),
-            email: b"e".to_vec(),
-            time: 0,
-            tz: 0,
-        };
-        Commit {
-            oid: oid.into(),
-            tree: "t".into(),
-            parents: parents.iter().map(|s| s.to_string()).collect(),
-            author: id.clone(),
-            committer: id,
-            extra: Vec::new(),
-            message: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn linearize_is_parents_first_and_deterministic() {
-        // a <- b <- d (merge of b and c) ; c <- a
-        let commits: HashMap<String, Commit> = [
-            c("a", &[]),
-            c("b", &["a"]),
-            c("c", &["a"]),
-            c("d", &["b", "c"]),
-        ]
-        .into_iter()
-        .map(|x| (x.oid.clone(), x))
-        .collect();
-        let s: Vec<String> = ["d", "c", "b", "a"].iter().map(|x| x.to_string()).collect();
-        let lin = linearize(&s, &commits);
-        let pos = |o: &str| lin.iter().position(|x| x == o).unwrap();
-        assert!(
-            pos("a") < pos("b")
-                && pos("a") < pos("c")
-                && pos("b") < pos("d")
-                && pos("c") < pos("d")
-        );
-        assert_eq!(lin, linearize(&s, &commits));
-        let s2: Vec<String> = ["a", "b", "c", "d"].iter().map(|x| x.to_string()).collect();
-        assert_eq!(lin, linearize(&s2, &commits), "independent of input order");
-    }
-
-    #[test]
-    fn plan_roundtrip_and_forward_reference_rejected() {
-        let id = PIdent {
-            name: "N".into(),
-            email: "e@x".into(),
-            time: 1,
-            tz: 60,
-        };
-        let mut e = Entry {
-            old_oid: "o".into(),
-            parents: vec![Parent::Base("b".into())],
-            author: id.clone(),
-            committer: id,
-            message_b64: String::new(),
-        };
-        e.set_message(b"hi \xff\n");
-        let mut p = Plan {
-            version: PLAN_VERSION,
-            branch_ref: "refs/heads/main".into(),
-            tip_oid: "o".into(),
-            signing: Signing::Strip,
-            entries: vec![e.clone()],
-        };
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("p.json");
-        p.save(&path).unwrap();
-        let q = Plan::load(&path).unwrap();
-        assert_eq!(q.entries[0].message().unwrap(), b"hi \xff\n");
-        assert_eq!(q.branch_name(), "main");
-        p.entries[0].parents = vec![Parent::In(0)];
-        p.save(&path).unwrap();
-        assert!(Plan::load(&path).is_err());
-    }
 }

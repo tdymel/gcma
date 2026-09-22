@@ -4,8 +4,9 @@ use std::os::unix::fs::PermissionsExt;
 
 use crate::apply::apply;
 use crate::domain::error::{Error, Result};
+use crate::domain::history::commit::is_zero_oid;
 use crate::domain::settings::{Config, HookMode};
-use crate::git::{Git, is_zero_oid};
+use crate::git::Git;
 use crate::plan::{PlanOptions, RangeSpec, build_plan};
 
 const MARKER: &str = "ghma-managed-hook";

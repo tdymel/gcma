@@ -6,10 +6,10 @@ use chrono::TimeZone;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::error::{Error, Result};
+use crate::domain::history::plan::Plan;
 use crate::domain::settings::Config;
 use crate::domain::text::messages;
 use crate::git::Git;
-use crate::plan::Plan;
 
 #[derive(Debug, Serialize)]
 struct Row<'a> {
@@ -215,8 +215,8 @@ pub fn import(plan: &mut Plan, reply: &str, cfg: &Config) -> Result<ImportReport
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::history::plan::{Entry, PIdent, PLAN_VERSION, Parent};
     use crate::domain::settings::Signing;
-    use crate::plan::{Entry, PIdent, PLAN_VERSION, Parent};
 
     fn plan_with(msgs: &[&str]) -> Plan {
         let id = PIdent {

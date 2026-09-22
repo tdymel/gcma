@@ -4,13 +4,14 @@ use std::path::{Path, PathBuf};
 use clap::{Args, Parser, Subcommand};
 
 use crate::adapters::config_file::{self, CONFIG_FILE, starter_config};
+use crate::adapters::plan_file;
 use crate::apply::{apply, list_backups, prune, restore};
 use crate::domain::error::{Error, Result};
 use crate::domain::settings::{Backend, Config};
 use crate::git::Git;
 use crate::hook;
 use crate::llm;
-use crate::plan::{Built, Plan, PlanOptions, build_plan, render};
+use crate::plan::{Built, PlanOptions, build_plan, render};
 
 #[derive(Parser)]
 #[command(
@@ -236,7 +237,7 @@ fn run(cli: Cli) -> Result<()> {
             let built = build_plan(&git, &cfg, &opts(&range, false))?;
             print_plan(&git, &built)?;
             if let Some(out) = out {
-                built.plan.save(&out)?;
+                plan_file::save(&built.plan, &out)?;
                 println!("plan written to {}", out.display());
             }
             if check && !built.plan.entries.is_empty() {
@@ -249,7 +250,7 @@ fn run(cli: Cli) -> Result<()> {
         Cmd::Apply { range, plan } => {
             let cfg = setup(&mut git, &cli.config, cli.backend)?;
             let plan = match plan {
-                Some(p) => Plan::load(&p)?,
+                Some(p) => plan_file::load(&p)?,
                 None => {
                     let built = build_plan(&git, &cfg, &opts(&range, true))?;
                     for w in &built.warnings {
@@ -280,7 +281,7 @@ fn run(cli: Cli) -> Result<()> {
         } => {
             let cfg = setup(&mut git, &cli.config, cli.backend)?;
             let plan = match plan {
-                Some(p) => Plan::load(&p)?,
+                Some(p) => plan_file::load(&p)?,
                 None => build_plan(&git, &cfg, &opts(&range, false))?.plan,
             };
             let (prelude, rows) = llm::export(&git, &plan, batch, offset)?;
@@ -291,7 +292,7 @@ fn run(cli: Cli) -> Result<()> {
         }
         Cmd::Import { plan, out, reply } => {
             let cfg = setup(&mut git, &cli.config, cli.backend)?;
-            let mut p = Plan::load(&plan)?;
+            let mut p = plan_file::load(&plan)?;
             let text = if reply == "-" {
                 let mut s = String::new();
                 std::io::stdin().read_to_string(&mut s)?;
@@ -302,7 +303,7 @@ fn run(cli: Cli) -> Result<()> {
             };
             let rep = llm::import(&mut p, &text, &cfg)?;
             let dest = out.unwrap_or(plan);
-            p.save(&dest)?;
+            plan_file::save(&p, &dest)?;
             println!(
                 "imported {} message(s) ({} unchanged); plan saved to {}",
                 rep.changed,

@@ -3,9 +3,11 @@
 use std::collections::HashMap;
 
 use crate::domain::error::{Error, Result};
+use crate::domain::history::commit::{Commit, NewCommit, SIGNATURE_HEADERS};
+use crate::domain::history::plan::{Parent, Plan};
 use crate::domain::settings::Signing;
-use crate::git::{Commit, Git, NewCommit, SIGNATURE_HEADERS};
-use crate::plan::{Parent, Plan, check_preconditions};
+use crate::git::Git;
+use crate::plan::check_preconditions;
 
 pub const BACKUP_PREFIX: &str = "refs/ghma/backup/";
 /// Where a forced restore parks the tip it discards, so no commit loses its last reference.

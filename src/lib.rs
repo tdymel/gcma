@@ -4,7 +4,6 @@
 pub mod adapters;
 pub mod apply;
 pub mod cli;
-pub mod conform;
 pub mod domain;
 pub mod git;
 pub mod hook;
