@@ -47,6 +47,27 @@ pub trait CommitStore {
     fn write_commit(&self, commit: &NewCommit, signing: Signing) -> Result<String>;
 }
 
+/// One entry of a tree object.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeEntry {
+    /// Octal mode as git prints it (`100644`, `040000`, `120000`, `160000`, ...).
+    pub mode: String,
+    /// Raw name bytes (names need not be UTF-8).
+    pub name: Vec<u8>,
+    pub oid: String,
+    /// A subtree (as opposed to a file, symlink or submodule).
+    pub is_tree: bool,
+}
+
+/// Trees and blobs, needed when the content of commits changes (path rules).
+pub trait TreeStore {
+    fn read_tree(&self, oid: &str) -> Result<Vec<TreeEntry>>;
+    /// Writes a tree; the order of `entries` does not matter.
+    fn write_tree(&self, entries: &[TreeEntry]) -> Result<String>;
+    fn read_blob(&self, oid: &str) -> Result<Vec<u8>>;
+    fn write_blob(&self, data: &[u8]) -> Result<String>;
+}
+
 /// Named references and the transaction that moves them.
 pub trait RefStore {
     fn current_branch_ref(&self) -> Result<Option<String>>;
@@ -86,9 +107,14 @@ pub trait WorkTree {
     fn index_dirty(&self) -> Result<bool>;
     /// Name of a rebase/merge/cherry-pick/revert in progress, if any.
     fn operation_in_progress(&self) -> Result<Option<&'static str>>;
+    /// A file of the working copy (path relative to its root); `None` when it does not exist.
+    fn read_file(&self, rel: &str) -> Result<Option<Vec<u8>>>;
+    fn write_file(&self, rel: &str, data: &[u8]) -> Result<()>;
+    /// Makes the index match `HEAD`; the working copy is not touched.
+    fn reset_index_to_head(&self) -> Result<()>;
 }
 
 /// Everything a use case may ask of a repository.
-pub trait Repository: CommitStore + RefStore + History + WorkTree {}
+pub trait Repository: CommitStore + TreeStore + RefStore + History + WorkTree {}
 
-impl<T: CommitStore + RefStore + History + WorkTree> Repository for T {}
+impl<T: CommitStore + TreeStore + RefStore + History + WorkTree> Repository for T {}

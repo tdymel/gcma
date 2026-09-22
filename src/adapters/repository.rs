@@ -5,7 +5,9 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::git_cli::GitCli;
-use crate::application::ports::{CommitStore, History, RefStore, RefUpdate, RevRange, WorkTree};
+use crate::application::ports::{
+    CommitStore, History, RefStore, RefUpdate, RevRange, TreeEntry, TreeStore, WorkTree,
+};
 #[cfg(not(feature = "gix"))]
 use crate::domain::error::Error;
 use crate::domain::error::Result;
@@ -73,6 +75,21 @@ impl CommitStore for GitRepository {
             (Some(o), Signing::Strip) => o.write_commit(commit, signing),
             _ => self.cli.write_commit(commit, signing),
         }
+    }
+}
+
+impl TreeStore for GitRepository {
+    fn read_tree(&self, oid: &str) -> Result<Vec<TreeEntry>> {
+        self.cli.read_tree(oid)
+    }
+    fn write_tree(&self, entries: &[TreeEntry]) -> Result<String> {
+        self.cli.write_tree(entries)
+    }
+    fn read_blob(&self, oid: &str) -> Result<Vec<u8>> {
+        self.cli.read_blob(oid)
+    }
+    fn write_blob(&self, data: &[u8]) -> Result<String> {
+        self.cli.write_blob(data)
     }
 }
 
@@ -145,5 +162,14 @@ impl WorkTree for GitRepository {
     }
     fn operation_in_progress(&self) -> Result<Option<&'static str>> {
         self.cli.operation_in_progress()
+    }
+    fn read_file(&self, rel: &str) -> Result<Option<Vec<u8>>> {
+        self.cli.read_file(rel)
+    }
+    fn write_file(&self, rel: &str, data: &[u8]) -> Result<()> {
+        self.cli.write_file(rel, data)
+    }
+    fn reset_index_to_head(&self) -> Result<()> {
+        self.cli.reset_index_to_head()
     }
 }
