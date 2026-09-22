@@ -9,6 +9,7 @@ use crate::application::ports::{RefUpdate, Repository};
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::{NewCommit, SIGNATURE_HEADERS};
 use crate::domain::history::plan::{Parent, Plan};
+use crate::domain::settings::Config;
 
 #[derive(Debug)]
 pub struct ApplyReport {
@@ -33,11 +34,38 @@ fn noop(rewritten: usize) -> ApplyReport {
     }
 }
 
+/// A plan from a file must carry the path rules of the current config: it can neither bring its
+/// own nor drop them.
+pub fn ensure_plan_matches_config(plan: &Plan, cfg: &Config) -> Result<()> {
+    let in_plan = plan.paths.as_ref().map(|p| p.exclude.as_slice());
+    let in_config = (!cfg.paths.exclude.is_empty()).then_some(cfg.paths.exclude.as_slice());
+    if in_plan != in_config {
+        return Err(Error::Usage(format!(
+            "the plan's path rules ({:?}) differ from `paths.exclude` in the config ({:?}); re-plan",
+            in_plan.unwrap_or(&[]),
+            in_config.unwrap_or(&[])
+        )));
+    }
+    Ok(())
+}
+
+const SECRETS_NOTE: &str = "paths were removed from the rewritten commits only. The originals stay reachable from \
+     refs/ghma/backup, the reflog, tags, other branches and any remote. If they held secrets, rotate \
+     them; to purge the old history run `ghma restore <id> --prune`, `git reflog expire --expire=now \
+     --all` and `git gc --prune=now`.";
+
 pub fn apply(repo: &dyn Repository, plan: &Plan, rewrite_pushed: bool) -> Result<ApplyReport> {
-    if plan.entries.is_empty() && plan.dropped.is_empty() {
+    plan.validate()?;
+    if plan.is_empty() {
         return Ok(noop(0));
     }
     check_preconditions(repo, true)?;
+    if repo.current_branch_ref()?.as_deref() != Some(plan.branch_ref.as_str()) {
+        return Err(Error::Precondition(format!(
+            "the plan is for {}, which is not the checked-out branch; check it out first",
+            plan.branch_ref
+        )));
+    }
 
     // 1. The branch must still be where the plan was made.
     let current = repo.ref_value(&plan.branch_ref)?;
@@ -162,7 +190,9 @@ pub fn apply(repo: &dyn Repository, plan: &Plan, rewrite_pushed: bool) -> Result
     let notes = match rewriter {
         Some(_) => {
             let old_tip = repo.read_commits(std::slice::from_ref(&plan.tip_oid))?;
-            sync_worktree(repo, &old_tip[0], &new_tip)
+            let mut notes = sync_worktree(repo, &old_tip[0], &new_tip);
+            notes.push(SECRETS_NOTE.into());
+            notes
         }
         None => Vec::new(),
     };

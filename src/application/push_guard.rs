@@ -26,8 +26,16 @@ pub fn run_pre_push(repo: &dyn Repository, cfg: &Config, remote: &str, stdin: &s
             continue; // detached HEAD
         };
         let tip = repo.ref_value(&branch_ref)?;
-        let is_branch =
-            local_ref == branch_ref || local_ref == "HEAD" || tip.as_deref() == Some(local_sha);
+        // A raw revision (`git push origin HEAD~1:main` reports `HEAD~1`) that is part of the
+        // branch is judged as well; named refs other than the branch are not.
+        let ancestor_of_branch = !local_ref.starts_with("refs/")
+            && tip
+                .as_deref()
+                .is_some_and(|t| repo.is_ancestor(local_sha, t).unwrap_or(false));
+        let is_branch = local_ref == branch_ref
+            || local_ref == "HEAD"
+            || tip.as_deref() == Some(local_sha)
+            || ancestor_of_branch;
         if !is_branch {
             continue;
         }
@@ -63,10 +71,10 @@ pub fn run_pre_push(repo: &dyn Repository, cfg: &Config, remote: &str, stdin: &s
             ..Default::default()
         };
         let built = build_plan(repo, cfg, &opts)?;
-        let n = built.plan.entries.len();
-        if n == 0 {
+        if built.plan.is_empty() {
             continue;
         }
+        let n = built.plan.entries.len() + built.plan.dropped.len();
         if rewrite {
             let report = apply(repo, &built.plan, false)?;
             if !report.noop {

@@ -115,7 +115,13 @@ pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Re
         &outcome,
         &commits,
     )?;
-    let warnings = rewrite_warnings(repo, cfg, &outcome.kept, &commits)?;
+    let touched: Vec<String> = outcome
+        .kept
+        .iter()
+        .chain(&outcome.dropped)
+        .cloned()
+        .collect();
+    let warnings = rewrite_warnings(repo, cfg, &touched, &commits)?;
 
     let mut plan = Plan::new(
         range.branch_ref.clone(),

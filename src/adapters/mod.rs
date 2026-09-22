@@ -3,6 +3,7 @@
 pub mod cli;
 pub mod config_file;
 mod convert;
+mod fsutil;
 pub mod git_cli;
 #[cfg(feature = "gix")]
 pub mod gix_store;

@@ -90,6 +90,10 @@ pub fn import(plan: &mut Plan, reply: &str, cfg: &Config) -> Result<ImportReport
             msg.extend_from_slice(b.as_bytes());
         }
         msg.push(b'\n');
+        if msg.iter().any(|&b| b < 0x20 && !matches!(b, b'\n' | b'\t')) {
+            bad("the message contains control characters".into());
+            continue;
+        }
         let old = plan.entries[row.i].message()?;
         if let Some(missing) = protected_trailers(&old, &cfg.messages.strip_trailers)
             .into_iter()
@@ -103,6 +107,17 @@ pub fn import(plan: &mut Plan, reply: &str, cfg: &Config) -> Result<ImportReport
         }
         if messages::strip_trailers(&msg, &cfg.messages.strip_trailers) != msg {
             bad("the message contains a trailer that `messages.strip_trailers` removes".into());
+            continue;
+        }
+        let had = messages::trailers(&old);
+        if let Some(forged) = protected_trailers(&msg, &[])
+            .into_iter()
+            .find(|t| !had.contains(t))
+        {
+            bad(format!(
+                "the trailer {:?} is new; a reply may not add Signed-off-by or Co-authored-by lines",
+                String::from_utf8_lossy(&forged)
+            ));
             continue;
         }
         // The reply cannot know about trailers the rules append; they are put back here.
@@ -243,6 +258,21 @@ mod tests {
         let mut q = plan_with(&["wip\n\nSigned-off-by: A <a@x>\n"]);
         let cfg2 = strip_cfg();
         assert!(import(&mut q, "{\"i\":0,\"t\":\"Better\"}", &cfg2).is_ok());
+    }
+
+    #[test]
+    fn replies_cannot_forge_sign_offs_or_smuggle_control_characters() {
+        let cfg = Config::default();
+        let mut p = plan_with(&["a\n"]);
+        let e = import(
+            &mut p,
+            "{\"i\":0,\"t\":\"x\",\"b\":\"Signed-off-by: Mallory <m@x>\"}",
+            &cfg,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("is new"), "{e}");
+        assert!(import(&mut p, "{\"i\":0,\"t\":\"x\\u0000y\"}", &cfg).is_err());
+        assert!(import(&mut p, "{\"i\":0,\"t\":\"x\",\"b\":\"\\u001b[2J\"}", &cfg).is_err());
     }
 
     #[test]

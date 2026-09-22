@@ -4,6 +4,13 @@ use crate::application::planning::{Built, render};
 use crate::application::ports::CommitStore;
 use crate::domain::error::Result;
 
+/// Control characters in commit data must not reach the terminal.
+pub(super) fn sanitize(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_control() && c != '\n' { '?' } else { c })
+        .collect()
+}
+
 pub(super) fn print_plan(repo: &dyn CommitStore, b: &Built) -> Result<()> {
     let p = &b.plan;
     if p.is_empty() {
@@ -36,9 +43,9 @@ pub(super) fn print_plan(repo: &dyn CommitStore, b: &Built) -> Result<()> {
             .collect::<Vec<_>>(),
     )?;
     let dropped = repo.read_commits(&p.dropped)?;
-    print!("{}", render(p, &old, &dropped));
+    print!("{}", sanitize(&render(p, &old, &dropped)));
     for w in &b.warnings {
-        println!("warning: {w}");
+        println!("warning: {}", sanitize(w));
     }
     Ok(())
 }

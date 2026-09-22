@@ -1,6 +1,7 @@
 //! `WorkTree` over `rev-parse`, `for-each-ref` and `diff --cached`.
 
 use super::runner::GitCli;
+use crate::adapters::fsutil;
 use crate::application::ports::WorkTree;
 use crate::domain::error::Result;
 
@@ -39,15 +40,15 @@ impl WorkTree for GitCli {
     }
 
     fn read_file(&self, rel: &str) -> Result<Option<Vec<u8>>> {
-        match std::fs::read(self.dir().join(rel)) {
-            Ok(b) => Ok(Some(b)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e.into()),
-        }
+        fsutil::read_regular(&self.dir().join(rel))
     }
 
     fn write_file(&self, rel: &str, data: &[u8]) -> Result<()> {
-        Ok(std::fs::write(self.dir().join(rel), data)?)
+        fsutil::write_regular(&self.dir().join(rel), data)
+    }
+
+    fn remove_file(&self, rel: &str) -> Result<()> {
+        fsutil::remove_regular(&self.dir().join(rel))
     }
 
     fn reset_index_to_head(&self) -> Result<()> {

@@ -172,6 +172,9 @@ impl WorkTree for GitRepository {
     fn write_file(&self, rel: &str, data: &[u8]) -> Result<()> {
         self.cli.write_file(rel, data)
     }
+    fn remove_file(&self, rel: &str) -> Result<()> {
+        self.cli.remove_file(rel)
+    }
     fn reset_index_to_head(&self) -> Result<()> {
         self.cli.reset_index_to_head()
     }

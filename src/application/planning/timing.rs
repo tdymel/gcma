@@ -55,6 +55,9 @@ impl Schedule<'_> {
         let Some(s) = &self.cfg.schedule else {
             return Ok(Vec::new());
         };
+        if count == 0 {
+            return Ok(Vec::new());
+        }
         let in_suffix: HashSet<&String> = linear.iter().collect();
         let from = self.cfg.from_utc()?;
         let floor: i64 = linear

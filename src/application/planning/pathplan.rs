@@ -48,7 +48,7 @@ pub(super) fn apply_rules(
     let tip_lost_the_patterns = cfg.paths.gitignore
         && excluded.contains(tip)
         && outcome.dropped.iter().any(|o| o == tip)
-        && !new_tip_carries_patterns(&outcome, commits, tip, &flagged);
+        && !new_tip_carries_patterns(rewriter, &outcome, commits, tip, &flagged)?;
     if tip_lost_the_patterns {
         return Ok(pass(rewriter, cfg, linear, commits, excluded, Some(tip))?.0);
     }
@@ -57,11 +57,12 @@ pub(super) fn apply_rules(
 
 /// Is the commit the branch ends up on (after dropping the tip) one with the patterns in it?
 fn new_tip_carries_patterns(
+    rewriter: &TreeRewriter,
     outcome: &PathOutcome,
     commits: &HashMap<String, Commit>,
     tip: &str,
     flagged: &HashSet<String>,
-) -> bool {
+) -> Result<bool> {
     let index: HashMap<&str, usize> = outcome
         .kept
         .iter()
@@ -73,12 +74,19 @@ fn new_tip_carries_patterns(
         .iter()
         .map(|o| (o.as_str(), commits[o].parents.as_slice()))
         .collect();
-    match resolve_parents(&commits[tip].parents, &index, &dropped).first() {
-        Some(Parent::In(i)) => {
-            outcome.trees[&outcome.kept[*i]].1 && flagged.contains(&outcome.kept[*i])
-        }
-        _ => false,
-    }
+    Ok(
+        match resolve_parents(&commits[tip].parents, &index, &dropped).first() {
+            Some(Parent::In(i)) => {
+                outcome.trees[&outcome.kept[*i]].1 && flagged.contains(&outcome.kept[*i])
+            }
+            // A commit that stays as it is carries them if its .gitignore already has them.
+            Some(Parent::Base(b)) => {
+                let tree = &commits[b].tree;
+                rewriter.with_gitignore(tree)? == *tree
+            }
+            None => false,
+        },
+    )
 }
 
 fn pass(

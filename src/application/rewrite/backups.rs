@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use super::paths::sync_worktree;
 use crate::application::planning::check_preconditions;
 use crate::application::ports::{RefUpdate, Repository};
 use crate::domain::error::{Error, Result};
@@ -69,9 +70,18 @@ fn find_backup(repo: &dyn Repository, id: &str) -> Result<Backup> {
     }
 }
 
-/// Resets the branch to the backup's old tip, only if it is still at the recorded new tip (unless forced).
-/// Returns the backup and, for a forced restore that discarded newer commits, the ref that keeps them.
-pub fn restore(repo: &dyn Repository, id: &str, force: bool) -> Result<(Backup, Option<String>)> {
+#[derive(Debug)]
+pub struct RestoreReport {
+    pub backup: Backup,
+    /// For a forced restore that discarded newer commits, the ref that keeps them.
+    pub parked: Option<String>,
+    /// Follow-ups that did not go as planned after the branch moved.
+    pub notes: Vec<String>,
+}
+
+/// Resets the branch to the backup's old tip, only if it is still at the recorded new tip (unless
+/// forced). When the content differs (path rules), the index and `.gitignore` follow the branch.
+pub fn restore(repo: &dyn Repository, id: &str, force: bool) -> Result<RestoreReport> {
     let b = find_backup(repo, id)?;
     check_preconditions(repo, true)?;
     let branch_ref = repo
@@ -108,8 +118,18 @@ pub fn restore(repo: &dyn Repository, id: &str, force: bool) -> Result<(Backup, 
         });
         parked = Some(name);
     }
+    let moved_from = repo.read_commits(std::slice::from_ref(&tip))?;
     repo.update_refs("ghma restore", &commands)?;
-    Ok((b, parked))
+    let restored = repo.read_commits(std::slice::from_ref(&b.old))?;
+    let notes = match (moved_from.first(), restored.first()) {
+        (Some(from), Some(to)) if from.tree != to.tree => sync_worktree(repo, from, &b.old),
+        _ => Vec::new(),
+    };
+    Ok(RestoreReport {
+        backup: b,
+        parked,
+        notes,
+    })
 }
 
 /// Deletes both refs of a backup (explicit only).

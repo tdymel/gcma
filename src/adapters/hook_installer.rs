@@ -3,6 +3,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use super::fsutil;
 use crate::domain::error::{Error, Result};
 
 const MARKER: &str = "ghma-managed-hook";
@@ -25,10 +26,10 @@ pub fn install(path: &Path, force: bool) -> Result<PathBuf> {
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "ghma".into());
     let script = format!(
-        "#!/bin/sh\n# {MARKER}\nGHMA='{}'\n[ -x \"$GHMA\" ] || GHMA=ghma\nexec \"$GHMA\" hook run pre-push \"$@\"\n",
+        "#!/bin/sh\n# {MARKER}\nGHMA='{}'\n[ -x \"$GHMA\" ] || {{ echo \"ghma: $GHMA is gone; reinstall the hook with: ghma hook install --force\" >&2; exit 1; }}\nexec \"$GHMA\" hook run pre-push \"$@\"\n",
         exe.replace('\'', "'\\''")
     );
-    std::fs::write(path, script)?;
+    fsutil::write_regular(path, script.as_bytes())?;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
     Ok(path.to_path_buf())
 }

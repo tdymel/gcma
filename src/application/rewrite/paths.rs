@@ -85,14 +85,17 @@ pub(super) fn check_dropped(
     Ok(())
 }
 
-/// After the branch moved: make the index follow it, and bring `.gitignore` along when the working
-/// copy's file is still the old tip's. Problems are returned as notes; the branch already moved.
+/// After the branch moved from `old_tip` to `new_tip`: make the index follow it, and bring
+/// `.gitignore` along when the working copy's file is still the old tip's. Problems are returned as
+/// notes; the branch already moved.
 pub(super) fn sync_worktree(repo: &dyn Repository, old_tip: &Commit, new_tip: &str) -> Vec<String> {
     let mut notes = Vec::new();
-    if let Err(e) = sync_gitignore(repo, old_tip, new_tip) {
-        notes.push(format!(
-            "could not update the working copy's .gitignore: {e}"
-        ));
+    match sync_gitignore(repo, old_tip, new_tip) {
+        Ok(Some(note)) => notes.push(note),
+        Ok(None) => {}
+        Err(e) => notes.push(format!(
+            "could not update the working copy's .gitignore ({e}); compare it with `git show HEAD:.gitignore`"
+        )),
     }
     if let Err(e) = repo.reset_index_to_head() {
         notes.push(format!(
@@ -111,19 +114,30 @@ fn gitignore_blob(store: &dyn TreeStore, tree: &str) -> Result<Option<Vec<u8>>> 
         .transpose()
 }
 
-fn sync_gitignore(repo: &dyn Repository, old_tip: &Commit, new_tip: &str) -> Result<()> {
+fn sync_gitignore(
+    repo: &dyn Repository,
+    old_tip: &Commit,
+    new_tip: &str,
+) -> Result<Option<String>> {
     let new_commit = repo.read_commits(&[new_tip.to_string()])?;
-    let new_tree = &new_commit[0].tree;
     let old = gitignore_blob(repo, &old_tip.tree)?;
-    let new = gitignore_blob(repo, new_tree)?;
+    let new = gitignore_blob(repo, &new_commit[0].tree)?;
     if old == new {
-        return Ok(());
+        return Ok(None);
     }
-    let Some(new) = new else { return Ok(()) };
-    if repo.read_file(GITIGNORE)? == old {
-        repo.write_file(GITIGNORE, &new)?;
+    if repo.read_file(GITIGNORE)? != old {
+        return Ok(Some(
+            "the working copy's .gitignore has local changes, so ghma left it alone; make sure it \
+             ignores the paths that were removed from history (see `git show HEAD:.gitignore`), or \
+             `git add .` would commit them again"
+                .into(),
+        ));
     }
-    Ok(())
+    match new {
+        Some(n) => repo.write_file(GITIGNORE, &n)?,
+        None => repo.remove_file(GITIGNORE)?,
+    }
+    Ok(None)
 }
 
 /// Checks the final state against the old tip, independently of how the trees were derived: no

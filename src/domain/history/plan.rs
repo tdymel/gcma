@@ -11,6 +11,11 @@ use crate::domain::settings::Signing;
 
 /// Version 2 added path rules (`paths`, `dropped`, `new_tip`, `Entry::tree`); version 1 plans
 /// are valid version 2 plans without them.
+/// A full hex object id (SHA-1 or SHA-256).
+pub fn is_oid(s: &str) -> bool {
+    matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 pub const PLAN_VERSION: u32 = 2;
 pub const OLDEST_PLAN_VERSION: u32 = 1;
 
@@ -123,6 +128,35 @@ impl Plan {
 
     /// Rejects plans that cannot be applied: only back references between entries are legal.
     pub fn validate(&self) -> Result<()> {
+        if !self.branch_ref.starts_with("refs/heads/")
+            || self.branch_ref.chars().any(|c| c.is_control() || c == ' ')
+        {
+            return Err(Error::Usage(format!(
+                "plan branch_ref {:?} is not a branch ref (refs/heads/...)",
+                self.branch_ref
+            )));
+        }
+        let oids = std::iter::once(&self.tip_oid)
+            .chain(&self.dropped)
+            .chain(self.entries.iter().map(|e| &e.old_oid))
+            .chain(self.entries.iter().filter_map(|e| e.tree.as_ref()))
+            .chain(
+                self.entries
+                    .iter()
+                    .flat_map(|e| e.parents.iter())
+                    .chain(&self.new_tip)
+                    .filter_map(|p| match p {
+                        Parent::Base(b) => Some(b),
+                        Parent::In(_) => None,
+                    }),
+            );
+        for o in oids {
+            if !is_oid(o) {
+                return Err(Error::Usage(format!(
+                    "plan contains an invalid object id {o:?}"
+                )));
+            }
+        }
         for (i, e) in self.entries.iter().enumerate() {
             for par in &e.parents {
                 if let Parent::In(j) = par

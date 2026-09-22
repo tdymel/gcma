@@ -39,8 +39,8 @@ mod tests {
             tz: 60,
         };
         let mut e = Entry {
-            old_oid: "o".into(),
-            parents: vec![Parent::Base("b".into())],
+            old_oid: "a".repeat(40),
+            parents: vec![Parent::Base("b".repeat(40))],
             author: id.clone(),
             committer: id,
             message_b64: String::new(),
@@ -51,7 +51,7 @@ mod tests {
         let mut p = Plan {
             version: PLAN_VERSION,
             branch_ref: "refs/heads/main".into(),
-            tip_oid: "o".into(),
+            tip_oid: "a".repeat(40),
             signing: Signing::Strip,
             entries: vec![e.clone()],
             paths: None,
@@ -65,6 +65,14 @@ mod tests {
         assert_eq!(q.entries[0].message().unwrap(), b"hi \xff\n");
         assert_eq!(q.branch_name(), "main");
         p.entries[0].parents = vec![Parent::In(0)];
+        save(&p, &path).unwrap();
+        assert!(load(&path).is_err());
+        // Ids and the branch ref are validated too.
+        p.entries[0].parents = vec![Parent::Base("--output=x".into())];
+        save(&p, &path).unwrap();
+        assert!(load(&path).is_err());
+        p.entries[0].parents = vec![];
+        p.branch_ref = "refs/tags/v1".into();
         save(&p, &path).unwrap();
         assert!(load(&path).is_err());
     }

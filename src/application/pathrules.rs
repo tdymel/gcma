@@ -4,8 +4,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::application::ports::{TreeEntry, TreeStore};
-use crate::domain::error::Result;
+use crate::domain::error::{Error, Result};
 use crate::domain::paths::{GITIGNORE, PathFilter, with_patterns};
+
+/// Deeper trees are refused rather than risking the stack.
+const MAX_DEPTH: usize = 512;
 
 /// Rewrites trees through a `TreeStore`. Results are memoized per (tree, directory), so the cost
 /// follows the number of distinct trees, not the number of commits.
@@ -27,7 +30,7 @@ impl<'a> TreeRewriter<'a> {
     /// `tree` without the excluded paths (the same id when nothing is excluded). Directories left
     /// empty by that disappear, as git cannot keep them.
     pub fn without_excluded(&self, tree: &str) -> Result<String> {
-        match self.walk(tree, "")? {
+        match self.walk(tree, "", 0)? {
             Some(t) => Ok(t),
             None => self.empty_tree(),
         }
@@ -72,7 +75,12 @@ impl<'a> TreeRewriter<'a> {
     }
 
     /// `None` when the directory ends up empty.
-    fn walk(&self, oid: &str, dir: &str) -> Result<Option<String>> {
+    fn walk(&self, oid: &str, dir: &str, depth: usize) -> Result<Option<String>> {
+        if depth > MAX_DEPTH {
+            return Err(Error::Precondition(format!(
+                "a directory is nested deeper than {MAX_DEPTH} levels; refusing to apply path rules"
+            )));
+        }
         let key = (oid.to_string(), dir.to_string());
         if let Some(hit) = self.memo.borrow().get(&key) {
             return Ok(hit.clone());
@@ -82,12 +90,13 @@ impl<'a> TreeRewriter<'a> {
         let mut changed = false;
         for mut e in entries {
             let path = format!("{dir}{}", String::from_utf8_lossy(&e.name));
-            if self.filter.excludes(&path, e.is_tree) {
+            // A submodule is a directory as far as patterns are concerned.
+            if self.filter.excludes(&path, e.is_tree || e.mode == "160000") {
                 changed = true;
                 continue;
             }
             if e.is_tree {
-                match self.walk(&e.oid, &format!("{path}/"))? {
+                match self.walk(&e.oid, &format!("{path}/"), depth + 1)? {
                     Some(sub) => {
                         changed |= sub != e.oid;
                         e.oid = sub;

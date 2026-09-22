@@ -112,6 +112,7 @@ pub trait WorkTree {
     /// A file of the working copy (path relative to its root); `None` when it does not exist.
     fn read_file(&self, rel: &str) -> Result<Option<Vec<u8>>>;
     fn write_file(&self, rel: &str, data: &[u8]) -> Result<()>;
+    fn remove_file(&self, rel: &str) -> Result<()>;
     /// Makes the index match `HEAD`; the working copy is not touched.
     fn reset_index_to_head(&self) -> Result<()>;
 }

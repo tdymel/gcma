@@ -81,6 +81,11 @@ impl Config {
             }
             parse_days(&s.days)?;
             parse_hours(&s.hours)?;
+            if !matches!(self.to.as_deref(), None | Some("now"))
+                && self.resolve_to(0)? <= self.from_utc()?
+            {
+                return bad("`to` is not after `from`".into());
+            }
         }
         if self.from.is_some() {
             self.from_utc()?;
@@ -94,6 +99,13 @@ impl Config {
             if r.set.name.is_empty() || r.set.email.is_empty() {
                 return bad(format!(
                     "identity rule {i}: `set` needs both name and email"
+                ));
+            }
+            // These would corrupt the commit header the identity is written into.
+            let forbidden = |c: char| matches!(c, '\n' | '\r' | '\0' | '<' | '>');
+            if r.set.name.contains(forbidden) || r.set.email.contains(forbidden) {
+                return bad(format!(
+                    "identity rule {i}: name and email must not contain line breaks, NUL, `<` or `>`"
                 ));
             }
         }

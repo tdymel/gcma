@@ -11,12 +11,15 @@ use clap::Parser;
 
 use self::args::{Cli, Cmd, HookCmd, RangeArgs};
 use self::backend::open;
-use self::report::print_plan;
+use self::report::{print_plan, sanitize};
 use crate::adapters::config_file::{CONFIG_FILE, starter_config};
+use crate::adapters::fsutil;
 use crate::adapters::git_cli::GitCli;
 use crate::adapters::{hook_installer, plan_file};
 use crate::application::planning::{PlanOptions, build_plan};
-use crate::application::rewrite::{apply, list_backups, prune, restore};
+use crate::application::rewrite::{
+    apply, ensure_plan_matches_config, list_backups, prune, restore,
+};
 use crate::application::{llm, push_guard};
 use crate::domain::error::{Error, Result};
 
@@ -46,7 +49,7 @@ fn run(cli: Cli) -> Result<()> {
                     path.display()
                 )));
             }
-            std::fs::write(&path, starter_config())?;
+            fsutil::write_regular(&path, starter_config().as_bytes())?;
             println!("wrote {}", path.display());
         }
         Cmd::Plan { range, out, check } => {
@@ -60,14 +63,18 @@ fn run(cli: Cli) -> Result<()> {
             if check && !built.plan.is_empty() {
                 return Err(Error::Nonconforming(format!(
                     "{} commit(s) do not follow the rules",
-                    built.plan.entries.len()
+                    built.plan.entries.len() + built.plan.dropped.len()
                 )));
             }
         }
         Cmd::Apply { range, plan } => {
             let (repo, cfg) = open(&start, &cli.config, cli.backend)?;
             let plan = match plan {
-                Some(p) => plan_file::load(&p)?,
+                Some(p) => {
+                    let plan = plan_file::load(&p)?;
+                    ensure_plan_matches_config(&plan, &cfg)?;
+                    plan
+                }
                 None => {
                     let built = build_plan(&repo, &cfg, &opts(&range, true))?;
                     for w in &built.warnings {
@@ -110,7 +117,7 @@ fn run(cli: Cli) -> Result<()> {
                 None => build_plan(&repo, &cfg, &opts(&range, false))?.plan,
             };
             let (prelude, rows) = llm::export(&repo, &plan, batch, offset)?;
-            eprintln!("{prelude}");
+            eprintln!("{}", sanitize(&prelude));
             for r in rows {
                 println!("{r}");
             }
@@ -161,15 +168,19 @@ fn run(cli: Cli) -> Result<()> {
                 let (repo, _) = open(&start, &cli.config, cli.backend)?;
                 let b = prune(&repo, &id)?;
                 println!(
-                    "pruned backup {} (the original commits may now be garbage-collected)",
+                    "pruned backup {}. The original commits are only collected once nothing else (reflog, tags, \
+other branches) refers to them; see the README on purging history.",
                     b.id
                 );
             }
             Some(id) => {
                 let (repo, _) = open(&start, &cli.config, cli.backend)?;
-                let (b, parked) = restore(&repo, &id, force)?;
-                println!("{} restored to {}", b.branch, b.old);
-                if let Some(r) = parked {
+                let report = restore(&repo, &id, force)?;
+                println!("{} restored to {}", report.backup.branch, report.backup.old);
+                for n in &report.notes {
+                    eprintln!("warning: {n}");
+                }
+                if let Some(r) = report.parked {
                     println!(
                         "The newer commits are kept at {r}. The index and working tree were not \
                          touched and may still hold their content (inspect with `git status`)."
