@@ -155,3 +155,9 @@ GitHub Actions (`.github/workflows`): `ci.yml` runs fmt, clippy and the tests (d
 macOS) on every push and pull request, then builds a release binary. `release.yml` is optional: start it from the
 Actions tab ("Run workflow", enter the version from `Cargo.toml`) or push a `vX.Y.Z` tag. It re-runs CI, builds binaries
 for Linux and macOS (x86_64 and arm64), and creates a GitHub release with archives and checksums.
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT) at your option.
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this project, as defined
+in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

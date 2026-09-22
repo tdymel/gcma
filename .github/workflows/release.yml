@@ -94,7 +94,7 @@ jobs:
         run: |
           name="ghma-${VERSION}-${TARGET}"
           mkdir "$name"
-          cp "target/${TARGET}/release/ghma" README.md "$name/"
+          cp "target/${TARGET}/release/ghma" README.md LICENSE-MIT LICENSE-APACHE "$name/"
           tar czf "$name.tar.gz" "$name"
           shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
       - uses: actions/upload-artifact@v4

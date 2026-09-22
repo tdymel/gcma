@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.90"
 publish = false
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/tdymel/ghma"
 readme = "README.md"
 description = "git hide my ass: redistribute commit times, identities and messages on the current branch, safely"
 
