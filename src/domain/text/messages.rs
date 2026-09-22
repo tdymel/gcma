@@ -106,6 +106,57 @@ pub fn strip_trailers(msg: &[u8], keys: &[String]) -> Vec<u8> {
     out
 }
 
+/// Appends each `Key: value` line of `add` that is not already present as a trailer (compared
+/// byte-exact on the value, case-insensitive on the key). New lines join the final trailer block,
+/// or start one after a blank line. Blank or empty messages are left alone.
+pub fn add_trailers(msg: &[u8], add: &[String]) -> Vec<u8> {
+    if add.is_empty() || msg.iter().all(u8::is_ascii_whitespace) {
+        return msg.to_vec();
+    }
+    let present = trailers(msg);
+    let missing: Vec<&String> = add
+        .iter()
+        .filter(|line| {
+            let want = line.as_bytes();
+            let key = trailer_key(want).unwrap_or(b"");
+            let value = &want[(key.len() + 1).min(want.len())..];
+            !present.iter().any(|p| {
+                trailer_key(p).is_some_and(|k| k.eq_ignore_ascii_case(key))
+                    && p[k_len(p) + 1..] == *value
+            })
+        })
+        .collect();
+    if missing.is_empty() {
+        return msg.to_vec();
+    }
+    let mut out = msg.to_vec();
+    if out.last() != Some(&b'\n') {
+        out.push(b'\n');
+    }
+    if present.is_empty() {
+        // A message that ends in a blank line keeps just one separator.
+        while out.len() >= 2 && out[out.len() - 2] == b'\n' {
+            out.pop();
+        }
+        out.push(b'\n');
+    }
+    for line in missing {
+        out.extend_from_slice(line.as_bytes());
+        out.push(b'\n');
+    }
+    out
+}
+
+fn k_len(trailer: &[u8]) -> usize {
+    trailer_key(trailer).map_or(0, <[u8]>::len)
+}
+
+/// The message after the trailer rules: listed trailers dropped, wanted ones appended.
+/// Idempotent as long as no key is both stripped and added (config validation guarantees it).
+pub fn apply_trailer_rules(msg: &[u8], strip: &[String], add: &[String]) -> Vec<u8> {
+    add_trailers(&strip_trailers(msg, strip), add)
+}
+
 /// First line of a message.
 pub fn title(msg: &[u8]) -> String {
     let end = msg.iter().position(|&b| b == b'\n').unwrap_or(msg.len());
@@ -195,6 +246,54 @@ mod tests {
         let m = b"S\n\nBody\n\nSigned-off-by: a\nCo-authored-by: b\n";
         assert_eq!(trailers(m).len(), 2);
         assert!(trailers(b"S\n\nBody line only\n").is_empty());
+    }
+
+    #[test]
+    fn adds_a_trailer_block_after_the_body() {
+        let add = s(&["Assisted-By: Bot <b@x>"]);
+        assert_eq!(
+            add_trailers(b"Subject\n", &add),
+            b"Subject\n\nAssisted-By: Bot <b@x>\n"
+        );
+        assert_eq!(
+            add_trailers(b"Subject\n\nBody\n\n\n", &add),
+            b"Subject\n\nBody\n\nAssisted-By: Bot <b@x>\n"
+        );
+        assert_eq!(
+            add_trailers(b"Subject", &add),
+            b"Subject\n\nAssisted-By: Bot <b@x>\n"
+        );
+    }
+
+    #[test]
+    fn joins_an_existing_trailer_block_and_is_idempotent() {
+        let add = s(&["Assisted-By: Bot <b@x>"]);
+        let once = add_trailers(b"S\n\nBody\n\nSigned-off-by: a\n", &add);
+        assert_eq!(
+            once,
+            b"S\n\nBody\n\nSigned-off-by: a\nAssisted-By: Bot <b@x>\n"
+        );
+        assert_eq!(add_trailers(&once, &add), once);
+        // Same key, different value: both are kept.
+        let other = add_trailers(&once, &s(&["assisted-by: Other"]));
+        assert!(other.ends_with(b"assisted-by: Other\n"));
+    }
+
+    #[test]
+    fn strip_then_add_round_trips() {
+        let m = b"S\n\nCo-Authored-By: Claude <c@x>\n";
+        let out = apply_trailer_rules(m, &s(&["Co-Authored-By"]), &s(&["Assisted-By: Claude"]));
+        assert_eq!(out, b"S\n\nAssisted-By: Claude\n");
+        assert_eq!(
+            apply_trailer_rules(&out, &s(&["Co-Authored-By"]), &s(&["Assisted-By: Claude"])),
+            out
+        );
+    }
+
+    #[test]
+    fn empty_messages_are_left_alone() {
+        assert_eq!(add_trailers(b"", &s(&["A: b"])), b"");
+        assert_eq!(add_trailers(b"\n", &s(&["A: b"])), b"\n");
     }
 
     #[test]

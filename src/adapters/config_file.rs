@@ -34,7 +34,8 @@ schedule:\n\
 #   - match: { email: me@home.org }\n\
 #     set:   { name: Jane Doe, email: jane@work.com }\n\
 messages:\n\
-\x20 strip_trailers: []\n\
+\x20 strip_trailers: []     # e.g. [Co-Authored-By]\n\
+\x20 add_trailers: []       # e.g. [\"Assisted-By: Claude <noreply@anthropic.com>\"]\n\
 signing: strip          # strip | resign\n\
 hook:\n\
 \x20 mode: verify          # verify | rewrite\n"

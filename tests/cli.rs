@@ -532,6 +532,47 @@ fn trailer_stripping_is_applied_and_idempotent() {
 }
 
 #[test]
+fn trailers_can_be_swapped_and_the_result_is_stable() {
+    let r = Repo::new();
+    r.commit_at(
+        "a.txt",
+        "first\n\nbody\n\nCo-Authored-By: Bot <bot@x>",
+        1_600_000_000,
+    );
+    r.commit_at("b.txt", "second", 1_600_100_000);
+    r.config(
+        "version: 1\nmessages:\n  strip_trailers: [Co-Authored-By]\n  add_trailers: [\"Assisted-By: Bot <bot@x>\"]\n",
+    );
+    r.ghma_ok(&["apply", "--from", "root"]);
+    let first = r.git(&["log", "-1", "--format=%B", "HEAD~1"]);
+    assert!(!first.contains("Co-Authored-By"), "{first}");
+    assert!(
+        first.contains("body\n\nAssisted-By: Bot <bot@x>"),
+        "{first}"
+    );
+    let second = r.git(&["log", "-1", "--format=%B", "HEAD"]);
+    assert!(
+        second.trim_end().ends_with("Assisted-By: Bot <bot@x>"),
+        "{second}"
+    );
+    assert!(
+        r.ghma_ok(&["apply", "--from", "root"])
+            .contains("Nothing to do")
+    );
+    r.fsck();
+}
+
+#[test]
+fn a_trailer_both_stripped_and_added_is_a_config_error() {
+    let r = Repo::new();
+    r.linear(1, 1_600_000_000);
+    r.config("version: 1\nmessages:\n  strip_trailers: [Assisted-By]\n  add_trailers: [\"assisted-by: x\"]\n");
+    assert_eq!(Repo::code(&r.ghma(&["plan", "--from", "root"])), 2);
+    r.config("version: 1\nmessages:\n  add_trailers: [\"not a trailer\"]\n");
+    assert_eq!(Repo::code(&r.ghma(&["plan", "--from", "root"])), 2);
+}
+
+#[test]
 fn all_flag_with_nothing_to_change_is_a_clean_noop() {
     let r = Repo::new();
     r.linear(3, 1_600_000_000);

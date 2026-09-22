@@ -33,7 +33,9 @@ identity:                 # first match wins; `set` needs name and email
   - match: { email: me@home.org }
     set:   { name: Jane Doe, email: jane@work.com }
 messages:
-  strip_trailers: [Signed-off-by]
+  strip_trailers: [Signed-off-by, Co-Authored-By]   # dropped from the trailing trailer block
+  add_trailers:                                      # appended unless that exact trailer is present
+    - "Assisted-By: Claude <noreply@anthropic.com>"
 signing: strip            # strip | resign (re-sign through your git signing config)
 hook: { mode: verify }    # verify | rewrite
 ```

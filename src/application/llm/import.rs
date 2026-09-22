@@ -105,6 +105,8 @@ pub fn import(plan: &mut Plan, reply: &str, cfg: &Config) -> Result<ImportReport
             bad("the message contains a trailer that `messages.strip_trailers` removes".into());
             continue;
         }
+        // The reply cannot know about trailers the rules append; they are put back here.
+        let msg = cfg.rewrite_message(&msg);
         if msg == old {
             unchanged += 1;
         } else {

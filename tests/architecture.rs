@@ -48,7 +48,7 @@ fn layers_only_depend_inwards() {
 
 #[test]
 fn domain_is_layered_internally() {
-    // error and text are leaves; settings builds on error; scheduling on settings;
+    // error and text are leaves; settings on text and error; scheduling on settings;
     // history may use all of them.
     let rule = project_layers()
         .layer("error")
@@ -66,7 +66,7 @@ fn domain_is_layered_internally() {
         .where_layer("text")
         .may_only_depend_on_layers(&["error"])
         .where_layer("settings")
-        .may_only_depend_on_layers(&["error"])
+        .may_only_depend_on_layers(&["text", "error"])
         .where_layer("scheduling")
         .may_only_depend_on_layers(&["settings", "error"])
         .where_layer("history")

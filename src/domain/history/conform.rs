@@ -5,7 +5,6 @@ use std::collections::{HashMap, HashSet};
 use super::commit::{Commit, RawIdent};
 use crate::domain::scheduling::Window;
 use crate::domain::settings::{Config, Signing};
-use crate::domain::text::messages;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reason {
@@ -61,7 +60,7 @@ pub fn reasons(c: &Commit, ctx: &Ctx) -> Vec<Reason> {
     if !ident_conforms(ctx.cfg, &c.author) || !ident_conforms(ctx.cfg, &c.committer) {
         out.push(Reason::Identity);
     }
-    if messages::strip_trailers(&c.message, &ctx.cfg.messages.strip_trailers) != c.message {
+    if ctx.cfg.rewrite_message(&c.message) != c.message {
         out.push(Reason::Message);
     }
     out.dedup();
@@ -129,6 +128,7 @@ mod tests {
         Config {
             messages: MessagesCfg {
                 strip_trailers: vec!["Signed-off-by".into()],
+                ..MessagesCfg::default()
             },
             ..Config::default()
         }
@@ -178,6 +178,27 @@ mod tests {
             raw: b"gpgsig x".to_vec(),
         });
         assert_eq!(reasons(&signed, &ctx), vec![Reason::Signature]);
+    }
+
+    #[test]
+    fn missing_added_trailer_is_nonconforming() {
+        let c = Config {
+            messages: MessagesCfg {
+                add_trailers: vec!["Assisted-By: Bot".into()],
+                ..MessagesCfg::default()
+            },
+            ..Config::default()
+        };
+        let times = HashMap::new();
+        let ctx = Ctx {
+            cfg: &c,
+            window: None,
+            times: &times,
+        };
+        let bare = commit("a", &[], 0, 0, "N", "n@x", "s\n");
+        assert_eq!(reasons(&bare, &ctx), vec![Reason::Message]);
+        let done = commit("b", &[], 0, 0, "N", "n@x", "s\n\nAssisted-By: Bot\n");
+        assert!(reasons(&done, &ctx).is_empty());
     }
 
     #[test]

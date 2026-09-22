@@ -7,7 +7,6 @@ use crate::domain::history::commit::{Commit, RawIdent};
 use crate::domain::history::plan::{Entry, PIdent, Parent};
 use crate::domain::scheduling::Window;
 use crate::domain::settings::Config;
-use crate::domain::text::messages;
 
 fn utf8(b: &[u8], what: &str, oid: &str) -> Result<String> {
     String::from_utf8(b.to_vec()).map_err(|_| {
@@ -60,10 +59,7 @@ pub(super) fn build_entries(
             committer: mapped(&c.committer)?,
             message_b64: String::new(),
         };
-        e.set_message(&messages::strip_trailers(
-            &c.message,
-            &cfg.messages.strip_trailers,
-        ));
+        e.set_message(&cfg.rewrite_message(&c.message));
         entries.push(e);
     }
     Ok(entries)

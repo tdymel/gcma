@@ -8,6 +8,7 @@ use chrono_tz::Tz;
 use serde::Deserialize;
 
 use crate::domain::error::{Error, Result};
+use crate::domain::text::messages;
 
 use calendar::parse_instant;
 pub use calendar::{parse_days, parse_hours, weekday_index};
@@ -108,7 +109,38 @@ impl Config {
                 return bad(format!("messages.strip_trailers: invalid key {k:?}"));
             }
         }
+        for line in &self.messages.add_trailers {
+            let Some(key) = messages::trailer_key(line.as_bytes()) else {
+                return bad(format!(
+                    "messages.add_trailers: {line:?} is not a `Key: value` trailer"
+                ));
+            };
+            if line.contains(['\n', '\r']) || line[key.len() + 1..].trim().is_empty() {
+                return bad(format!(
+                    "messages.add_trailers: {line:?} must be a single line with a value"
+                ));
+            }
+            if self
+                .messages
+                .strip_trailers
+                .iter()
+                .any(|s| s.as_bytes().eq_ignore_ascii_case(key))
+            {
+                return bad(format!(
+                    "messages.add_trailers: {line:?} would be removed again by `strip_trailers`"
+                ));
+            }
+        }
         Ok(())
+    }
+
+    /// The message after the configured trailer rules.
+    pub fn rewrite_message(&self, msg: &[u8]) -> Vec<u8> {
+        messages::apply_trailer_rules(
+            msg,
+            &self.messages.strip_trailers,
+            &self.messages.add_trailers,
+        )
     }
 
     pub fn tz(&self) -> Result<Tz> {

@@ -62,6 +62,9 @@ pub struct IdentityRule {
 pub struct MessagesCfg {
     #[serde(default)]
     pub strip_trailers: Vec<String>,
+    /// Full `Key: value` lines appended when no such trailer is present yet.
+    #[serde(default)]
+    pub add_trailers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
