@@ -141,6 +141,59 @@ impl Repo {
         self.git(&["rev-parse", "HEAD"])
     }
 
+    /// Like `commit_as`, with a name and email that need not be UTF-8. `git commit` recodes
+    /// identities, so the object is written by hand.
+    pub fn commit_as_bytes(
+        &self,
+        name: &str,
+        msg: &str,
+        unix: i64,
+        who: &[u8],
+        email: &[u8],
+    ) -> String {
+        use std::io::Write;
+        self.write(name, &format!("content of {name}\n"));
+        self.git(&["add", name]);
+        let tree = self.git(&["write-tree"]);
+        let mut raw = format!("tree {tree}\n").into_bytes();
+        if let Some(parent) = self
+            .git_out(&["rev-parse", "-q", "--verify", "HEAD"])
+            .status
+            .success()
+            .then(|| self.git(&["rev-parse", "HEAD"]))
+        {
+            raw.extend(format!("parent {parent}\n").bytes());
+        }
+        for role in ["author", "committer"] {
+            raw.extend(format!("{role} ").bytes());
+            raw.extend_from_slice(who);
+            raw.extend(b" <");
+            raw.extend_from_slice(email);
+            raw.extend(format!("> {unix} +0000\n").bytes());
+        }
+        raw.extend(format!("\n{msg}\n").bytes());
+        let mut child = self
+            .cmd("git")
+            .args([
+                "hash-object",
+                "-t",
+                "commit",
+                "-w",
+                "--literally",
+                "--stdin",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(&raw).unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success());
+        let oid = String::from_utf8(out.stdout).unwrap().trim().to_string();
+        self.git(&["update-ref", "HEAD", &oid]);
+        oid
+    }
+
     /// Commit several files (path, content) at once, as the default identity.
     pub fn commit_files(&self, files: &[(&str, &str)], msg: &str, unix: i64) -> String {
         for (name, content) in files {
