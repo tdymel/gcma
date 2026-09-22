@@ -83,7 +83,7 @@ pub fn verify(
                 "identity/date of entry {i} differs from the plan"
             )));
         }
-        if n.message != e.message()? {
+        if n.message != e.message {
             return Err(verify_fail(format!(
                 "message of entry {i} differs from the plan"
             )));

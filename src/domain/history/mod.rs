@@ -5,3 +5,4 @@ pub mod conform;
 pub mod linearize;
 pub mod parents;
 pub mod plan;
+pub mod wire;

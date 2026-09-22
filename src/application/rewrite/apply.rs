@@ -131,15 +131,15 @@ pub fn apply(
     let mut new_oids: Vec<String> = Vec::with_capacity(plan.entries.len());
     for ((e, o), tree) in plan.entries.iter().zip(&old).zip(&trees) {
         let parents: Vec<String> = e.parents.iter().map(|p| p.resolve(&new_oids)).collect();
-        let message = e.message()?;
-        let message_changed = message != o.message;
+        let message = &e.message;
+        let message_changed = *message != o.message;
         let extra = o
             .extra
             .iter()
             .filter(|h| !h.is_invalidated_by_rewrite())
             // A rewritten (UTF-8) message no longer matches a legacy `encoding` header.
             .filter(|h| {
-                !(h.key == "encoding" && message_changed && std::str::from_utf8(&message).is_ok())
+                !(h.key == "encoding" && message_changed && std::str::from_utf8(message).is_ok())
             })
             .collect();
         let (author, committer) = (e.author.to_raw(), e.committer.to_raw());
@@ -149,7 +149,7 @@ pub fn apply(
             author: &author,
             committer: &committer,
             extra,
-            message: &message,
+            message,
         };
         new_oids.push(repo.write_commit(&nc, plan.signing)?);
     }

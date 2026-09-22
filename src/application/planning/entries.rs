@@ -3,10 +3,11 @@
 use std::collections::HashMap;
 
 use super::pathplan::PathOutcome;
-use crate::domain::error::{Error, Result};
+use crate::domain::error::Result;
 use crate::domain::history::commit::{Commit, RawIdent};
 use crate::domain::history::parents::resolve_parents;
 use crate::domain::history::plan::{Entry, PIdent};
+use crate::domain::history::wire::Text;
 use crate::domain::scheduling::Window;
 use crate::domain::settings::Config;
 
@@ -20,14 +21,6 @@ pub(super) fn dropped_parents<'a>(
         .iter()
         .map(|o| (o.as_str(), commits[o].parents.as_slice()))
         .collect()
-}
-
-fn utf8(b: &[u8], what: &str, oid: &str) -> Result<String> {
-    String::from_utf8(b.to_vec()).map_err(|_| {
-        Error::Precondition(format!(
-            "commit {oid}: non-UTF-8 {what} in a commit that must be rewritten"
-        ))
-    })
 }
 
 /// One entry per commit of `linear` (parents first). In schedule mode `new_times[i]` is the time
@@ -50,9 +43,18 @@ pub(super) fn build_entries(
     for (i, oid) in linear.iter().enumerate() {
         let c = &commits[oid];
         let mapped = |id: &RawIdent| -> Result<PIdent> {
-            let name = utf8(&id.name, "identity name", oid)?;
-            let email = utf8(&id.email, "identity email", oid)?;
-            let (name, email) = cfg.map_identity(&name, &email).unwrap_or((name, email));
+            // Identity rules match text; a name or email that is not UTF-8 is carried over as it is.
+            let mapped = match (
+                std::str::from_utf8(&id.name),
+                std::str::from_utf8(&id.email),
+            ) {
+                (Ok(n), Ok(e)) => cfg.map_identity(n, e),
+                _ => None,
+            };
+            let (name, email) = match mapped {
+                Some((n, e)) => (Text::from(n), Text::from(e)),
+                None => (Text::from_bytes(&id.name), Text::from_bytes(&id.email)),
+            };
             let (time, tz) = match window {
                 Some(w) => (new_times[i], w.tz_offset_minutes(new_times[i])),
                 None => (id.time, id.tz),
@@ -69,16 +71,15 @@ pub(super) fn build_entries(
             Some((t, g)) => (Some(t.clone()), *g),
             None => (None, false),
         };
-        let mut e = Entry {
+        let e = Entry {
             old_oid: oid.clone(),
             parents,
             author: mapped(&c.author)?,
             committer: mapped(&c.committer)?,
-            message_b64: String::new(),
+            message: cfg.rewrite_message(&c.message),
             tree,
             gitignore,
         };
-        e.set_message(&cfg.rewrite_message(&c.message));
         entries.push(e);
     }
     Ok(entries)

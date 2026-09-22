@@ -15,7 +15,7 @@ pub(super) fn render(plan: &Plan, old: &[Commit], dropped: &[Commit]) -> String 
     };
     let mut s = String::new();
     for (e, o) in plan.entries.iter().zip(old) {
-        let title = messages::title(&e.message().unwrap_or_default());
+        let title = messages::title(&e.message);
         let who_old = format!(
             "{} <{}>",
             String::from_utf8_lossy(&o.author.name),

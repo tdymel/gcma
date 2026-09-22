@@ -94,8 +94,8 @@ pub fn import(plan: &mut Plan, reply: &str, cfg: &Config) -> Result<ImportReport
             bad("the message contains control characters".into());
             continue;
         }
-        let old = plan.entries[row.i].message()?;
-        if let Some(missing) = protected_trailers(&old, &cfg.messages.strip_trailers)
+        let old = &plan.entries[row.i].message;
+        if let Some(missing) = protected_trailers(old, &cfg.messages.strip_trailers)
             .into_iter()
             .find(|t| !msg.split(|&c| c == b'\n').any(|l| l == t.as_slice()))
         {
@@ -109,7 +109,7 @@ pub fn import(plan: &mut Plan, reply: &str, cfg: &Config) -> Result<ImportReport
             bad("the message contains a trailer that `messages.strip_trailers` removes".into());
             continue;
         }
-        let had = messages::trailers(&old);
+        let had = messages::trailers(old);
         if let Some(forged) = protected_trailers(&msg, &[])
             .into_iter()
             .find(|t| !had.contains(t))
@@ -122,7 +122,7 @@ pub fn import(plan: &mut Plan, reply: &str, cfg: &Config) -> Result<ImportReport
         }
         // The reply cannot know about trailers the rules append; they are put back here.
         let msg = cfg.rewrite_message(&msg);
-        if msg == old {
+        if msg == *old {
             unchanged += 1;
         } else {
             updates.push((row.i, msg));
@@ -139,7 +139,7 @@ pub fn import(plan: &mut Plan, reply: &str, cfg: &Config) -> Result<ImportReport
     }
     let changed = updates.len();
     for (i, m) in updates {
-        plan.entries[i].set_message(&m);
+        plan.entries[i].message = m;
     }
     Ok(ImportReport {
         changed,
@@ -163,22 +163,18 @@ mod tests {
         let entries = msgs
             .iter()
             .enumerate()
-            .map(|(i, m)| {
-                let mut e = Entry {
-                    old_oid: format!("o{i}"),
-                    parents: if i == 0 {
-                        vec![]
-                    } else {
-                        vec![Parent::In(i - 1)]
-                    },
-                    author: id.clone(),
-                    committer: id.clone(),
-                    message_b64: String::new(),
-                    tree: None,
-                    gitignore: false,
-                };
-                e.set_message(m.as_bytes());
-                e
+            .map(|(i, m)| Entry {
+                old_oid: format!("o{i}"),
+                parents: if i == 0 {
+                    vec![]
+                } else {
+                    vec![Parent::In(i - 1)]
+                },
+                author: id.clone(),
+                committer: id.clone(),
+                message: m.as_bytes().to_vec(),
+                tree: None,
+                gitignore: false,
             })
             .collect();
         Plan {
@@ -200,7 +196,7 @@ mod tests {
     }
 
     fn msg(p: &Plan, i: usize) -> String {
-        String::from_utf8(p.entries[i].message().unwrap()).unwrap()
+        String::from_utf8(p.entries[i].message.clone()).unwrap()
     }
 
     #[test]

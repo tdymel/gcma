@@ -24,9 +24,3 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
-
-impl From<base64::DecodeError> for Error {
-    fn from(e: base64::DecodeError) -> Self {
-        Error::Usage(format!("base64: {e}"))
-    }
-}

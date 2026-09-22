@@ -66,8 +66,7 @@ pub fn export(
         .skip(offset)
         .zip(stats)
     {
-        let msg = e.message()?;
-        let text = String::from_utf8_lossy(&msg);
+        let text = String::from_utf8_lossy(&e.message);
         let who = format!("{} <{}>", e.author.name, e.author.email);
         let date = chrono::FixedOffset::east_opt(e.committer.tz * 60)
             .and_then(|o| o.timestamp_opt(e.committer.time, 0).single())

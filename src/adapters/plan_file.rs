@@ -38,16 +38,15 @@ mod tests {
             time: 1,
             tz: 60,
         };
-        let mut e = Entry {
+        let e = Entry {
             old_oid: "a".repeat(40),
             parents: vec![Parent::Base("b".repeat(40))],
             author: id.clone(),
             committer: id,
-            message_b64: String::new(),
+            message: b"hi \xff\n".to_vec(),
             tree: None,
             gitignore: false,
         };
-        e.set_message(b"hi \xff\n");
         let mut p = Plan {
             version: PLAN_VERSION,
             branch_ref: "refs/heads/main".into(),
@@ -62,7 +61,7 @@ mod tests {
         let path = dir.path().join("p.json");
         save(&p, &path).unwrap();
         let q = load(&path).unwrap();
-        assert_eq!(q.entries[0].message().unwrap(), b"hi \xff\n");
+        assert_eq!(q.entries[0].message, b"hi \xff\n");
         assert_eq!(q.branch_name(), "main");
         p.entries[0].parents = vec![Parent::In(0)];
         save(&p, &path).unwrap();
@@ -75,5 +74,21 @@ mod tests {
         p.branch_ref = "refs/tags/v1".into();
         save(&p, &path).unwrap();
         assert!(load(&path).is_err());
+    }
+
+    #[test]
+    fn utf8_text_is_a_plain_string_and_other_bytes_are_base64() {
+        use crate::domain::history::wire::Text;
+        let plain = serde_json::to_string(&Text::from("Jörg")).unwrap();
+        assert_eq!(plain, "\"Jörg\"");
+        let raw = Text::from_bytes(b"J\xf6rg");
+        let json = serde_json::to_string(&raw).unwrap();
+        assert_eq!(json, "{\"base64\":\"SvZyZw==\"}");
+        assert_eq!(serde_json::from_str::<Text>(&json).unwrap(), raw);
+        assert_eq!(
+            serde_json::from_str::<Text>(&plain).unwrap().as_str(),
+            Some("Jörg")
+        );
+        assert!(serde_json::from_str::<Text>("{\"base64\":\"%%\"}").is_err());
     }
 }

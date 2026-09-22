@@ -1,16 +1,13 @@
 //! The plan: the seam between planning and applying. Entries list only the commits to rewrite,
 //! parents first.
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD as B64;
 use serde::{Deserialize, Serialize};
 
 use super::commit::RawIdent;
+use super::wire::{Text, base64_bytes};
 use crate::domain::error::{Error, Result};
 use crate::domain::settings::Signing;
 
-/// Version 2 added path rules (`paths`, `dropped`, `new_tip`, `Entry::tree`); version 1 plans
-/// are valid version 2 plans without them.
 /// A full hex object id (SHA-1 or SHA-256).
 pub fn is_oid(s: &str) -> bool {
     matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_hexdigit())
@@ -19,13 +16,15 @@ pub fn is_oid(s: &str) -> bool {
 /// Where local branches live.
 pub const HEADS_PREFIX: &str = "refs/heads/";
 
+/// Version 2 added path rules (`paths`, `dropped`, `new_tip`, `Entry::tree`); version 1 plans
+/// are valid version 2 plans without them.
 pub const PLAN_VERSION: u32 = 2;
 pub const OLDEST_PLAN_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PIdent {
-    pub name: String,
-    pub email: String,
+    pub name: Text,
+    pub email: Text,
     pub time: i64,
     /// UTC offset in minutes.
     pub tz: i32,
@@ -34,8 +33,8 @@ pub struct PIdent {
 impl PIdent {
     pub fn to_raw(&self) -> RawIdent {
         RawIdent {
-            name: self.name.clone().into_bytes(),
-            email: self.email.clone().into_bytes(),
+            name: self.name.as_bytes().to_vec(),
+            email: self.email.as_bytes().to_vec(),
             time: self.time,
             tz: self.tz,
         }
@@ -68,23 +67,15 @@ pub struct Entry {
     pub parents: Vec<Parent>,
     pub author: PIdent,
     pub committer: PIdent,
-    pub message_b64: String,
+    /// The full commit message (base64 in the plan file).
+    #[serde(rename = "message_b64", with = "base64_bytes")]
+    pub message: Vec<u8>,
     /// The tree of the new commit when path rules change it; `None` keeps the old commit's tree.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tree: Option<String>,
     /// Whether `.gitignore` gets the path patterns in this commit (only with path rules).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub gitignore: bool,
-}
-
-impl Entry {
-    pub fn message(&self) -> Result<Vec<u8>> {
-        Ok(B64.decode(&self.message_b64)?)
-    }
-
-    pub fn set_message(&mut self, m: &[u8]) {
-        self.message_b64 = B64.encode(m);
-    }
 }
 
 /// The path rules a plan was made with; apply re-derives every tree from them.
