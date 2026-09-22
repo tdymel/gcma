@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use crate::config::Signing;
-use crate::error::{Error, Result};
+use crate::domain::error::{Error, Result};
+use crate::domain::settings::Signing;
 use crate::git::{Commit, Git, NewCommit, SIGNATURE_HEADERS};
 use crate::plan::{Parent, Plan, check_preconditions};
 

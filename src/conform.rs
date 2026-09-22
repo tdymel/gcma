@@ -2,10 +2,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::config::{Config, Signing};
+use crate::domain::scheduling::Window;
+use crate::domain::settings::{Config, Signing};
+use crate::domain::text::messages;
 use crate::git::{Commit, RawIdent};
-use crate::messages;
-use crate::schedule::Window;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reason {
@@ -94,6 +94,7 @@ pub fn frozen_set(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::settings::{Distribution, IdentityRule, MatchSpec, ScheduleCfg, SetSpec};
     use crate::git::Header;
 
     fn commit(
@@ -122,13 +123,13 @@ mod tests {
         }
     }
 
-    fn cfg(yaml: &str) -> Config {
-        Config::parse(yaml).unwrap()
+    fn strip_signed_off(c: &mut Config) {
+        c.messages.strip_trailers = vec!["Signed-off-by".into()];
     }
 
     #[test]
     fn without_schedule_time_never_matters() {
-        let c = cfg("version: 1\n");
+        let c = Config::default();
         let times = HashMap::new();
         let ctx = Ctx {
             cfg: &c,
@@ -140,9 +141,18 @@ mod tests {
 
     #[test]
     fn identity_and_signature_and_message() {
-        let c = cfg(
-            "version: 1\nidentity:\n  - match: {email: me@home}\n    set: {name: Jane, email: j@work}\nmessages:\n  strip_trailers: [Signed-off-by]\n",
-        );
+        let mut c = Config::default();
+        c.identity = vec![IdentityRule {
+            match_: MatchSpec {
+                name: None,
+                email: Some("me@home".into()),
+            },
+            set: SetSpec {
+                name: "Jane".into(),
+                email: "j@work".into(),
+            },
+        }];
+        strip_signed_off(&mut c);
         let times = HashMap::new();
         let ctx = Ctx {
             cfg: &c,
@@ -164,7 +174,8 @@ mod tests {
 
     #[test]
     fn resign_requires_signature() {
-        let c = cfg("version: 1\nsigning: resign\n");
+        let mut c = Config::default();
+        c.signing = Signing::Resign;
         let times = HashMap::new();
         let ctx = Ctx {
             cfg: &c,
@@ -182,12 +193,21 @@ mod tests {
 
     #[test]
     fn schedule_rules() {
-        let c =
-            cfg("version: 1\nfrom: 2026-04-01\nto: 2026-05-01\nschedule: {hours: '09:00-18:00'}\n");
+        let mut c = Config::default();
+        c.from = Some("2026-04-01".into());
+        c.to = Some("2026-05-01".into());
+        c.schedule = Some(ScheduleCfg {
+            days: ["mon", "tue", "wed", "thu", "fri"]
+                .map(String::from)
+                .to_vec(),
+            hours: "09:00-18:00".into(),
+            distribution: Distribution::Uniform,
+            seed: 0,
+        });
         let tz = c.tz().unwrap();
         let w = Window::build(
             tz,
-            &crate::config::parse_days(&c.schedule.as_ref().unwrap().days).unwrap(),
+            &crate::domain::settings::parse_days(&c.schedule.as_ref().unwrap().days).unwrap(),
             (540, 1080),
             c.from_utc().unwrap(),
             c.resolve_to(0).unwrap(),
@@ -224,7 +244,8 @@ mod tests {
     #[test]
     fn frozen_set_is_closed_under_ancestry() {
         // a (bad) <- b (good) ; c (good, unrelated root)
-        let c = cfg("version: 1\nmessages:\n  strip_trailers: [Signed-off-by]\n");
+        let mut c = Config::default();
+        strip_signed_off(&mut c);
         let times = HashMap::new();
         let ctx = Ctx {
             cfg: &c,

@@ -7,7 +7,8 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::error::{Error, Result};
+use crate::domain::error::{Error, Result};
+use crate::domain::settings::Backend;
 
 /// A git identity line, byte-exact.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -194,40 +195,6 @@ pub fn build_commit_buffer(c: &NewCommit) -> Vec<u8> {
 
 pub fn is_zero_oid(s: &str) -> bool {
     !s.is_empty() && s.bytes().all(|b| b == b'0')
-}
-
-/// Which implementation performs the hot object operations (batch reads, existence checks and
-/// commit writes). Everything else (refs, config, signing, hooks, ...) always uses the git CLI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Backend {
-    /// Spawn `git` for every operation (default; one process per written commit).
-    #[default]
-    Git,
-    /// In-process object access through gitoxide (needs the `gix` cargo feature).
-    Gix,
-}
-
-impl std::str::FromStr for Backend {
-    type Err = Error;
-    fn from_str(s: &str) -> Result<Backend> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "git" => Ok(Backend::Git),
-            "gix" => Ok(Backend::Gix),
-            other => Err(Error::Usage(format!(
-                "unknown backend {other:?} (expected `git` or `gix`)"
-            ))),
-        }
-    }
-}
-
-impl std::fmt::Display for Backend {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Backend::Git => "git",
-            Backend::Gix => "gix",
-        })
-    }
 }
 
 #[derive(Debug, Clone)]

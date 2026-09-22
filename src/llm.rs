@@ -5,10 +5,10 @@ use std::collections::{BTreeMap, HashSet};
 use chrono::TimeZone;
 use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
-use crate::error::{Error, Result};
+use crate::domain::error::{Error, Result};
+use crate::domain::settings::Config;
+use crate::domain::text::messages;
 use crate::git::Git;
-use crate::messages;
 use crate::plan::Plan;
 
 #[derive(Debug, Serialize)]
@@ -215,7 +215,7 @@ pub fn import(plan: &mut Plan, reply: &str, cfg: &Config) -> Result<ImportReport
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Signing;
+    use crate::domain::settings::Signing;
     use crate::plan::{Entry, PIdent, PLAN_VERSION, Parent};
 
     fn plan_with(msgs: &[&str]) -> Plan {
@@ -251,6 +251,12 @@ mod tests {
             signing: Signing::Strip,
             entries,
         }
+    }
+
+    fn strip_cfg() -> Config {
+        let mut c = Config::default();
+        c.messages.strip_trailers = vec!["Signed-off-by".into()];
+        c
     }
 
     fn msg(p: &Plan, i: usize) -> String {
@@ -310,15 +316,13 @@ mod tests {
         );
         // A strip rule makes dropping it legitimate.
         let mut q = plan_with(&["wip\n\nSigned-off-by: A <a@x>\n"]);
-        let cfg2 =
-            Config::parse("version: 1\nmessages:\n  strip_trailers: [Signed-off-by]\n").unwrap();
+        let cfg2 = strip_cfg();
         assert!(import(&mut q, "{\"i\":0,\"t\":\"Better\"}", &cfg2).is_ok());
     }
 
     #[test]
     fn reply_must_keep_the_message_conforming() {
-        let cfg =
-            Config::parse("version: 1\nmessages:\n  strip_trailers: [Signed-off-by]\n").unwrap();
+        let cfg = strip_cfg();
         let mut p = plan_with(&["a\n"]);
         let e = import(
             &mut p,

@@ -7,12 +7,12 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use serde::{Deserialize, Serialize};
 
-use crate::config::{Config, Signing, parse_days, parse_hours};
 use crate::conform::{self, Ctx};
-use crate::error::{Error, Result};
+use crate::domain::error::{Error, Result};
+use crate::domain::scheduling::{Window, derive_seed, rng_from_seed, schedule};
+use crate::domain::settings::{Config, Signing, parse_days, parse_hours};
+use crate::domain::text::messages;
 use crate::git::{Commit, Git, RawIdent};
-use crate::messages;
-use crate::schedule::{Window, derive_seed, rng_from_seed, schedule};
 
 pub const PLAN_VERSION: u32 = 1;
 

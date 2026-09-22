@@ -3,10 +3,11 @@ use std::path::{Path, PathBuf};
 
 use clap::{Args, Parser, Subcommand};
 
+use crate::adapters::config_file::{self, CONFIG_FILE, starter_config};
 use crate::apply::{apply, list_backups, prune, restore};
-use crate::config::{CONFIG_FILE, Config, starter_config};
-use crate::error::{Error, Result};
-use crate::git::{Backend, Git};
+use crate::domain::error::{Error, Result};
+use crate::domain::settings::{Backend, Config};
+use crate::git::Git;
 use crate::hook;
 use crate::llm;
 use crate::plan::{Built, Plan, PlanOptions, build_plan, render};
@@ -155,11 +156,11 @@ fn setup(git: &mut Git, config: &Option<PathBuf>, backend: Option<Backend>) -> R
 
 fn load_config(git: &Git, explicit: &Option<PathBuf>) -> Result<Config> {
     match explicit {
-        Some(p) => Config::load(p),
+        Some(p) => config_file::load(p),
         None => {
             let p = git.dir().join(CONFIG_FILE);
             if p.exists() {
-                Config::load(&p)
+                config_file::load(&p)
             } else {
                 Ok(Config::default())
             }

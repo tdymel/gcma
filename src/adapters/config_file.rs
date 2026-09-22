@@ -1,0 +1,113 @@
+//! Reads `.git-hide-my-ass.yml` into the domain `Config`.
+
+use std::path::Path;
+
+use crate::domain::error::{Error, Result};
+use crate::domain::settings::Config;
+
+pub const CONFIG_FILE: &str = ".git-hide-my-ass.yml";
+
+pub fn load(path: &Path) -> Result<Config> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| Error::Usage(format!("cannot read {}: {e}", path.display())))?;
+    parse(&text)
+}
+
+pub fn parse(text: &str) -> Result<Config> {
+    let cfg: Config = serde_yaml::from_str(text)?;
+    cfg.validate()?;
+    Ok(cfg)
+}
+
+pub fn starter_config() -> &'static str {
+    "# ghma configuration. See DESIGN.md.\n\
+version: 1\n\
+from: 2026-04-01        # schedule lower bound (required when `schedule` is set)\n\
+to: now                 # `now` or a date\n\
+timezone: UTC           # IANA name, e.g. Europe/Berlin\n\
+schedule:\n\
+\x20 days: [mon, tue, wed, thu, fri]\n\
+\x20 hours: \"09:30-18:00\"\n\
+\x20 distribution: uniform   # uniform | weekday-weighted | bursty\n\
+\x20 seed: 42\n\
+# identity:\n\
+#   - match: { email: me@home.org }\n\
+#     set:   { name: Jane Doe, email: jane@work.com }\n\
+messages:\n\
+\x20 strip_trailers: []\n\
+signing: strip          # strip | resign\n\
+hook:\n\
+\x20 mode: verify          # verify | rewrite\n"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::settings::{Distribution, HookMode, Signing};
+
+    #[test]
+    fn parses_full_config() {
+        let c = parse(
+            "version: 1\nfrom: 2026-04-01\nto: now\ntimezone: Europe/Berlin\nschedule:\n  hours: \"09:30-18:00\"\n  distribution: bursty\n  seed: 7\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\nsigning: resign\nhook: {mode: rewrite}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            c.schedule.as_ref().unwrap().distribution,
+            Distribution::Bursty
+        );
+        assert_eq!(c.signing, Signing::Resign);
+        assert_eq!(c.hook.mode, HookMode::Rewrite);
+        assert_eq!(
+            c.map_identity("x", "ME@home.org"),
+            Some(("Jane Doe".to_string(), "jane@work.com".to_string()))
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_fields_and_bad_version() {
+        assert!(parse("version: 1\nlast: 6mo\n").is_err());
+        assert!(parse("version: 2\n").is_err());
+        assert!(parse("{}").is_err());
+    }
+
+    #[test]
+    fn schedule_requires_from() {
+        assert!(parse("version: 1\nschedule: {}\n").is_err());
+        assert!(parse("version: 1\nfrom: 2026-01-01\nschedule: {}\n").is_ok());
+    }
+
+    #[test]
+    fn identity_fixed_point_validated() {
+        // A -> B, B -> C is not a fixed point.
+        let chain = "version: 1\nidentity:\n  - match: {email: a@x}\n    set: {name: B, email: b@x}\n  - match: {email: b@x}\n    set: {name: C, email: c@x}\n";
+        assert!(parse(chain).is_err());
+        // Mapping to itself under its own rule is fine.
+        let selfmap =
+            "version: 1\nidentity:\n  - match: {email: a@x}\n    set: {name: New, email: a@x}\n";
+        assert!(parse(selfmap).is_ok());
+        // Partial set rejected.
+        assert!(
+            parse("version: 1\nidentity:\n  - match: {email: a@x}\n    set: {name: N}\n").is_err()
+        );
+        // Empty match rejected.
+        assert!(
+            parse("version: 1\nidentity:\n  - match: {}\n    set: {name: N, email: e@x}\n")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn to_resolution() {
+        let c = parse("version: 1\nto: 2026-01-02\n").unwrap();
+        assert_eq!(c.resolve_to(5).unwrap(), 1767398400); // 2026-01-03T00:00Z, end of Jan 2
+        let c = parse("version: 1\nto: now\n").unwrap();
+        assert_eq!(c.resolve_to(5).unwrap(), 5);
+        let c = parse("version: 1\nfrom: 2026-01-01\n").unwrap();
+        assert_eq!(c.from_utc().unwrap(), 1767225600);
+    }
+
+    #[test]
+    fn starter_config_is_valid() {
+        parse(starter_config()).unwrap();
+    }
+}

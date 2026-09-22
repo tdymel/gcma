@@ -3,8 +3,8 @@
 use std::os::unix::fs::PermissionsExt;
 
 use crate::apply::apply;
-use crate::config::{Config, HookMode};
-use crate::error::{Error, Result};
+use crate::domain::error::{Error, Result};
+use crate::domain::settings::{Config, HookMode};
 use crate::git::{Git, is_zero_oid};
 use crate::plan::{PlanOptions, RangeSpec, build_plan};
 
