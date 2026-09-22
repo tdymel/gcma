@@ -1,0 +1,43 @@
+//! The human-readable plan table.
+
+use crate::domain::history::commit::Commit;
+use crate::domain::history::plan::Plan;
+use crate::domain::text::messages;
+
+/// Human-readable plan table.
+pub fn render(plan: &Plan, old: &[Commit]) -> String {
+    use chrono::TimeZone;
+    let fmt = |t: i64, off: i32| -> String {
+        match chrono::FixedOffset::east_opt(off * 60).and_then(|o| o.timestamp_opt(t, 0).single()) {
+            Some(d) => d.format("%Y-%m-%d %H:%M %z").to_string(),
+            None => t.to_string(),
+        }
+    };
+    let mut s = String::new();
+    for (e, o) in plan.entries.iter().zip(old) {
+        let title = messages::title(&e.message().unwrap_or_default());
+        let who_old = format!(
+            "{} <{}>",
+            String::from_utf8_lossy(&o.author.name),
+            String::from_utf8_lossy(&o.author.email)
+        );
+        let who_new = format!("{} <{}>", e.author.name, e.author.email);
+        s.push_str(&format!(
+            "{}  {} -> {}  {}{}\n",
+            &e.old_oid[..e.old_oid.len().min(8)],
+            fmt(o.committer.time, o.committer.tz),
+            fmt(e.committer.time, e.committer.tz),
+            if who_old == who_new {
+                who_new
+            } else {
+                format!("{who_old} -> {who_new}")
+            },
+            if title.is_empty() {
+                String::new()
+            } else {
+                format!("  \"{title}\"")
+            }
+        ));
+    }
+    s
+}

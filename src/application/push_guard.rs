@@ -1,0 +1,91 @@
+//! The pre-push policy: judge (and in `rewrite` mode fix) the commits about to be pushed.
+
+use crate::application::planning::{PlanOptions, RangeSpec, build_plan};
+use crate::application::ports::{RemoteScope, Repository};
+use crate::application::rewrite::apply;
+use crate::domain::error::{Error, Result};
+use crate::domain::history::commit::is_zero_oid;
+use crate::domain::settings::{Config, HookMode};
+
+/// `Ok(())` lets the push proceed; an error aborts it. `stdin` is git's pre-push input.
+pub fn run_pre_push(repo: &dyn Repository, cfg: &Config, remote: &str, stdin: &str) -> Result<()> {
+    let remotes = repo.remotes()?;
+    for line in stdin.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() != 4 {
+            continue;
+        }
+        let (local_ref, local_sha, _remote_ref, remote_sha) =
+            (parts[0], parts[1], parts[2], parts[3]);
+        if is_zero_oid(local_sha) {
+            continue; // a delete push
+        }
+        // Only pushes of the checked-out branch are judged: by name, as `HEAD` (which is what
+        // `git push origin HEAD` and `HEAD:<ref>` report), or by a ref/sha that is the branch tip.
+        let Some(branch_ref) = repo.current_branch_ref()? else {
+            continue; // detached HEAD
+        };
+        let tip = repo.ref_value(&branch_ref)?;
+        let is_branch =
+            local_ref == branch_ref || local_ref == "HEAD" || tip.as_deref() == Some(local_sha);
+        if !is_branch {
+            continue;
+        }
+        let known_remote = !is_zero_oid(remote_sha) && repo.resolve_commit(remote_sha)?.is_some();
+        let (exclude_commits, exclude_remotes, base) = if known_remote {
+            (
+                vec![remote_sha.to_string()],
+                None,
+                Some(remote_sha.to_string()),
+            )
+        } else if remotes.iter().any(|r| r == remote) {
+            (
+                Vec::new(),
+                Some(RemoteScope::Named(remote.to_string())),
+                None,
+            )
+        } else {
+            (Vec::new(), Some(RemoteScope::All), None)
+        };
+        let range = RangeSpec {
+            tip: local_sha.to_string(),
+            branch_ref: branch_ref.clone(),
+            exclude_commits,
+            exclude_remotes,
+            base,
+        };
+        // Rewriting is only possible when the pushed commit is the branch tip; the plan is built
+        // once, with the strict (clean index) preconditions only when we are going to write.
+        let rewrite = cfg.hook.mode == HookMode::Rewrite && tip.as_deref() == Some(local_sha);
+        let opts = PlanOptions {
+            range: Some(range),
+            strict: rewrite,
+            ..Default::default()
+        };
+        let built = build_plan(repo, cfg, &opts)?;
+        let n = built.plan.entries.len();
+        if n == 0 {
+            continue;
+        }
+        if rewrite {
+            let report = apply(repo, &built.plan, false)?;
+            if !report.noop {
+                return Err(Error::Nonconforming(format!(
+                    "ghma rewrote {} unpushed commit(s) of {branch_ref} to follow the rules; run `git push` again",
+                    report.rewritten
+                )));
+            }
+            continue;
+        }
+        let hint = if repo.upstream_oid(&branch_ref)?.is_none() {
+            " (the branch has no upstream: add `--from <rev>`)"
+        } else {
+            ""
+        };
+        return Err(Error::Nonconforming(format!(
+            "{n} commit(s) about to be pushed do not follow the ghma rules; \
+             run `ghma apply`{hint} (it rewrites the unpushed part of the branch) and push again"
+        )));
+    }
+    Ok(())
+}

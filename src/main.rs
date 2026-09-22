@@ -1,3 +1,3 @@
 fn main() {
-    std::process::exit(ghma::cli::main());
+    std::process::exit(ghma::adapters::cli::main());
 }

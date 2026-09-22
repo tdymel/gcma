@@ -1,11 +1,8 @@
-//! ghma — "git hide my ass": safely redistribute commit times, identities and messages on the
-//! current branch. See DESIGN.md.
+//! ghma: safely reshape the history of the current branch.
+//!
+//! Layers (hexagonal): `domain` is pure; `application` holds the use cases and the ports they
+//! need; `adapters` implement the ports and drive the use cases from the command line.
 
 pub mod adapters;
-pub mod apply;
-pub mod cli;
+pub mod application;
 pub mod domain;
-pub mod git;
-pub mod hook;
-pub mod llm;
-pub mod plan;
