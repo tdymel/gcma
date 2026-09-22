@@ -2,11 +2,25 @@
 
 use std::collections::HashMap;
 
+use super::pathplan::PathOutcome;
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::{Commit, RawIdent};
-use crate::domain::history::plan::{Entry, PIdent, Parent};
+use crate::domain::history::parents::resolve_parents;
+use crate::domain::history::plan::{Entry, PIdent};
 use crate::domain::scheduling::Window;
 use crate::domain::settings::Config;
+
+/// The old parents of every dropped commit.
+pub(super) fn dropped_parents<'a>(
+    outcome: &'a PathOutcome,
+    commits: &'a HashMap<String, Commit>,
+) -> HashMap<&'a str, &'a [String]> {
+    outcome
+        .dropped
+        .iter()
+        .map(|o| (o.as_str(), commits[o].parents.as_slice()))
+        .collect()
+}
 
 fn utf8(b: &[u8], what: &str, oid: &str) -> Result<String> {
     String::from_utf8(b.to_vec()).map_err(|_| {
@@ -22,10 +36,16 @@ pub(super) fn build_entries(
     cfg: &Config,
     window: Option<&Window>,
     new_times: &[i64],
-    linear: &[String],
+    outcome: &PathOutcome,
     commits: &HashMap<String, Commit>,
 ) -> Result<Vec<Entry>> {
-    let index: HashMap<&String, usize> = linear.iter().enumerate().map(|(i, o)| (o, i)).collect();
+    let linear = &outcome.kept;
+    let index: HashMap<&str, usize> = linear
+        .iter()
+        .enumerate()
+        .map(|(i, o)| (o.as_str(), i))
+        .collect();
+    let dropped = dropped_parents(outcome, commits);
     let mut entries = Vec::with_capacity(linear.len());
     for (i, oid) in linear.iter().enumerate() {
         let c = &commits[oid];
@@ -44,20 +64,19 @@ pub(super) fn build_entries(
                 tz,
             })
         };
-        let parents = c
-            .parents
-            .iter()
-            .map(|p| match index.get(p) {
-                Some(j) => Parent::In(*j),
-                None => Parent::Base(p.clone()),
-            })
-            .collect();
+        let parents = resolve_parents(&c.parents, &index, &dropped);
+        let (tree, gitignore) = match outcome.trees.get(oid) {
+            Some((t, g)) => (Some(t.clone()), *g),
+            None => (None, false),
+        };
         let mut e = Entry {
             old_oid: oid.clone(),
             parents,
             author: mapped(&c.author)?,
             committer: mapped(&c.committer)?,
             message_b64: String::new(),
+            tree,
+            gitignore,
         };
         e.set_message(&cfg.rewrite_message(&c.message));
         entries.push(e);

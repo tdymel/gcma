@@ -3,4 +3,5 @@
 pub mod commit;
 pub mod conform;
 pub mod linearize;
+pub mod parents;
 pub mod plan;

@@ -9,7 +9,10 @@ use super::commit::RawIdent;
 use crate::domain::error::{Error, Result};
 use crate::domain::settings::Signing;
 
-pub const PLAN_VERSION: u32 = 1;
+/// Version 2 added path rules (`paths`, `dropped`, `new_tip`, `Entry::tree`); version 1 plans
+/// are valid version 2 plans without them.
+pub const PLAN_VERSION: u32 = 2;
+pub const OLDEST_PLAN_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PIdent {
@@ -47,6 +50,12 @@ pub struct Entry {
     pub author: PIdent,
     pub committer: PIdent,
     pub message_b64: String,
+    /// The tree of the new commit when path rules change it; `None` keeps the old commit's tree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tree: Option<String>,
+    /// Whether `.gitignore` gets the path patterns in this commit (only with path rules).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gitignore: bool,
 }
 
 impl Entry {
@@ -59,6 +68,12 @@ impl Entry {
     }
 }
 
+/// The path rules a plan was made with; apply re-derives every tree from them.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PathRules {
+    pub exclude: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Plan {
     pub version: u32,
@@ -67,9 +82,45 @@ pub struct Plan {
     pub signing: Signing,
     /// Suffix commits only, in write order (parents before children).
     pub entries: Vec<Entry>,
+    /// Present when paths are removed from the commits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paths: Option<PathRules>,
+    /// Old commits that are removed from history (they only touched excluded paths).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dropped: Vec<String>,
+    /// Where the branch ends up when the old tip itself was dropped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_tip: Option<Parent>,
 }
 
 impl Plan {
+    /// A plan that rewrites `entries` only (no path rules).
+    pub fn new(branch_ref: String, tip_oid: String, signing: Signing, entries: Vec<Entry>) -> Plan {
+        Plan {
+            version: PLAN_VERSION,
+            branch_ref,
+            tip_oid,
+            signing,
+            entries,
+            paths: None,
+            dropped: Vec::new(),
+            new_tip: None,
+        }
+    }
+
+    /// True when applying the plan would change nothing.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty() && self.dropped.is_empty()
+    }
+
+    /// The new tip: the entry of the old tip, or `new_tip` when that commit was dropped.
+    pub fn tip_target(&self) -> Option<Parent> {
+        match self.entries.iter().position(|e| e.old_oid == self.tip_oid) {
+            Some(i) => Some(Parent::In(i)),
+            None => self.new_tip.clone(),
+        }
+    }
+
     /// Rejects plans that cannot be applied: only back references between entries are legal.
     pub fn validate(&self) -> Result<()> {
         for (i, e) in self.entries.iter().enumerate() {
@@ -82,6 +133,20 @@ impl Plan {
                     )));
                 }
             }
+        }
+        if let Some(Parent::In(j)) = &self.new_tip
+            && *j >= self.entries.len()
+        {
+            return Err(Error::Usage("plan new_tip points past the entries".into()));
+        }
+        if self.paths.is_none()
+            && (!self.dropped.is_empty()
+                || self.new_tip.is_some()
+                || self.entries.iter().any(|e| e.tree.is_some() || e.gitignore))
+        {
+            return Err(Error::Usage(
+                "plan changes trees or drops commits but has no path rules".into(),
+            ));
         }
         Ok(())
     }

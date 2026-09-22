@@ -14,6 +14,8 @@ pub enum Reason {
     Signature,
     Identity,
     Message,
+    /// The tree contains a path that the rules exclude.
+    Paths,
 }
 
 pub struct Ctx<'a> {
@@ -22,6 +24,8 @@ pub struct Ctx<'a> {
     pub window: Option<&'a Window>,
     /// Committer time of every commit we have loaded (range and external parents).
     pub times: &'a HashMap<String, i64>,
+    /// Commits whose tree contains an excluded path (computed by the caller, which has the trees).
+    pub excluded: Option<&'a HashSet<String>>,
 }
 
 fn ident_conforms(cfg: &Config, id: &RawIdent) -> bool {
@@ -62,6 +66,9 @@ pub fn reasons(c: &Commit, ctx: &Ctx) -> Vec<Reason> {
     }
     if ctx.cfg.rewrite_message(&c.message) != c.message {
         out.push(Reason::Message);
+    }
+    if ctx.excluded.is_some_and(|set| set.contains(&c.oid)) {
+        out.push(Reason::Paths);
     }
     out.dedup();
     out
@@ -142,6 +149,7 @@ mod tests {
             cfg: &c,
             window: None,
             times: &times,
+            excluded: None,
         };
         assert!(reasons(&commit("a", &[], 0, 777, "N", "n@x", "m\n"), &ctx).is_empty());
     }
@@ -166,6 +174,7 @@ mod tests {
             cfg: &c,
             window: None,
             times: &times,
+            excluded: None,
         };
         let bad = commit("a", &[], 0, 0, "Me", "me@home", "s\n\nSigned-off-by: x\n");
         let r = reasons(&bad, &ctx);
@@ -194,11 +203,30 @@ mod tests {
             cfg: &c,
             window: None,
             times: &times,
+            excluded: None,
         };
         let bare = commit("a", &[], 0, 0, "N", "n@x", "s\n");
         assert_eq!(reasons(&bare, &ctx), vec![Reason::Message]);
         let done = commit("b", &[], 0, 0, "N", "n@x", "s\n\nAssisted-By: Bot\n");
         assert!(reasons(&done, &ctx).is_empty());
+    }
+
+    #[test]
+    fn excluded_paths_make_a_commit_nonconforming() {
+        let c = Config::default();
+        let times = HashMap::new();
+        let bad: HashSet<String> = ["a".to_string()].into();
+        let ctx = Ctx {
+            cfg: &c,
+            window: None,
+            times: &times,
+            excluded: Some(&bad),
+        };
+        assert_eq!(
+            reasons(&commit("a", &[], 0, 0, "N", "n@x", "m\n"), &ctx),
+            vec![Reason::Paths]
+        );
+        assert!(reasons(&commit("b", &[], 0, 0, "N", "n@x", "m\n"), &ctx).is_empty());
     }
 
     #[test]
@@ -212,6 +240,7 @@ mod tests {
             cfg: &c,
             window: None,
             times: &times,
+            excluded: None,
         };
         let mut k = commit("a", &[], 0, 0, "N", "n@x", "m\n");
         assert_eq!(reasons(&k, &ctx), vec![Reason::Signature]);
@@ -252,6 +281,7 @@ mod tests {
             cfg: &c,
             window: Some(&w),
             times: &times,
+            excluded: None,
         };
         assert!(reasons(&commit("a", &[], mon_noon, 0, "N", "n@x", "m\n"), &ctx).is_empty());
         // Outside hours.
@@ -283,6 +313,7 @@ mod tests {
             cfg: &c,
             window: None,
             times: &times,
+            excluded: None,
         };
         let a = commit("a", &[], 0, 0, "N", "n@x", "s\n\nSigned-off-by: x\n");
         let b = commit("b", &["a"], 0, 0, "N", "n@x", "ok\n");

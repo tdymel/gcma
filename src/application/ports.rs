@@ -95,6 +95,8 @@ pub trait History {
     fn all_reachable_from(&self, commits: &[String], tip: &str) -> Result<bool>;
     /// True when the two commits have identical trees.
     fn same_tree(&self, a: &str, b: &str) -> Result<bool>;
+    /// Paths whose content differs between two trees (or commits).
+    fn changed_paths(&self, a: &str, b: &str) -> Result<Vec<String>>;
     /// (additions, deletions, files) against the first parent, in the order of `oids`.
     fn change_stats(&self, oids: &[String]) -> Result<Vec<(u64, u64, u64)>>;
 }

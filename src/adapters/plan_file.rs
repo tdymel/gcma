@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::domain::error::{Error, Result};
-use crate::domain::history::plan::{PLAN_VERSION, Plan};
+use crate::domain::history::plan::{OLDEST_PLAN_VERSION, PLAN_VERSION, Plan};
 
 pub fn save(plan: &Plan, path: &Path) -> Result<()> {
     std::fs::write(path, serde_json::to_vec_pretty(plan)?)?;
@@ -14,7 +14,7 @@ pub fn load(path: &Path) -> Result<Plan> {
     let data = std::fs::read(path)
         .map_err(|e| Error::Usage(format!("cannot read plan {}: {e}", path.display())))?;
     let plan: Plan = serde_json::from_slice(&data)?;
-    if plan.version != PLAN_VERSION {
+    if !(OLDEST_PLAN_VERSION..=PLAN_VERSION).contains(&plan.version) {
         return Err(Error::Usage(format!(
             "unsupported plan version {}",
             plan.version
@@ -44,6 +44,8 @@ mod tests {
             author: id.clone(),
             committer: id,
             message_b64: String::new(),
+            tree: None,
+            gitignore: false,
         };
         e.set_message(b"hi \xff\n");
         let mut p = Plan {
@@ -52,6 +54,9 @@ mod tests {
             tip_oid: "o".into(),
             signing: Signing::Strip,
             entries: vec![e.clone()],
+            paths: None,
+            dropped: Vec::new(),
+            new_tip: None,
         };
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("p.json");

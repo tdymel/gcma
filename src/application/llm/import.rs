@@ -159,6 +159,8 @@ mod tests {
                     author: id.clone(),
                     committer: id.clone(),
                     message_b64: String::new(),
+                    tree: None,
+                    gitignore: false,
                 };
                 e.set_message(m.as_bytes());
                 e
@@ -170,6 +172,9 @@ mod tests {
             tip_oid: "o".into(),
             signing: Signing::Strip,
             entries,
+            paths: None,
+            dropped: Vec::new(),
+            new_tip: None,
         }
     }
 

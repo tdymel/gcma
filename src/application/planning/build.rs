@@ -2,17 +2,20 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::entries::build_entries;
+use super::entries::{build_entries, dropped_parents};
+use super::pathplan::{self, PathOutcome};
 use super::preconditions::check_preconditions;
 use super::range::resolve;
 use super::timing::{Schedule, load_external_parents, window_for};
 use super::types::{Built, PlanOptions};
+use crate::application::pathrules::TreeRewriter;
 use crate::application::ports::Repository;
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::{Commit, SIGNATURE_HEADERS};
 use crate::domain::history::conform::{self, Ctx};
 use crate::domain::history::linearize::linearize;
-use crate::domain::history::plan::{PLAN_VERSION, Plan};
+use crate::domain::history::parents::resolve_parents;
+use crate::domain::history::plan::{Parent, PathRules, Plan};
 use crate::domain::settings::{Config, Signing};
 
 pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Result<Built> {
@@ -20,13 +23,12 @@ pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Re
     let range = resolve(repo, opts)?;
     let order = &range.order;
     let empty = || Built {
-        plan: Plan {
-            version: PLAN_VERSION,
-            branch_ref: range.branch_ref.clone(),
-            tip_oid: range.tip.clone(),
-            signing: cfg.signing,
-            entries: Vec::new(),
-        },
+        plan: Plan::new(
+            range.branch_ref.clone(),
+            range.tip.clone(),
+            cfg.signing,
+            Vec::new(),
+        ),
         range_len: order.len(),
         frozen: order.len(),
         warnings: Vec::new(),
@@ -45,9 +47,23 @@ pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Re
     // Schedule mode: the window, and the committer times of parents outside the range.
     let now = opts.now.unwrap_or_else(|| chrono::Utc::now().timestamp());
     let window = window_for(cfg, now)?;
-    if window.is_some() {
+    let filter = cfg.path_filter()?;
+    let rewriter = filter.as_ref().map(|f| TreeRewriter::new(repo, f));
+    if window.is_some() || rewriter.is_some() {
         load_external_parents(repo, &mut commits, &range_set)?;
     }
+    let excluded: HashSet<String> = match &rewriter {
+        Some(rw) => {
+            let mut set = HashSet::new();
+            for oid in order {
+                if rw.has_excluded(&commits[oid].tree)? {
+                    set.insert(oid.clone());
+                }
+            }
+            set
+        }
+        None => HashSet::new(),
+    };
     let times: HashMap<String, i64> = commits
         .iter()
         .map(|(o, c)| (o.clone(), c.committer.time))
@@ -56,6 +72,7 @@ pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Re
         cfg,
         window: window.as_ref().map(|(w, _)| w),
         times: &times,
+        excluded: rewriter.as_ref().map(|_| &excluded),
     };
 
     let frozen = if opts.all {
@@ -74,6 +91,11 @@ pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Re
     refuse_pushed(repo, &suffix, range.upstream.as_deref(), opts)?;
 
     let linear = linearize(&suffix, &commits);
+    let outcome = match &rewriter {
+        Some(rw) => pathplan::apply_rules(rw, cfg, &linear, &commits, &excluded, &range.tip)?,
+        None => PathOutcome::untouched(&linear),
+    };
+    let new_tip = new_tip_when_dropped(&range.tip, &outcome, &commits)?;
     let new_times = match &window {
         Some((w, to)) => Schedule {
             cfg,
@@ -83,30 +105,65 @@ pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Re
             commits: &commits,
             times: &times,
         }
-        .instants(&linear)?,
+        .instants(&linear, outcome.kept.len())?,
         None => Vec::new(),
     };
     let entries = build_entries(
         cfg,
         window.as_ref().map(|(w, _)| w),
         &new_times,
-        &linear,
+        &outcome,
         &commits,
     )?;
-    let warnings = rewrite_warnings(repo, cfg, &linear, &commits)?;
+    let warnings = rewrite_warnings(repo, cfg, &outcome.kept, &commits)?;
 
+    let mut plan = Plan::new(
+        range.branch_ref.clone(),
+        range.tip.clone(),
+        cfg.signing,
+        entries,
+    );
+    if let Some(f) = &filter {
+        plan.paths = Some(PathRules {
+            exclude: f.patterns().to_vec(),
+        });
+        plan.dropped = outcome.dropped;
+        plan.new_tip = new_tip;
+    }
     Ok(Built {
-        plan: Plan {
-            version: PLAN_VERSION,
-            branch_ref: range.branch_ref.clone(),
-            tip_oid: range.tip.clone(),
-            signing: cfg.signing,
-            entries,
-        },
+        plan,
         range_len: order.len(),
         frozen: frozen.len(),
         warnings,
     })
+}
+
+/// When the old tip itself is dropped, the branch moves to what its parent became.
+fn new_tip_when_dropped(
+    tip: &str,
+    outcome: &PathOutcome,
+    commits: &HashMap<String, Commit>,
+) -> Result<Option<Parent>> {
+    if !outcome.dropped.iter().any(|o| o == tip) {
+        return Ok(None);
+    }
+    let index: HashMap<&str, usize> = outcome
+        .kept
+        .iter()
+        .enumerate()
+        .map(|(i, o)| (o.as_str(), i))
+        .collect();
+    let dropped = dropped_parents(outcome, commits);
+    resolve_parents(&commits[tip].parents, &index, &dropped)
+        .into_iter()
+        .next()
+        .map(Some)
+        .ok_or_else(|| {
+            Error::Precondition(
+                "every commit of the branch only touches excluded paths; nothing would be left"
+                    .into(),
+            )
+        })
 }
 
 /// Pushed commits in the suffix need an explicit flag.

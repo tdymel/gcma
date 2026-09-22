@@ -39,7 +39,8 @@ pub(super) fn load_external_parents(
     Ok(())
 }
 
-/// Sorted instants for `linear` (parents first), never earlier than the latest commit that stays.
+/// Sorted instants for `count` kept commits of the suffix `linear` (parents first), never earlier
+/// than the latest commit outside the suffix.
 pub(super) struct Schedule<'a> {
     pub cfg: &'a Config,
     pub window: &'a Window,
@@ -50,7 +51,7 @@ pub(super) struct Schedule<'a> {
 }
 
 impl Schedule<'_> {
-    pub(super) fn instants(&self, linear: &[String]) -> Result<Vec<i64>> {
+    pub(super) fn instants(&self, linear: &[String], count: usize) -> Result<Vec<i64>> {
         let Some(s) = &self.cfg.schedule else {
             return Ok(Vec::new());
         };
@@ -75,7 +76,7 @@ impl Schedule<'_> {
             self.base.unwrap_or("").as_bytes(),
         ]);
         schedule(
-            linear.len(),
+            count,
             self.window,
             floor,
             s.distribution,

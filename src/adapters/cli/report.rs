@@ -6,7 +6,7 @@ use crate::domain::error::Result;
 
 pub(super) fn print_plan(repo: &dyn CommitStore, b: &Built) -> Result<()> {
     let p = &b.plan;
-    if p.entries.is_empty() {
+    if p.is_empty() {
         if b.range_len == 0 {
             println!("Nothing to do: the range contains no commits.");
         } else {
@@ -17,8 +17,13 @@ pub(super) fn print_plan(repo: &dyn CommitStore, b: &Built) -> Result<()> {
         }
         return Ok(());
     }
+    let dropped = if p.dropped.is_empty() {
+        String::new()
+    } else {
+        format!(", {} to drop", p.dropped.len())
+    };
     println!(
-        "{} commit(s) in range, {} kept as-is, {} to rewrite (branch {}):",
+        "{} commit(s) in range, {} kept as-is, {} to rewrite{dropped} (branch {}):",
         b.range_len,
         b.frozen,
         p.entries.len(),
@@ -30,7 +35,8 @@ pub(super) fn print_plan(repo: &dyn CommitStore, b: &Built) -> Result<()> {
             .map(|e| e.old_oid.clone())
             .collect::<Vec<_>>(),
     )?;
-    print!("{}", render(p, &old));
+    let dropped = repo.read_commits(&p.dropped)?;
+    print!("{}", render(p, &old, &dropped));
     for w in &b.warnings {
         println!("warning: {w}");
     }

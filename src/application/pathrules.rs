@@ -29,8 +29,13 @@ impl<'a> TreeRewriter<'a> {
     pub fn without_excluded(&self, tree: &str) -> Result<String> {
         match self.walk(tree, "")? {
             Some(t) => Ok(t),
-            None => self.store.write_tree(&[]),
+            None => self.empty_tree(),
         }
+    }
+
+    /// The empty tree.
+    pub fn empty_tree(&self) -> Result<String> {
+        self.store.write_tree(&[])
     }
 
     /// True when `tree` contains an excluded path.

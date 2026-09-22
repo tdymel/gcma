@@ -57,7 +57,7 @@ fn run(cli: Cli) -> Result<()> {
                 plan_file::save(&built.plan, &out)?;
                 println!("plan written to {}", out.display());
             }
-            if check && !built.plan.entries.is_empty() {
+            if check && !built.plan.is_empty() {
                 return Err(Error::Nonconforming(format!(
                     "{} commit(s) do not follow the rules",
                     built.plan.entries.len()
@@ -80,14 +80,22 @@ fn run(cli: Cli) -> Result<()> {
             if report.noop {
                 println!("Nothing to do.");
             } else {
+                let dropped = if report.dropped > 0 {
+                    format!(" and dropped {}", report.dropped)
+                } else {
+                    String::new()
+                };
                 println!(
-                    "Rewrote {} commit(s); {} is now at {}.\nBackup: {} (undo with `ghma restore {}`)",
+                    "Rewrote {} commit(s){dropped}; {} is now at {}.\nBackup: {} (undo with `ghma restore {}`)",
                     report.rewritten,
                     plan.branch_name(),
                     report.new_tip.as_deref().unwrap_or("?"),
                     report.backup_id.as_deref().unwrap_or("?"),
                     report.backup_id.as_deref().unwrap_or("?")
                 );
+                for n in &report.notes {
+                    eprintln!("warning: {n}");
+                }
             }
         }
         Cmd::Export {

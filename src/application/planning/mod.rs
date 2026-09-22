@@ -2,6 +2,7 @@
 
 mod build;
 mod entries;
+mod pathplan;
 mod preconditions;
 mod range;
 mod render;

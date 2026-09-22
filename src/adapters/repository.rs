@@ -142,6 +142,9 @@ impl History for GitRepository {
     fn same_tree(&self, a: &str, b: &str) -> Result<bool> {
         self.cli.same_tree(a, b)
     }
+    fn changed_paths(&self, a: &str, b: &str) -> Result<Vec<String>> {
+        self.cli.changed_paths(a, b)
+    }
     fn change_stats(&self, oids: &[String]) -> Result<Vec<(u64, u64, u64)>> {
         self.cli.change_stats(oids)
     }

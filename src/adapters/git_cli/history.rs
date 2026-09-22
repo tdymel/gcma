@@ -77,6 +77,15 @@ impl History for GitCli {
         self.succeeds(&["diff", "--quiet", a, b])
     }
 
+    fn changed_paths(&self, a: &str, b: &str) -> Result<Vec<String>> {
+        let out = self.run(&["diff-tree", "-r", "--name-only", "-z", a, b])?;
+        Ok(out
+            .split(|&c| c == 0)
+            .filter(|p| !p.is_empty())
+            .map(|p| String::from_utf8_lossy(p).to_string())
+            .collect())
+    }
+
     fn change_stats(&self, oids: &[String]) -> Result<Vec<(u64, u64, u64)>> {
         if oids.is_empty() {
             return Ok(Vec::new());

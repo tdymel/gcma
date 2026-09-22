@@ -5,7 +5,7 @@ use crate::domain::history::plan::Plan;
 use crate::domain::text::messages;
 
 /// Human-readable plan table.
-pub fn render(plan: &Plan, old: &[Commit]) -> String {
+pub fn render(plan: &Plan, old: &[Commit], dropped: &[Commit]) -> String {
     use chrono::TimeZone;
     let fmt = |t: i64, off: i32| -> String {
         match chrono::FixedOffset::east_opt(off * 60).and_then(|o| o.timestamp_opt(t, 0).single()) {
@@ -22,8 +22,14 @@ pub fn render(plan: &Plan, old: &[Commit]) -> String {
             String::from_utf8_lossy(&o.author.email)
         );
         let who_new = format!("{} <{}>", e.author.name, e.author.email);
+        let tree_note = match (&e.tree, e.gitignore) {
+            (Some(t), true) if *t != o.tree => "  [paths removed, .gitignore updated]",
+            (Some(t), false) if *t != o.tree => "  [paths removed]",
+            (_, true) => "  [.gitignore updated]",
+            _ => "",
+        };
         s.push_str(&format!(
-            "{}  {} -> {}  {}{}\n",
+            "{}  {} -> {}  {}{}{}\n",
             &e.old_oid[..e.old_oid.len().min(8)],
             fmt(o.committer.time, o.committer.tz),
             fmt(e.committer.time, e.committer.tz),
@@ -36,7 +42,15 @@ pub fn render(plan: &Plan, old: &[Commit]) -> String {
                 String::new()
             } else {
                 format!("  \"{title}\"")
-            }
+            },
+            tree_note
+        ));
+    }
+    for d in dropped {
+        s.push_str(&format!(
+            "{}  DROPPED (only touches excluded paths)  \"{}\"\n",
+            &d.oid[..d.oid.len().min(8)],
+            messages::title(&d.message)
         ));
     }
     s
