@@ -55,8 +55,38 @@ pub struct TreeEntry {
     /// Raw name bytes (names need not be UTF-8).
     pub name: Vec<u8>,
     pub oid: String,
-    /// A subtree (as opposed to a file, symlink or submodule).
-    pub is_tree: bool,
+}
+
+/// What a tree entry is, as far as the path rules care.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryKind {
+    File,
+    Symlink,
+    Tree,
+    Submodule,
+}
+
+impl TreeEntry {
+    pub fn new(mode: &str, name: &[u8], oid: &str) -> TreeEntry {
+        TreeEntry {
+            mode: mode.to_string(),
+            name: name.to_vec(),
+            oid: oid.to_string(),
+        }
+    }
+
+    pub fn kind(&self) -> EntryKind {
+        match self.mode.as_str() {
+            "040000" | "40000" => EntryKind::Tree,
+            "160000" => EntryKind::Submodule,
+            "120000" => EntryKind::Symlink,
+            _ => EntryKind::File,
+        }
+    }
+
+    pub fn is_tree(&self) -> bool {
+        self.kind() == EntryKind::Tree
+    }
 }
 
 /// Trees and blobs, needed when the content of commits changes (path rules).

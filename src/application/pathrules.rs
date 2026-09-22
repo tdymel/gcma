@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use crate::application::ports::{TreeEntry, TreeStore};
+use crate::application::ports::{EntryKind, TreeEntry, TreeStore};
 use crate::domain::error::{Error, Result};
 use crate::domain::paths::{GITIGNORE, PathFilter, with_patterns};
 
@@ -51,7 +51,7 @@ impl<'a> TreeRewriter<'a> {
         let mut entries = self.store.read_tree(tree)?;
         let slot = entries.iter().position(|e| e.name == GITIGNORE.as_bytes());
         let existing = match slot {
-            Some(i) if entries[i].is_tree || !entries[i].mode.starts_with("100") => {
+            Some(i) if entries[i].kind() != EntryKind::File => {
                 return Ok(tree.to_string()); // a directory or symlink named .gitignore: leave it
             }
             Some(i) => Some(self.store.read_blob(&entries[i].oid)?),
@@ -64,12 +64,7 @@ impl<'a> TreeRewriter<'a> {
         let oid = self.store.write_blob(&updated)?;
         match slot {
             Some(i) => entries[i].oid = oid,
-            None => entries.push(TreeEntry {
-                mode: "100644".into(),
-                name: GITIGNORE.as_bytes().to_vec(),
-                oid,
-                is_tree: false,
-            }),
+            None => entries.push(TreeEntry::new("100644", GITIGNORE.as_bytes(), &oid)),
         }
         self.store.write_tree(&entries)
     }
@@ -91,11 +86,14 @@ impl<'a> TreeRewriter<'a> {
         for mut e in entries {
             let path = format!("{dir}{}", String::from_utf8_lossy(&e.name));
             // A submodule is a directory as far as patterns are concerned.
-            if self.filter.excludes(&path, e.is_tree || e.mode == "160000") {
+            if self.filter.excludes(
+                &path,
+                matches!(e.kind(), EntryKind::Tree | EntryKind::Submodule),
+            ) {
                 changed = true;
                 continue;
             }
-            if e.is_tree {
+            if e.is_tree() {
                 match self.walk(&e.oid, &format!("{path}/"), depth + 1)? {
                     Some(sub) => {
                         changed |= sub != e.oid;
@@ -156,21 +154,15 @@ mod tests {
     }
 
     fn file(m: &Mem, name: &str, content: &str) -> TreeEntry {
-        TreeEntry {
-            mode: "100644".into(),
-            name: name.as_bytes().to_vec(),
-            oid: m.write_blob(content.as_bytes()).unwrap(),
-            is_tree: false,
-        }
+        TreeEntry::new(
+            "100644",
+            name.as_bytes(),
+            &m.write_blob(content.as_bytes()).unwrap(),
+        )
     }
 
     fn dir(m: &Mem, name: &str, entries: &[TreeEntry]) -> TreeEntry {
-        TreeEntry {
-            mode: "040000".into(),
-            name: name.as_bytes().to_vec(),
-            oid: m.write_tree(entries).unwrap(),
-            is_tree: true,
-        }
+        TreeEntry::new("040000", name.as_bytes(), &m.write_tree(entries).unwrap())
     }
 
     fn names(m: &Mem, tree: &str) -> Vec<String> {

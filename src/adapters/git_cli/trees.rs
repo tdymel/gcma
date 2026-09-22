@@ -1,7 +1,7 @@
 //! `TreeStore` over `ls-tree`, `mktree`, `cat-file` and `hash-object`.
 
 use super::runner::GitCli;
-use crate::application::ports::{TreeEntry, TreeStore};
+use crate::application::ports::{EntryKind, TreeEntry, TreeStore};
 use crate::domain::error::{Error, Result};
 
 impl TreeStore for GitCli {
@@ -16,12 +16,10 @@ impl TreeStore for GitCli {
     fn write_tree(&self, entries: &[TreeEntry]) -> Result<String> {
         let mut input = Vec::new();
         for e in entries {
-            let kind = if e.is_tree {
-                "tree"
-            } else if e.mode == "160000" {
-                "commit"
-            } else {
-                "blob"
+            let kind = match e.kind() {
+                EntryKind::Tree => "tree",
+                EntryKind::Submodule => "commit",
+                EntryKind::File | EntryKind::Symlink => "blob",
             };
             input.extend_from_slice(format!("{} {kind} {}\t", e.mode, e.oid).as_bytes());
             input.extend_from_slice(&e.name);
@@ -53,15 +51,10 @@ fn parse_entry(rec: &[u8]) -> Result<TreeEntry> {
     let tab = rec.iter().position(|&b| b == b'\t').ok_or_else(bad)?;
     let meta = String::from_utf8_lossy(&rec[..tab]).to_string();
     let mut parts = meta.split(' ');
-    let (mode, kind, oid) = (
+    let (mode, _kind, oid) = (
         parts.next().ok_or_else(bad)?,
         parts.next().ok_or_else(bad)?,
         parts.next().ok_or_else(bad)?,
     );
-    Ok(TreeEntry {
-        mode: mode.to_string(),
-        name: rec[tab + 1..].to_vec(),
-        oid: oid.to_string(),
-        is_tree: kind == "tree",
-    })
+    Ok(TreeEntry::new(mode, &rec[tab + 1..], oid))
 }

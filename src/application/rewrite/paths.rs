@@ -109,7 +109,7 @@ fn gitignore_blob(store: &dyn TreeStore, tree: &str) -> Result<Option<Vec<u8>>> 
     let entries = store.read_tree(tree)?;
     entries
         .iter()
-        .find(|e| e.name == GITIGNORE.as_bytes() && !e.is_tree)
+        .find(|e| e.name == GITIGNORE.as_bytes() && !e.is_tree())
         .map(|e| store.read_blob(&e.oid))
         .transpose()
 }
