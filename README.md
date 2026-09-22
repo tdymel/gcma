@@ -80,4 +80,32 @@ commit writes move between backends; refs, signing and hooks always use git. Mea
 `ghma hook install` adds a `pre-push` hook. In `verify` mode it blocks pushes of nonconforming commits ("run `ghma apply`").
 In `rewrite` mode it rewrites them and aborts the push so you push again. Deletes and pushes of other branches are ignored; `git push origin HEAD` counts as the checked-out branch.
 
-See `DESIGN.md` for the full design and the implementation notes.
+## Architecture
+
+Domain-driven design with a hexagonal layout (`src/`):
+
+```
+domain/        pure model and rules (no I/O): error, settings, scheduling, text, history
+application/   use cases and the ports they need: planning, rewrite (apply/restore), llm, push_guard, ports
+adapters/      git_cli, gix_store, repository (composition), config_file, plan_file, hook_installer, cli
+```
+
+Dependencies point inwards only: `domain` knows nothing of ours, `application` only the domain, the leaf adapters
+(`git_cli`, `gix_store`, files) the application and domain, `repository` composes the leaf adapters, `cli` may use all.
+Inside the domain and application there are sub-layers too (e.g. `scheduling` builds on `settings`; `rewrite` and
+`push_guard` build on `planning`). `tests/architecture.rs` enforces this with
+[archunit](https://crates.io/crates/archunit), together with: no module cycles, no I/O or CLI crates in the domain,
+`git_cli` and `gix_store` independent of each other, and a size cap per file.
+
+## Development
+
+```sh
+cargo test                       # unit, integration, architecture tests (default features, gix)
+cargo test --no-default-features # git-CLI-only build
+cargo clippy --all-targets
+```
+
+GitHub Actions (`.github/workflows`): `ci.yml` runs fmt, clippy and the tests (default and git-only features, Linux and
+macOS) on every push and pull request, then builds a release binary. `release.yml` is optional: start it from the
+Actions tab ("Run workflow", enter the version from `Cargo.toml`) or push a `vX.Y.Z` tag. It re-runs CI, builds binaries
+for Linux and macOS (x86_64 and arm64), and creates a GitHub release with archives and checksums.
