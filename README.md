@@ -36,14 +36,31 @@ messages:
   strip_trailers: [Signed-off-by, Co-Authored-By]   # dropped from the trailing trailer block
   add_trailers:                                      # appended unless that exact trailer is present
     - "Assisted-By: Claude <noreply@anthropic.com>"
+paths:                                               # remove paths from history (gitignore syntax)
+  exclude: ["secrets/", "*.env"]
+  gitignore: true                                    # default: add the patterns to .gitignore
+  only_excluded_commits: drop                        # drop | keep (keep leaves an empty commit)
 signing: strip            # strip | resign (re-sign through your git signing config)
 hook: { mode: verify }    # verify | rewrite
 ```
 
+## Removing paths from history
+
+`paths.exclude` takes gitignore patterns. Every rewritten commit loses those paths; a commit that touched nothing else is
+dropped (or kept empty with `only_excluded_commits: keep`) and its children are re-parented. The files are **not** removed
+from your project: the patterns are appended to the root `.gitignore` starting with the first kept commit that had such
+paths, and in everything built on top of it, so the files stay in the working copy but out of git. If the tip itself only
+touched excluded paths and no earlier kept commit carries the patterns, the tip stays as a commit that only adds them.
+After the branch moves, the index is reset to the new tip, and the working copy's `.gitignore` is updated unless you have
+local edits to it. `plan` lists dropped commits. Only unpushed commits are rewritten (see `--rewrite-pushed`). Apply
+re-derives every tree from the rules and re-checks that nothing but `.gitignore` differs from the old tip minus the excluded
+paths, so a hand-edited plan cannot change content. This is the one feature that changes trees; the backup keeps the originals.
+
 ## Safety model
 
-- New commits are built from the old tree with remapped parents; before any ref moves, `apply` checks tree equality, parent
-  order, commit count, the whole-tree diff, and that all unchanged commits are still reachable.
+- New commits are built from the old tree (minus excluded paths, if configured) with remapped parents; before any ref moves,
+  `apply` checks the trees, parent order, commit count (old minus dropped), the tip-tree diff, and that all unchanged commits
+  are still reachable.
 - One atomic ref transaction creates `refs/ghma/backup/<branch>/<id>/{old,new}` and moves the branch with compare-and-swap.
   Backups are never pruned automatically. `ghma restore <id>` goes back; it refuses if the branch moved on (unless `--force`).
 - Refused (exit 3): shallow clones, replace refs/grafts, detached HEAD, staged changes, rebase/merge/cherry-pick in progress.
