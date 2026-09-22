@@ -141,6 +141,28 @@ impl Repo {
         self.git(&["rev-parse", "HEAD"])
     }
 
+    /// Commit several files (path, content) at once, as the default identity.
+    pub fn commit_files(&self, files: &[(&str, &str)], msg: &str, unix: i64) -> String {
+        for (name, content) in files {
+            self.write(name, content);
+            self.git(&["add", "-f", name]);
+        }
+        let date = format!("{unix} +0000");
+        let o = self
+            .cmd("git")
+            .args(["commit", "-q", "--allow-empty", "-m", msg])
+            .env("GIT_AUTHOR_DATE", &date)
+            .env("GIT_COMMITTER_DATE", &date)
+            .output()
+            .unwrap();
+        assert!(
+            o.status.success(),
+            "commit failed: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+        self.git(&["rev-parse", "HEAD"])
+    }
+
     /// Build a linear history of `n` commits starting at `start` (2 days apart).
     pub fn linear(&self, n: usize, start: i64) -> Vec<String> {
         (0..n)

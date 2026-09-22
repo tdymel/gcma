@@ -1,0 +1,233 @@
+//! Randomized check of the path rules: random histories (branches, merges, commits touching only
+//! excluded paths, both, or neither) must lose exactly the commits that only touched excluded paths,
+//! keep every other tree minus the excluded paths, and stay restorable and idempotent.
+
+mod common;
+
+use common::*;
+
+struct Rand(u64);
+impl Rand {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+    fn below(&mut self, n: u64) -> u64 {
+        self.next() % n
+    }
+}
+
+fn build(r: &Repo, rng: &mut Rand, ops: usize) {
+    r.commit_files(&[("root.txt", "root\n")], "root", 1_500_000_000);
+    let mut branches = vec!["main".to_string()];
+    for n in 1..=ops {
+        let t = 1_400_000_000 + rng.below(400_000_000) as i64;
+        let plain = (format!("f{n}.txt"), format!("{n}\n"));
+        let secret = (format!("secrets/s{n}.txt"), format!("s{n}\n"));
+        let files: Vec<(&str, &str)> = match rng.below(4) {
+            0 => vec![(secret.0.as_str(), secret.1.as_str())],
+            1 => vec![
+                (plain.0.as_str(), plain.1.as_str()),
+                (secret.0.as_str(), secret.1.as_str()),
+            ],
+            _ => vec![(plain.0.as_str(), plain.1.as_str())],
+        };
+        match rng.below(10) {
+            0 | 1 => {
+                let all = r.git(&["rev-list", "--all"]);
+                let all: Vec<&str> = all.lines().collect();
+                let from = all[rng.below(all.len() as u64) as usize];
+                let name = format!("b{n}");
+                r.git(&["checkout", "-q", "-b", &name, from]);
+                branches.push(name);
+                r.commit_files(&files, &format!("branch {n}"), t);
+            }
+            2 | 3 => {
+                let b = branches[rng.below(branches.len() as u64) as usize].clone();
+                r.git(&["checkout", "-q", &b]);
+                r.commit_files(&files, &format!("switch {n}"), t);
+            }
+            4 => {
+                let cur = r.git(&["rev-parse", "--abbrev-ref", "HEAD"]);
+                let others: Vec<&String> = branches.iter().filter(|b| **b != cur).collect();
+                if others.is_empty() {
+                    r.commit_files(&files, &format!("commit {n}"), t);
+                    continue;
+                }
+                let pick = others[rng.below(others.len() as u64) as usize];
+                let date = format!("{t} +0000");
+                let o = r
+                    .cmd("git")
+                    .args(["merge", "-q", "--no-ff", "-m", "merge", pick])
+                    .env("GIT_AUTHOR_DATE", &date)
+                    .env("GIT_COMMITTER_DATE", &date)
+                    .output()
+                    .unwrap();
+                if !o.status.success() {
+                    let _ = r.git_out(&["merge", "--abort"]);
+                }
+            }
+            _ => {
+                r.commit_files(&files, &format!("commit {n}"), t);
+            }
+        }
+    }
+    r.git(&["checkout", "-q", "main"]);
+}
+
+/// Commits (single parent or root) whose change touches only `secrets/`.
+fn only_secret_commits(r: &Repo) -> usize {
+    r.git(&["rev-list", "--parents", "HEAD"])
+        .lines()
+        .filter(|l| l.split(' ').count() <= 2)
+        .filter(|l| {
+            let oid = l.split(' ').next().unwrap();
+            let changed = r.git(&[
+                "diff-tree",
+                "--root",
+                "--no-commit-id",
+                "-r",
+                "--name-only",
+                oid,
+            ]);
+            !changed.is_empty() && changed.lines().all(|p| p.starts_with("secrets/"))
+        })
+        .count()
+}
+
+fn run_case(seed: u64) {
+    let mut rng = Rand(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+    let r = Repo::new();
+    build(&r, &mut rng, 14 + (seed as usize % 12));
+    let old_tip = r.git(&["rev-parse", "HEAD"]);
+    let old_tip_subject = r.git(&["log", "-1", "--format=%s"]);
+    let old_count: usize = r.git(&["rev-list", "--count", "HEAD"]).parse().unwrap();
+    let doomed = only_secret_commits(&r);
+    let old_files: Vec<String> = r
+        .git(&["ls-tree", "-r", "--name-only", "HEAD"])
+        .lines()
+        .map(String::from)
+        .collect();
+
+    let schedule = seed.is_multiple_of(2);
+    r.config(&if schedule {
+        berlin_cfg("paths:\n  exclude: [\"secrets/\"]\n")
+    } else {
+        "version: 1\npaths:\n  exclude: [\"secrets/\"]\n".to_string()
+    });
+    let o = r.ghma(&["apply", "--from", "root"]);
+    assert!(
+        o.status.success(),
+        "seed {seed}: {}{}",
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr)
+    );
+    r.fsck();
+
+    let new_count: usize = r.git(&["rev-list", "--count", "HEAD"]).parse().unwrap();
+    // The old tip is the one commit that may survive despite touching only excluded paths: it
+    // carries the .gitignore entry when nothing else on the branch does.
+    if new_count == old_count - doomed + 1 {
+        assert_eq!(
+            r.git(&["log", "-1", "--format=%s"]),
+            old_tip_subject,
+            "seed {seed}"
+        );
+    } else {
+        assert_eq!(
+            new_count,
+            old_count - doomed,
+            "seed {seed}: dropped exactly the secret-only commits"
+        );
+    }
+    for row in r.log() {
+        let files = r.git(&["ls-tree", "-r", "--name-only", &row.oid]);
+        assert!(
+            !files.lines().any(|p| p.starts_with("secrets/")),
+            "seed {seed}"
+        );
+    }
+    let mut expected: Vec<String> = old_files
+        .iter()
+        .filter(|p| !p.starts_with("secrets/"))
+        .cloned()
+        .collect();
+    let new_files: Vec<String> = r
+        .git(&["ls-tree", "-r", "--name-only", "HEAD"])
+        .lines()
+        .map(String::from)
+        .collect();
+    if new_files.contains(&".gitignore".to_string()) {
+        expected.push(".gitignore".into());
+        expected.sort();
+    }
+    assert_eq!(new_files, expected, "seed {seed}: tip content");
+    if schedule {
+        assert_scheduled(&r.log());
+    }
+
+    // Working copy: secret files remain and nothing but the config shows up as changed.
+    for p in old_files.iter().filter(|p| p.starts_with("secrets/")) {
+        assert!(
+            r.path().join(p).exists(),
+            "seed {seed}: {p} vanished from the project"
+        );
+    }
+    let status: Vec<String> = r
+        .git(&["status", "--porcelain"])
+        .lines()
+        .filter(|l| !l.contains(".git-hide-my-ass.yml"))
+        .map(String::from)
+        .collect();
+    assert!(status.is_empty(), "seed {seed}: {status:?}");
+
+    // Idempotent and undoable; the old history is intact behind the backup.
+    assert!(
+        r.ghma_ok(&["apply", "--from", "root"])
+            .contains("Nothing to do"),
+        "seed {seed}"
+    );
+    assert!(
+        r.ghma(&["plan", "--check", "--from", "root"])
+            .status
+            .success(),
+        "seed {seed}"
+    );
+    let backup = r.git(&["for-each-ref", "--format=%(refname)", "refs/ghma/backup/"]);
+    if backup.is_empty() {
+        // Nothing to rewrite: the history never had a secret and no schedule applied.
+        assert!(
+            !schedule && old_files.iter().all(|p| !p.starts_with("secrets/")),
+            "seed {seed}"
+        );
+        assert_eq!(r.git(&["rev-parse", "HEAD"]), old_tip, "seed {seed}");
+        return;
+    }
+    let id = backup
+        .lines()
+        .next()
+        .unwrap()
+        .rsplit('/')
+        .nth(1)
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        r.git(&[
+            "rev-list",
+            "--count",
+            &format!("refs/ghma/backup/main/{id}/old")
+        ]),
+        old_count.to_string()
+    );
+    r.ghma_ok(&["restore", &id]);
+    assert_eq!(r.git(&["rev-parse", "HEAD"]), old_tip, "seed {seed}");
+}
+
+#[test]
+fn random_histories_lose_only_secret_commits() {
+    for seed in 1..=30 {
+        run_case(seed);
+    }
+}
