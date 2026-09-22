@@ -11,7 +11,7 @@ use crate::application::pathrules::TreeRewriter;
 use crate::application::ports::Repository;
 use crate::application::preconditions::check_preconditions;
 use crate::domain::error::{Error, Result};
-use crate::domain::history::commit::{Commit, SIGNATURE_HEADERS};
+use crate::domain::history::commit::Commit;
 use crate::domain::history::conform::{self, Ctx};
 use crate::domain::history::linearize::linearize;
 use crate::domain::history::parents::resolve_parents;
@@ -211,13 +211,23 @@ fn rewrite_warnings(
         let lossy = linear
             .iter()
             .filter(|o| {
-                commits[*o].extra.iter().any(|h| {
-                    !SIGNATURE_HEADERS.contains(&h.key.as_str()) && h.key != "gpgsig-sha256"
-                })
+                commits[*o]
+                    .extra
+                    .iter()
+                    .any(|h| !h.is_invalidated_by_rewrite())
             })
             .count();
         if lossy > 0 {
             warnings.push(format!("{lossy} commit(s) carry extra headers (e.g. encoding) that `signing: resign` cannot preserve"));
+        }
+        let binary = linear
+            .iter()
+            .filter(|o| std::str::from_utf8(&commits[*o].message).is_err())
+            .count();
+        if binary > 0 {
+            warnings.push(format!(
+                "{binary} commit(s) have messages that are not valid UTF-8; `signing: resign` may not sign them exactly as they are"
+            ));
         }
     }
     Ok(warnings)

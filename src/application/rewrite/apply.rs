@@ -7,7 +7,7 @@ use crate::application::pathrules::TreeRewriter;
 use crate::application::ports::{RefUpdate, Repository};
 use crate::application::preconditions::check_preconditions;
 use crate::domain::error::{Error, Result};
-use crate::domain::history::commit::{NewCommit, SIGNATURE_HEADERS};
+use crate::domain::history::commit::{NewCommit, short};
 use crate::domain::history::plan::{Parent, Plan};
 use crate::domain::settings::Config;
 
@@ -136,7 +136,7 @@ pub fn apply(
         let extra = o
             .extra
             .iter()
-            .filter(|h| !SIGNATURE_HEADERS.contains(&h.key.as_str()))
+            .filter(|h| !h.is_invalidated_by_rewrite())
             // A rewritten (UTF-8) message no longer matches a legacy `encoding` header.
             .filter(|h| {
                 !(h.key == "encoding" && message_changed && std::str::from_utf8(&message).is_ok())
@@ -168,11 +168,7 @@ pub fn apply(
     let stamp = chrono::DateTime::from_timestamp(now, 0)
         .unwrap_or_default()
         .format("%Y%m%dT%H%M%SZ");
-    let stem = format!(
-        "{stamp}-{}-{}",
-        &plan.tip_oid[..plan.tip_oid.len().min(8)],
-        &new_tip[..new_tip.len().min(8)]
-    );
+    let stem = format!("{stamp}-{}-{}", short(&plan.tip_oid), short(&new_tip));
     // The same rewrite undone and redone within a second would otherwise collide.
     let mut id = stem.clone();
     let mut n = 1;

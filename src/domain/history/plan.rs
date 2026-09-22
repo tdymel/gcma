@@ -16,6 +16,9 @@ pub fn is_oid(s: &str) -> bool {
     matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// Where local branches live.
+pub const HEADS_PREFIX: &str = "refs/heads/";
+
 pub const PLAN_VERSION: u32 = 2;
 pub const OLDEST_PLAN_VERSION: u32 = 1;
 
@@ -139,7 +142,7 @@ impl Plan {
 
     /// Rejects plans that cannot be applied: only back references between entries are legal.
     pub fn validate(&self) -> Result<()> {
-        if !self.branch_ref.starts_with("refs/heads/")
+        if !self.branch_ref.starts_with(HEADS_PREFIX)
             || self.branch_ref.chars().any(|c| c.is_control() || c == ' ')
         {
             return Err(Error::Usage(format!(
@@ -198,7 +201,7 @@ impl Plan {
 
     pub fn branch_name(&self) -> &str {
         self.branch_ref
-            .strip_prefix("refs/heads/")
+            .strip_prefix(HEADS_PREFIX)
             .unwrap_or(&self.branch_ref)
     }
 }

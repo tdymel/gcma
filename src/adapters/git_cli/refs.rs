@@ -5,6 +5,8 @@ use std::collections::HashSet;
 use super::runner::GitCli;
 use crate::application::ports::{RefStore, RefUpdate};
 use crate::domain::error::{Error, Result};
+use crate::domain::history::commit::short;
+use crate::domain::history::plan::HEADS_PREFIX;
 
 impl RefStore for GitCli {
     fn current_branch_ref(&self) -> Result<Option<String>> {
@@ -22,7 +24,7 @@ impl RefStore for GitCli {
 
     fn upstream_oid(&self, branch_ref: &str) -> Result<Option<String>> {
         // `@{upstream}` only resolves with a short branch name, not `refs/heads/<name>`.
-        let short = branch_ref.strip_prefix("refs/heads/").unwrap_or(branch_ref);
+        let short = branch_ref.strip_prefix(HEADS_PREFIX).unwrap_or(branch_ref);
         self.resolve_commit(&format!("{short}@{{upstream}}"))
     }
 
@@ -56,10 +58,18 @@ impl RefStore for GitCli {
         c.args(["update-ref", "-m", message, "--stdin"]);
         let o = self.exec(c, Some(input.as_bytes()))?;
         if !o.ok {
-            return Err(Error::TipMoved(format!(
-                "ref transaction failed (did the branch move?): {}",
-                String::from_utf8_lossy(&o.stderr).trim()
-            )));
+            let why = String::from_utf8_lossy(&o.stderr).trim().to_string();
+            // A compare-and-swap that lost, or a backup ref that exists already; anything else
+            // (a name clash, a lock, a broken repository) is a plain git failure.
+            return Err(
+                if why.contains("but expected") || why.contains("already exists") {
+                    Error::TipMoved(format!(
+                        "ref transaction failed (did the branch move?): {why}"
+                    ))
+                } else {
+                    Error::Git(format!("ref transaction failed: {why}"))
+                },
+            );
         }
         Ok(())
     }
@@ -88,7 +98,7 @@ impl RefStore for GitCli {
                 if let Some((_, target)) = l.split_once(' ')
                     && oids.contains(target)
                 {
-                    found.push(format!("note on {}", &target[..target.len().min(8)]));
+                    found.push(format!("note on {}", short(target)));
                 }
             }
         }

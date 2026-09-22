@@ -1,6 +1,6 @@
 //! The human-readable plan table.
 
-use crate::domain::history::commit::Commit;
+use crate::domain::history::commit::{Commit, short};
 use crate::domain::history::plan::Plan;
 use crate::domain::text::messages;
 
@@ -30,7 +30,7 @@ pub(super) fn render(plan: &Plan, old: &[Commit], dropped: &[Commit]) -> String 
         };
         s.push_str(&format!(
             "{}  {} -> {}  {}{}{}\n",
-            &e.old_oid[..e.old_oid.len().min(8)],
+            short(&e.old_oid),
             fmt(o.committer.time, o.committer.tz),
             fmt(e.committer.time, e.committer.tz),
             if who_old == who_new {
@@ -49,7 +49,7 @@ pub(super) fn render(plan: &Plan, old: &[Commit], dropped: &[Commit]) -> String 
     for d in dropped {
         s.push_str(&format!(
             "{}  DROPPED (only touches excluded paths)  \"{}\"\n",
-            &d.oid[..d.oid.len().min(8)],
+            short(&d.oid),
             messages::title(&d.message)
         ));
     }

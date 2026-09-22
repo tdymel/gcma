@@ -6,6 +6,8 @@ use super::paths::sync_worktree;
 use crate::application::ports::{RefUpdate, Repository};
 use crate::application::preconditions::check_preconditions;
 use crate::domain::error::{Error, Result};
+use crate::domain::history::commit::short;
+use crate::domain::history::plan::HEADS_PREFIX;
 
 pub const BACKUP_PREFIX: &str = "refs/ghma/backup/";
 /// Where a forced restore parks the tip it discards, so no commit loses its last reference.
@@ -87,7 +89,7 @@ pub fn restore(repo: &dyn Repository, id: &str, force: bool) -> Result<RestoreRe
     let branch_ref = repo
         .current_branch_ref()?
         .ok_or_else(|| Error::Precondition("detached HEAD; check out the branch first".into()))?;
-    if branch_ref != format!("refs/heads/{}", b.branch) {
+    if branch_ref != format!("{HEADS_PREFIX}{}", b.branch) {
         return Err(Error::Precondition(format!(
             "backup {} belongs to branch {}; check it out first",
             b.id, b.branch
@@ -106,12 +108,7 @@ pub fn restore(repo: &dyn Repository, id: &str, force: bool) -> Result<RestoreRe
     }];
     let mut parked = None;
     if tip != b.new {
-        let name = format!(
-            "{DISCARDED_PREFIX}{}/{}-{}",
-            b.branch,
-            b.id,
-            &tip[..tip.len().min(8)]
-        );
+        let name = format!("{DISCARDED_PREFIX}{}/{}-{}", b.branch, b.id, short(&tip));
         commands.push(RefUpdate::Set {
             name: name.clone(),
             new: tip.clone(),

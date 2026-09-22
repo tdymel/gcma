@@ -88,13 +88,26 @@ pub struct Commit {
     pub message: Vec<u8>,
 }
 
-pub const SIGNATURE_HEADERS: [&str; 3] = ["gpgsig", "gpgsig-sha256", "mergetag"];
+impl Header {
+    /// A signature over the commit.
+    pub fn is_signature(&self) -> bool {
+        self.key == "gpgsig" || self.key == "gpgsig-sha256"
+    }
+
+    /// Headers that cannot survive a rewrite: signatures and embedded signed tags.
+    pub fn is_invalidated_by_rewrite(&self) -> bool {
+        self.is_signature() || self.key == "mergetag"
+    }
+}
+
+/// The first 8 characters of an object id, for messages and ids.
+pub fn short(oid: &str) -> &str {
+    &oid[..oid.len().min(8)]
+}
 
 impl Commit {
     pub fn has_signature(&self) -> bool {
-        self.extra
-            .iter()
-            .any(|h| h.key == "gpgsig" || h.key == "gpgsig-sha256")
+        self.extra.iter().any(Header::is_signature)
     }
 
     pub fn parse(oid: &str, data: &[u8]) -> Result<Commit> {
