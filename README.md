@@ -75,6 +75,10 @@ local edits to it. `plan` lists dropped commits. Only unpushed commits are rewri
 re-derives every tree from the rules and re-checks that nothing but `.gitignore` differs from the old tip minus the excluded
 paths, so a hand-edited plan cannot change content. This is the one feature that changes trees; the backup keeps the originals.
 
+Dropping a commit on a side branch can leave a merge whose two parents are now the same commit, or one parent an ancestor of
+the other. That is valid in git and stable under re-running `apply`; ghma does not prune such parents because that would change
+which commits the merge is "of".
+
 ### Purging removed paths for real
 
 Backups are the safety net, so the original commits (and anything in the excluded paths) stay reachable from
@@ -95,6 +99,9 @@ locally: `ghma restore <id> --prune`, then `git reflog expire --expire=now --all
   an untrusted branch can rewrite your unpushed history on push (backups exist). `ghma init` keeps it out of commits via
   `.git/info/exclude`.
 - `restore` also puts the index (and ghma's `.gitignore` change) back when path rules had changed the content.
+- Names, emails and messages need not be UTF-8: they are carried byte for byte (a name that does not match an identity rule
+  as text is left as it is). One limitation: with `signing: resign`, messages that are not valid UTF-8 may not be signed
+  exactly as written, and `plan`/`apply` warn about it.
 - Refused (exit 3): shallow clones, replace refs/grafts, detached HEAD, staged changes, rebase/merge/cherry-pick in progress.
 - Exit codes: 0 ok, 1 internal, 2 usage/config, 3 refused, 4 branch moved, 5 pushed commits (also for a dry run), 6 nonconforming,
   7 bad LLM reply. `ghma restore --force` parks what it discards at `refs/ghma/discarded/…`.
