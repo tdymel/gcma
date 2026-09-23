@@ -97,10 +97,101 @@ fn only_secret_commits(r: &Repo) -> usize {
         .count()
 }
 
+/// `path -> "mode blob"` of a commit's tree, without `secrets/` and the ignore file.
+fn visible_files(r: &Repo, rev: &str) -> std::collections::BTreeMap<String, String> {
+    r.git(&["ls-tree", "-r", rev])
+        .lines()
+        .map(|l| {
+            let (meta, path) = l.split_once('\t').unwrap();
+            (path.to_string(), meta.to_string())
+        })
+        .filter(|(p, _)| !p.starts_with("secrets/") && p != ".gitignore")
+        .collect()
+}
+
+/// Pairs every old commit with its replacement and compares the trees one by one. A commit is
+/// dropped when it is not the root of a merge and only touched `secrets/`; its children are
+/// attached to its replacement parents. The old tip may stay as the commit that carries the
+/// ignore patterns.
+fn check_every_tree(seed: u64, r: &Repo, old: &[Row], old_tip: &str, tip_subject: &str) {
+    let new = r.log();
+    let secret_only = |oid: &str, parents: &[String]| -> bool {
+        if parents.len() > 1 {
+            return false;
+        }
+        let changed = r.git(&[
+            "diff-tree",
+            "--root",
+            "--no-commit-id",
+            "-r",
+            "--name-only",
+            oid,
+        ]);
+        !changed.is_empty() && changed.lines().all(|p| p.starts_with("secrets/"))
+    };
+    // old oid -> new oid(s) standing in for it as a parent
+    let mut stands_for: std::collections::HashMap<String, Vec<String>> = Default::default();
+    let mut taken: std::collections::HashSet<String> = Default::default();
+    for o in old {
+        let parents: Vec<String> = o
+            .parents
+            .iter()
+            .flat_map(|p| stands_for[p].clone())
+            .collect();
+        let candidate = new
+            .iter()
+            .find(|n| !taken.contains(&n.oid) && n.subject == o.subject && n.parents == parents);
+        let dropped = secret_only(&o.oid, &o.parents);
+        match (candidate, dropped) {
+            (Some(n), false) => {
+                assert_eq!(
+                    visible_files(r, &n.oid),
+                    visible_files(r, &o.oid),
+                    "seed {seed}: tree of {:?} differs from the old one minus secrets/",
+                    o.subject
+                );
+                // Where the old tree held secrets, the new one ignores them.
+                let had_secrets = r
+                    .git(&["ls-tree", "-r", "--name-only", &o.oid])
+                    .lines()
+                    .any(|p| p.starts_with("secrets/"));
+                if had_secrets {
+                    let ignore = r.git(&["show", &format!("{}:.gitignore", n.oid)]);
+                    assert!(
+                        ignore.lines().any(|l| l == "secrets/"),
+                        "seed {seed}: {:?} has secrets but its .gitignore does not name them",
+                        o.subject
+                    );
+                }
+                taken.insert(n.oid.clone());
+                stands_for.insert(o.oid.clone(), vec![n.oid.clone()]);
+            }
+            // The tip stays when nothing else carries the patterns.
+            (Some(n), true) if o.oid == old_tip && n.subject == tip_subject => {
+                taken.insert(n.oid.clone());
+                stands_for.insert(o.oid.clone(), vec![n.oid.clone()]);
+            }
+            (_, true) => {
+                stands_for.insert(o.oid.clone(), parents);
+            }
+            (None, false) => panic!(
+                "seed {seed}: no replacement for {:?} ({})",
+                o.subject, o.oid
+            ),
+        }
+    }
+    assert_eq!(
+        taken.len(),
+        new.len(),
+        "seed {seed}: unexplained new commits"
+    );
+}
+
 fn run_case(seed: u64) {
     let mut rng = Rand(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
     let r = Repo::new();
     build(&r, &mut rng, 14 + (seed as usize % 12));
+    let old_rows = r.log();
     let old_tip = r.git(&["rev-parse", "HEAD"]);
     let old_tip_subject = r.git(&["log", "-1", "--format=%s"]);
     let old_count: usize = r.git(&["rev-list", "--count", "HEAD"]).parse().unwrap();
@@ -149,6 +240,7 @@ fn run_case(seed: u64) {
             "seed {seed}"
         );
     }
+    check_every_tree(seed, &r, &old_rows, &old_tip, &old_tip_subject);
     let mut expected: Vec<String> = old_files
         .iter()
         .filter(|p| !p.starts_with("secrets/"))
