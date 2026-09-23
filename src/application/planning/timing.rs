@@ -15,7 +15,7 @@ pub(super) fn window_for(cfg: &Config, now: i64) -> Result<Option<(Window, i64)>
     };
     let to = cfg.resolve_to(now)?;
     let (days, hours) = (parse_days(&s.days)?, parse_hours(&s.hours)?);
-    let window = Window::build(cfg.tz()?, &days, hours, cfg.from_utc()?, to);
+    let window = Window::build(cfg.tz()?, &days, hours, cfg.resolve_from()?, to);
     Ok(Some((window, to)))
 }
 
@@ -59,7 +59,7 @@ impl Schedule<'_> {
             return Ok(Vec::new());
         }
         let in_suffix: HashSet<&String> = linear.iter().collect();
-        let from = self.cfg.from_utc()?;
+        let from = self.cfg.resolve_from()?;
         let floor: i64 = linear
             .iter()
             .flat_map(|o| self.commits[o].parents.iter())

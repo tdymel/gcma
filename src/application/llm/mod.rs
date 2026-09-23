@@ -4,5 +4,7 @@
 mod export;
 mod import;
 
-pub use export::{Export, ExportRow, export};
-pub use import::{ImportReport, Reply, ReplyLine, import};
+#[cfg(test)]
+pub use export::ExportRow;
+pub use export::{Export, export};
+pub use import::{Reply, ReplyLine, import};

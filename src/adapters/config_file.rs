@@ -86,7 +86,7 @@ mod tests {
         let c = parse("version: 1\nto: now\n").unwrap();
         assert_eq!(c.resolve_to(5).unwrap(), 5);
         let c = parse("version: 1\nfrom: 2026-01-01\n").unwrap();
-        assert_eq!(c.from_utc().unwrap(), 1767225600);
+        assert_eq!(c.resolve_from().unwrap(), 1767225600);
     }
 
     #[test]

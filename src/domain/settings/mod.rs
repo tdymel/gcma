@@ -13,9 +13,11 @@ use crate::domain::text::messages;
 
 use calendar::parse_instant;
 pub use calendar::{parse_days, parse_hours, weekday_index};
+#[cfg(test)]
+pub use types::SetSpec;
 pub use types::{
     Backend, Distribution, HookCfg, HookMode, IdentityRule, MatchSpec, MessagesCfg, OnlyExcluded,
-    PathsCfg, ScheduleCfg, SetSpec, Signing,
+    PathsCfg, ScheduleCfg, Signing,
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -82,13 +84,13 @@ impl Config {
             parse_days(&s.days)?;
             parse_hours(&s.hours)?;
             if !matches!(self.to.as_deref(), None | Some("now"))
-                && self.resolve_to(0)? <= self.from_utc()?
+                && self.resolve_to(0)? <= self.resolve_from()?
             {
                 return bad("`to` is not after `from`".into());
             }
         }
         if self.from.is_some() {
-            self.from_utc()?;
+            self.resolve_from()?;
         }
         for (i, r) in self.identity.iter().enumerate() {
             if r.match_.name.is_none() && r.match_.email.is_none() {
@@ -209,7 +211,8 @@ impl Config {
             .map(|r| (r.set.name.clone(), r.set.email.clone()))
     }
 
-    pub fn from_utc(&self) -> Result<i64> {
+    /// `from` as a UTC instant; a bare date means the start of that day.
+    pub fn resolve_from(&self) -> Result<i64> {
         let s = self
             .from
             .as_deref()

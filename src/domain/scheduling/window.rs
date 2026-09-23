@@ -25,8 +25,6 @@ impl Interval {
 #[derive(Debug, Clone)]
 pub struct Window {
     pub tz: Tz,
-    pub from: i64,
-    pub to: i64,
     intervals: Vec<Interval>,
 }
 
@@ -99,12 +97,13 @@ impl Window {
             }
             intervals = disjoint;
         }
-        Window {
-            tz,
-            from,
-            to,
-            intervals,
-        }
+        Window { tz, intervals }
+    }
+
+    /// Allowed seconds inside `[lo, to)`.
+    #[cfg(test)]
+    pub fn capacity(&self, lo: i64) -> u64 {
+        self.clipped(lo).iter().map(|i| i.len()).sum()
     }
 
     pub fn contains(&self, t: i64) -> bool {
@@ -136,11 +135,6 @@ impl Window {
                 })
             })
             .collect()
-    }
-
-    /// Allowed seconds inside `[lo, to)`.
-    pub fn capacity(&self, lo: i64) -> u64 {
-        self.clipped(lo).iter().map(|i| i.len()).sum()
     }
 }
 

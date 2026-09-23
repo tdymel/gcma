@@ -3,6 +3,9 @@
 //! Layers (hexagonal): `domain` is pure; `application` holds the use cases and the ports they
 //! need; `adapters` implement the ports and drive the use cases from the command line.
 
-pub mod adapters;
-pub mod application;
-pub mod domain;
+mod adapters;
+mod application;
+mod domain;
+
+/// Runs the command line and returns the process exit code.
+pub use adapters::cli::main;

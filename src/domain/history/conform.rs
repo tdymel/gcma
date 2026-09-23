@@ -271,7 +271,7 @@ mod tests {
             tz,
             &crate::domain::settings::parse_days(&c.schedule.as_ref().unwrap().days).unwrap(),
             (540, 1080),
-            c.from_utc().unwrap(),
+            c.resolve_from().unwrap(),
             c.resolve_to(0).unwrap(),
         );
         let mut times = HashMap::new();

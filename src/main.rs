@@ -7,7 +7,7 @@ fn main() {
             default_hook(info);
         }
     }));
-    match std::panic::catch_unwind(ghma::adapters::cli::main) {
+    match std::panic::catch_unwind(ghma::main) {
         Ok(code) => std::process::exit(code),
         Err(payload) => {
             let broken_pipe = payload

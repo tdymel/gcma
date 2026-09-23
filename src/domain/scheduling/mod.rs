@@ -5,8 +5,8 @@ mod seed;
 mod window;
 
 pub use scheduler::schedule;
-pub use seed::{ScheduleRng, derive_seed, rng_from_seed};
-pub use window::{Interval, Window};
+pub use seed::{derive_seed, rng_from_seed};
+pub use window::Window;
 
 #[cfg(test)]
 mod testkit;

@@ -2,7 +2,7 @@
 //! served in-process by the gix store.
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::git_cli::GitCli;
 use crate::application::ports::{
@@ -35,19 +35,6 @@ impl GitRepository {
             }
         };
         Ok(GitRepository { cli, objects })
-    }
-
-    /// The backend in effect.
-    pub fn backend(&self) -> Backend {
-        if self.objects.is_some() {
-            Backend::Gix
-        } else {
-            Backend::Git
-        }
-    }
-
-    pub fn dir(&self) -> &Path {
-        self.cli.dir()
     }
 
     pub fn git_path(&self, p: &str) -> Result<PathBuf> {
