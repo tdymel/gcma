@@ -314,40 +314,61 @@ impl Repo {
     }
 }
 
-/// Asserts that the two histories are the same shape and every tree and message body is untouched.
-pub fn assert_same_content(old: &[Row], new: &[Row]) {
-    assert_eq!(old.len(), new.len(), "commit count changed");
-    let pos: std::collections::HashMap<&str, usize> = old
-        .iter()
-        .enumerate()
-        .map(|(i, r)| (r.oid.as_str(), i))
-        .collect();
-    let npos: std::collections::HashMap<&str, usize> = new
-        .iter()
-        .enumerate()
-        .map(|(i, r)| (r.oid.as_str(), i))
-        .collect();
-    // Match commits by tree (all trees are unique in these fixtures).
+/// Pairs every old commit with the new commit that replaced it: same tree and subject, and the
+/// parents are the replacements of the old parents, in the same order. Panics when a commit has
+/// no counterpart or two commits would share one.
+pub fn map_commits(old: &[Row], new: &[Row]) -> std::collections::HashMap<String, String> {
+    map_commits_by(old, new, true)
+}
+
+/// `map_commits`, optionally ignoring the subjects (for runs that rewrite messages).
+pub fn map_commits_by(
+    old: &[Row],
+    new: &[Row],
+    same_subject: bool,
+) -> std::collections::HashMap<String, String> {
+    let mut map: std::collections::HashMap<String, String> = Default::default();
+    let mut taken: std::collections::HashSet<&str> = Default::default();
     for o in old {
+        let parents: Vec<String> = o.parents.iter().map(|p| map[p].clone()).collect();
         let n = new
             .iter()
-            .find(|n| n.tree == o.tree)
-            .unwrap_or_else(|| panic!("tree {} lost", o.tree));
-        assert_eq!(
-            o.parents.len(),
-            n.parents.len(),
-            "parent count of {}",
-            o.oid
-        );
-        for (op, np) in o.parents.iter().zip(&n.parents) {
-            let opi = pos[op.as_str()];
-            assert_eq!(
-                old[opi].tree,
-                new[npos[np.as_str()]].tree,
-                "parent wiring of {}",
-                o.oid
-            );
-        }
+            .find(|n| {
+                !taken.contains(n.oid.as_str())
+                    && n.tree == o.tree
+                    && (!same_subject || n.subject == o.subject)
+                    && n.parents == parents
+            })
+            .unwrap_or_else(|| panic!("no replacement for {} ({:?})", o.oid, o.subject));
+        taken.insert(&n.oid);
+        map.insert(o.oid.clone(), n.oid.clone());
+    }
+    map
+}
+
+/// Asserts that the two histories are the same shape and every tree and subject is untouched.
+pub fn assert_same_content(old: &[Row], new: &[Row]) {
+    assert_eq!(old.len(), new.len(), "commit count changed");
+    map_commits(old, new);
+}
+
+/// Same shape and trees, but the messages may differ.
+pub fn assert_same_shape(old: &[Row], new: &[Row]) {
+    assert_eq!(old.len(), new.len(), "commit count changed");
+    map_commits_by(old, new, false);
+}
+
+impl Repo {
+    /// Full commit messages by commit id, for every commit reachable from `rev`.
+    pub fn messages(&self, rev: &str) -> std::collections::HashMap<String, String> {
+        self.git(&["log", "--format=%H%x00%B%x01", rev])
+            .split('\u{1}')
+            .filter(|rec| !rec.trim().is_empty())
+            .map(|rec| {
+                let (oid, msg) = rec.trim_start_matches('\n').split_once('\0').unwrap();
+                (oid.to_string(), msg.to_string())
+            })
+            .collect()
     }
 }
 

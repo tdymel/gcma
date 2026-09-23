@@ -25,6 +25,17 @@ impl Rand {
     }
 }
 
+/// Two thirds of the commits carry sign-off and co-author trailers.
+fn body(n: usize, subject: &str) -> String {
+    if n % 3 == 1 {
+        subject.to_string()
+    } else {
+        format!(
+            "{subject}\n\nBody of {n}.\n\nSigned-off-by: Dev <dev@x.org>\nCo-authored-by: Pair <pair@x.org>"
+        )
+    }
+}
+
 fn build_random_repo(r: &Repo, rng: &mut Rand, ops: usize) {
     r.commit_as("root.txt", "root", 1_500_000_000, "Old Me", "me@home.org");
     let mut branches: Vec<String> = vec!["main".into()];
@@ -49,7 +60,7 @@ fn build_random_repo(r: &Repo, rng: &mut Rand, ops: usize) {
                 branches.push(name);
                 r.commit_as(
                     &format!("f{n}.txt"),
-                    &format!("branch commit {n}"),
+                    &body(n, &format!("branch commit {n}")),
                     t,
                     who.0,
                     who.1,
@@ -61,7 +72,7 @@ fn build_random_repo(r: &Repo, rng: &mut Rand, ops: usize) {
                 r.git(&["checkout", "-q", &b]);
                 r.commit_as(
                     &format!("f{n}.txt"),
-                    &format!("commit {n}"),
+                    &body(n, &format!("commit {n}")),
                     t,
                     who.0,
                     who.1,
@@ -75,7 +86,7 @@ fn build_random_repo(r: &Repo, rng: &mut Rand, ops: usize) {
                 if others.is_empty() {
                     r.commit_as(
                         &format!("f{n}.txt"),
-                        &format!("commit {n}"),
+                        &body(n, &format!("commit {n}")),
                         t,
                         who.0,
                         who.1,
@@ -109,7 +120,7 @@ fn build_random_repo(r: &Repo, rng: &mut Rand, ops: usize) {
             _ => {
                 r.commit_as(
                     &format!("f{n}.txt"),
-                    &format!("commit {n}"),
+                    &body(n, &format!("commit {n}")),
                     t,
                     who.0,
                     who.1,
@@ -135,9 +146,11 @@ fn run_case(seed: u64) {
         Ordering::Relaxed,
     );
     let old_tip = old.last().unwrap().oid.clone();
+    let heads_before = heads_except_main(&r);
+    let old_msgs_all = r.messages("HEAD");
     let old_all = r.git(&["rev-list", "--count", "HEAD"]);
 
-    let variant = seed % 4;
+    let variant = seed % 5;
     let dist = ["uniform", "weekday-weighted", "bursty"][(seed % 3) as usize];
     let cfg = match variant {
         0 => "version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n".to_string(),
@@ -146,7 +159,8 @@ fn run_case(seed: u64) {
             "{}identity:\n  - match: {{email: me@home.org}}\n    set: {{name: Jane Doe, email: jane@work.com}}\nmessages:\n  strip_trailers: [Signed-off-by]\n",
             berlin_cfg("").replace("bursty", dist)
         ),
-        _ => "version: 1\nmessages:\n  strip_trailers: [Signed-off-by]\n".to_string(),
+        3 => "version: 1\nmessages:\n  strip_trailers: [Signed-off-by]\n".to_string(),
+        _ => "version: 1\nmessages:\n  strip_trailers: [Co-authored-by]\n  add_trailers:\n    - \"Assisted-By: Claude <noreply@anthropic.com>\"\n".to_string(),
     };
     r.config(&cfg);
 
@@ -171,10 +185,18 @@ fn run_case(seed: u64) {
             "seed {seed}: identity"
         );
     }
-    // Merge parent order: for every merge, parent trees line up with the original.
-    for (o, n) in old.iter().zip(&new) {
-        let _ = (o, n);
+    // Messages: the trailer rules did exactly what they say, and nothing else changed.
+    let map = map_commits(&old, &new);
+    let (old_msgs, new_msgs) = (old_msgs_all.clone(), r.messages("HEAD"));
+    for (o, n) in &map {
+        check_message(seed, variant, &old_msgs[o], &new_msgs[n]);
     }
+    // Branches other than the rewritten one are untouched.
+    let heads_after = heads_except_main(&r);
+    assert_eq!(
+        heads_before, heads_after,
+        "seed {seed}: other branches moved"
+    );
 
     // Nothing lost: the entire original history is still reachable from the backup.
     let backups = r.git(&[
@@ -267,6 +289,87 @@ fn run_case(seed: u64) {
         r.ghma_ok(&["restore", &id]);
         assert_eq!(new_tip_of(&r), old_tip, "seed {seed}: restore");
         assert_eq!(r.log().len(), old.len());
+    }
+}
+
+fn heads_except_main(r: &Repo) -> String {
+    r.git(&[
+        "for-each-ref",
+        "--format=%(refname) %(objectname)",
+        "refs/heads/",
+    ])
+    .lines()
+    .filter(|l| !l.starts_with("refs/heads/main "))
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
+fn check_message(seed: u64, variant: u64, old: &str, new: &str) {
+    let lines = |m: &str| m.lines().map(str::to_string).collect::<Vec<_>>();
+    let (ol, nl) = (lines(old), lines(new));
+    assert_eq!(ol[0], nl[0], "seed {seed}: subject changed");
+    let has = |l: &[String], key: &str| {
+        l.iter().any(|x| {
+            x.to_ascii_lowercase()
+                .starts_with(&format!("{}:", key.to_ascii_lowercase()))
+        })
+    };
+    let count = |l: &[String], key: &str| {
+        l.iter()
+            .filter(|x| {
+                x.to_ascii_lowercase()
+                    .starts_with(&format!("{}:", key.to_ascii_lowercase()))
+            })
+            .count()
+    };
+    match variant {
+        // Sign-offs go, everything else stays.
+        2 | 3 => {
+            assert!(!has(&nl, "signed-off-by"), "seed {seed}: {new:?}");
+            let expected: Vec<&String> = ol
+                .iter()
+                .filter(|l| !l.starts_with("Signed-off-by:"))
+                .collect();
+            let got: Vec<&String> = nl.iter().filter(|l| !l.is_empty()).collect();
+            let expected: Vec<&String> = expected.into_iter().filter(|l| !l.is_empty()).collect();
+            assert_eq!(
+                got, expected,
+                "seed {seed}: only the sign-off line may differ"
+            );
+        }
+        // Co-authors go, sign-offs stay, one Assisted-By is appended as the last line.
+        4 => {
+            assert!(!has(&nl, "co-authored-by"), "seed {seed}: {new:?}");
+            assert_eq!(
+                count(&nl, "signed-off-by"),
+                count(&ol, "signed-off-by"),
+                "seed {seed}"
+            );
+            assert_eq!(count(&nl, "assisted-by"), 1, "seed {seed}: {new:?}");
+            assert_eq!(
+                nl.last().unwrap(),
+                "Assisted-By: Claude <noreply@anthropic.com>",
+                "seed {seed}: appended last"
+            );
+            let kept: Vec<&String> = ol
+                .iter()
+                .filter(|l| !l.starts_with("Co-authored-by:") && !l.is_empty())
+                .collect();
+            let got: Vec<&String> = nl
+                .iter()
+                .filter(|l| !l.is_empty() && !l.starts_with("Assisted-By:"))
+                .collect();
+            assert_eq!(
+                got, kept,
+                "seed {seed}: the rest of the message is untouched"
+            );
+        }
+        // Identity and schedule runs leave messages alone.
+        _ => assert_eq!(
+            old.trim_end(),
+            new.trim_end(),
+            "seed {seed}: message changed"
+        ),
     }
 }
 

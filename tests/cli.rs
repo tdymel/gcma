@@ -680,7 +680,7 @@ fn llm_export_import_apply_roundtrip() {
     r.ghma_ok(&["apply", "--plan", plan.to_str().unwrap()]);
 
     let new = r.log();
-    assert_same_content(&old, &new);
+    assert_same_shape(&old, &new);
     assert_eq!(new[0].subject, "Add first file");
     assert_eq!(new[1].subject, "Add second file");
     assert_eq!(new[2].subject, "more");
