@@ -47,4 +47,25 @@ mod tests {
         assert_eq!(derive_seed(&[b"a"]), derive_seed(&[b"a"]));
         assert_ne!(derive_seed(&[b"a", b"b"]), derive_seed(&[b"ab"]));
     }
+
+    /// Golden values: changing the generator or the hash would reshuffle every schedule.
+    #[test]
+    fn generator_and_seed_derivation_are_pinned() {
+        let mut r = rng_from_seed(42);
+        let drawn: Vec<u64> = (0..3).map(|_| r.random_range(0..u64::MAX)).collect();
+        assert_eq!(
+            drawn,
+            [
+                12578764544318200737,
+                7886285670807131020,
+                5323617429756461743
+            ]
+        );
+        assert_eq!(derive_seed(&[b"main", b"2026-01-05"]), 14072695264987897440);
+        assert_ne!(
+            derive_seed(&[b"ab", b"c"]),
+            derive_seed(&[b"a", b"bc"]),
+            "parts cannot run together"
+        );
+    }
 }

@@ -270,4 +270,45 @@ mod tests {
         let times = schedule(40, &w, from, Distribution::Bursty, &mut rng_from_seed(2)).unwrap();
         assert!(times.iter().all(|t| w.contains(*t)));
     }
+
+    /// Golden values: a dependency bump or refactor must not silently change schedules, because
+    /// that would make every already-scheduled history nonconforming-looking after a rerun.
+    #[test]
+    fn schedules_are_pinned_per_distribution() {
+        let tz: Tz = "Europe/Berlin".parse().unwrap();
+        let from = ts(tz, 2026, 1, 5, 0, 0);
+        let to = ts(tz, 2026, 3, 1, 0, 0);
+        let w = Window::build(tz, &weekdays(), &[(9 * 60 + 30, 18 * 60)], from, to);
+        let golden: [(Distribution, [i64; 8]); 3] = [
+            (
+                Distribution::Uniform,
+                [
+                    1767870864, 1768302542, 1768315018, 1769168461, 1770368141, 1770890233,
+                    1770973531, 1771519530,
+                ],
+            ),
+            (
+                Distribution::WeekdayWeighted,
+                [
+                    1767886988, 1768298140, 1768391158, 1769187293, 1769605112, 1770115273,
+                    1770291196, 1770907238,
+                ],
+            ),
+            (
+                Distribution::Bursty,
+                [
+                    1771516026, 1771516334, 1771516913, 1771517020, 1771517248, 1771517759,
+                    1771517788, 1771520290,
+                ],
+            ),
+        ];
+        for (dist, expected) in golden {
+            let mut r = rng_from_seed(7);
+            assert_eq!(
+                schedule(8, &w, from, dist, &mut r).unwrap(),
+                expected,
+                "{dist:?}"
+            );
+        }
+    }
 }
