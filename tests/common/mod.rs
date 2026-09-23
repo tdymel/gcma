@@ -118,6 +118,26 @@ impl Repo {
         self.commit_as(name, msg, unix, "Old Me", "me@home.org")
     }
 
+    /// Like `commit_at`, written with the given UTC offset (`+0100`) instead of `+0000`.
+    pub fn commit_at_offset(&self, name: &str, msg: &str, unix: i64, offset: &str) -> String {
+        self.write(name, &format!("content of {name}\n"));
+        self.git(&["add", name]);
+        let date = format!("{unix} {offset}");
+        let o = self
+            .cmd("git")
+            .args(["commit", "-q", "-m", msg])
+            .env("GIT_AUTHOR_DATE", &date)
+            .env("GIT_COMMITTER_DATE", &date)
+            .output()
+            .unwrap();
+        assert!(
+            o.status.success(),
+            "commit failed: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+        self.git(&["rev-parse", "HEAD"])
+    }
+
     pub fn commit_as(&self, name: &str, msg: &str, unix: i64, who: &str, email: &str) -> String {
         self.write(name, &format!("content of {name}\n"));
         self.git(&["add", name]);
