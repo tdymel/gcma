@@ -31,6 +31,28 @@ pub struct PIdent {
 }
 
 impl PIdent {
+    /// Whether the identity can be written into a commit header without corrupting it.
+    pub fn validate(&self) -> std::result::Result<(), String> {
+        for (what, text) in [("name", &self.name), ("email", &self.email)] {
+            if text
+                .as_bytes()
+                .iter()
+                .any(|b| matches!(b, b'<' | b'>' | b'\n' | b'\0'))
+            {
+                return Err(format!(
+                    "{what} contains a character that cannot be part of a commit header"
+                ));
+            }
+        }
+        if self.time < 0 || self.tz.abs() >= 24 * 60 {
+            return Err(format!(
+                "time {} / offset {} is out of range",
+                self.time, self.tz
+            ));
+        }
+        Ok(())
+    }
+
     pub fn to_raw(&self) -> RawIdent {
         RawIdent {
             name: self.name.as_bytes().to_vec(),
@@ -159,6 +181,20 @@ impl Plan {
             if !is_oid(o) {
                 return Err(Error::Usage(format!(
                     "plan contains an invalid object id {o:?}"
+                )));
+            }
+        }
+        for (i, e) in self.entries.iter().enumerate() {
+            for (role, id) in [("author", &e.author), ("committer", &e.committer)] {
+                id.validate()
+                    .map_err(|why| Error::Usage(format!("plan entry {i}: {role} {why}")))?;
+            }
+        }
+        let mut listed = std::collections::HashSet::new();
+        for o in self.entries.iter().map(|e| &e.old_oid).chain(&self.dropped) {
+            if !listed.insert(o) {
+                return Err(Error::Usage(format!(
+                    "plan lists commit {o} more than once"
                 )));
             }
         }
