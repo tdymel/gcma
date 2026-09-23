@@ -104,4 +104,16 @@ mod tests {
         let r = parse_hours(&["18:00-24:00".into(), "06:00-07:00".into()]).unwrap();
         assert_eq!(r, [(1080, 1440), (360, 420)]);
     }
+
+    #[test]
+    fn all_seven_days_parse_by_short_or_full_name_in_any_case() {
+        let days =
+            parse_days(&["mon", "Tuesday", "WED", "thu", "fri", "Sat", "sunday"].map(String::from))
+                .unwrap();
+        assert_eq!(days.len(), 7);
+        assert_eq!(days[5], Weekday::Sat);
+        assert_eq!(days[6], Weekday::Sun);
+        assert!(parse_days(&["funday".to_string()]).is_err());
+        assert!(parse_days(&[]).is_err());
+    }
 }

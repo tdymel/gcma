@@ -7,7 +7,7 @@ version: 1
 #~ to: now                   # `now` or a date (end of that day)
 #~ timezone: UTC             # IANA name, e.g. Europe/Berlin
 #~ schedule:
-#~   days: [mon, tue, wed, thu, fri]
+#~   days: [mon, tue, wed, thu, fri]   # mon tue wed thu fri sat sun
 #~   hours: "09:30-18:00"    # or a list: ["18:00-24:00", "06:00-07:00"]; "18:00-06:00" runs past midnight
 #~   distribution: uniform   # uniform | weekday-weighted | bursty
 #~   seed: 42

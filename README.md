@@ -37,7 +37,7 @@ from: 2026-04-01          # required with `schedule`; the schedule's lower bound
 to: now                   # `now` or a date (end of that day)
 timezone: Europe/Berlin   # default UTC
 schedule:                 # optional; without it original times are kept
-  days: [mon, tue, wed, thu, fri]
+  days: [mon, tue, wed, thu, fri]   # any of mon tue wed thu fri sat sun (full names work too, case-insensitive)
   hours: "09:30-18:00"    # one range, or a list: ["18:00-24:00", "06:00-07:00"]
                           # a range ending before it starts runs past midnight: "18:00-06:00"
   distribution: bursty    # uniform | weekday-weighted | bursty
