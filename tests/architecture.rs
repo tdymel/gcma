@@ -151,6 +151,7 @@ const FORBIDDEN_IN_INNER_LAYERS: &[&str] = &[
     "SystemTime::now",
     "Instant::now",
     "serde_yaml",
+    "serde_yaml_ng",
     "clap::",
 ];
 
@@ -187,7 +188,14 @@ fn leaf_backends_do_not_know_each_other() {
 
 #[test]
 fn domain_uses_no_io_or_framework_crates() {
-    for banned in ["clap", "gix", "serde_yaml", "serde_json", "tempfile"] {
+    for banned in [
+        "clap",
+        "gix",
+        "serde_yaml",
+        "serde_yaml_ng",
+        "serde_json",
+        "tempfile",
+    ] {
         let rule = project_files()
             .in_path("src/domain/**")
             .should_not()
@@ -199,7 +207,7 @@ fn domain_uses_no_io_or_framework_crates() {
 
 #[test]
 fn application_uses_no_adapter_crates() {
-    for banned in ["clap", "gix", "serde_yaml", "serde_json"] {
+    for banned in ["clap", "gix", "serde_yaml", "serde_yaml_ng", "serde_json"] {
         let rule = project_files()
             .in_path("src/application/**")
             .should_not()

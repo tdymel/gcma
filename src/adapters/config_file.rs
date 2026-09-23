@@ -14,7 +14,7 @@ pub fn load(path: &Path) -> Result<Config> {
 }
 
 pub fn parse(text: &str) -> Result<Config> {
-    let cfg: Config = serde_yaml::from_str(text)?;
+    let cfg: Config = serde_yaml_ng::from_str(text)?;
     cfg.validate()?;
     Ok(cfg)
 }

@@ -8,8 +8,8 @@ impl From<serde_json::Error> for Error {
     }
 }
 
-impl From<serde_yaml::Error> for Error {
-    fn from(e: serde_yaml::Error) -> Self {
+impl From<serde_yaml_ng::Error> for Error {
+    fn from(e: serde_yaml_ng::Error) -> Self {
         Error::Usage(format!("config: {e}"))
     }
 }
