@@ -102,7 +102,7 @@ mod tests {
     use super::*;
     use crate::domain::history::commit::Header;
     use crate::domain::settings::{
-        Distribution, IdentityRule, MatchSpec, MessagesCfg, ScheduleCfg, SetSpec,
+        Distribution, Hours, IdentityRule, MatchSpec, MessagesCfg, ScheduleCfg, SetSpec,
     };
 
     fn commit(
@@ -260,7 +260,7 @@ mod tests {
                 days: ["mon", "tue", "wed", "thu", "fri"]
                     .map(String::from)
                     .to_vec(),
-                hours: "09:00-18:00".into(),
+                hours: Hours::from("09:00-18:00"),
                 distribution: Distribution::Uniform,
                 seed: 0,
             }),
@@ -270,7 +270,7 @@ mod tests {
         let w = Window::build(
             tz,
             &crate::domain::settings::parse_days(&c.schedule.as_ref().unwrap().days).unwrap(),
-            (540, 1080),
+            &[(540, 1080)],
             c.resolve_from().unwrap(),
             c.resolve_to(0).unwrap(),
         );

@@ -13,12 +13,12 @@ use crate::domain::text::messages;
 
 use calendar::parse_instant;
 pub use calendar::{parse_days, parse_hours, weekday_index};
-#[cfg(test)]
-pub use types::SetSpec;
 pub use types::{
     Backend, Distribution, HookCfg, HookMode, IdentityRule, MatchSpec, MessagesCfg, OnlyExcluded,
     PathsCfg, ScheduleCfg, Signing,
 };
+#[cfg(test)]
+pub use types::{Hours, SetSpec};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -82,7 +82,7 @@ impl Config {
                 return bad("`from` is required when `schedule` is present".into());
             }
             parse_days(&s.days)?;
-            parse_hours(&s.hours)?;
+            parse_hours(&s.hours.0)?;
             if !matches!(self.to.as_deref(), None | Some("now"))
                 && self.resolve_to(0)? <= self.resolve_from()?
             {

@@ -49,7 +49,9 @@ fn local_to_utc(tz: &Tz, naive: NaiveDateTime) -> i64 {
 }
 
 impl Window {
-    pub fn build(tz: Tz, days: &[Weekday], hours: (u32, u32), from: i64, to: i64) -> Window {
+    /// `hours` are (start, end) minutes of the day an interval starts on; an end beyond 24:00 runs
+    /// into the next day, which keeps the weekday of the day it started.
+    pub fn build(tz: Tz, days: &[Weekday], hours: &[(u32, u32)], from: i64, to: i64) -> Window {
         let allowed: HashSet<Weekday> = days.iter().copied().collect();
         let mut intervals: Vec<Interval> = Vec::new();
         if to > from {
@@ -69,15 +71,17 @@ impl Window {
             while d <= last {
                 if allowed.contains(&d.weekday()) {
                     let midnight = d.and_hms_opt(0, 0, 0).unwrap();
-                    let s = local_to_utc(&tz, midnight + Duration::minutes(hours.0 as i64));
-                    let e = local_to_utc(&tz, midnight + Duration::minutes(hours.1 as i64));
-                    let (s, e) = (s.max(from), e.min(to));
-                    if e > s {
-                        intervals.push(Interval {
-                            start: s,
-                            end: e,
-                            weekday: d.weekday(),
-                        });
+                    for &(from_min, to_min) in hours {
+                        let s = local_to_utc(&tz, midnight + Duration::minutes(from_min as i64));
+                        let e = local_to_utc(&tz, midnight + Duration::minutes(to_min as i64));
+                        let (s, e) = (s.max(from), e.min(to));
+                        if e > s {
+                            intervals.push(Interval {
+                                start: s,
+                                end: e,
+                                weekday: d.weekday(),
+                            });
+                        }
                     }
                 }
                 d = d.succ_opt().unwrap();
@@ -149,7 +153,7 @@ mod tests {
         // 2026-04-06 is a Monday, 04-04 a Saturday.
         let from = ts(tz, 2026, 4, 1, 0, 0);
         let to = ts(tz, 2026, 4, 30, 0, 0);
-        let w = Window::build(tz, &weekdays(), (9 * 60, 18 * 60), from, to);
+        let w = Window::build(tz, &weekdays(), &[(9 * 60, 18 * 60)], from, to);
         assert!(w.contains(ts(tz, 2026, 4, 6, 9, 0)));
         assert!(w.contains(ts(tz, 2026, 4, 6, 17, 59)));
         assert!(!w.contains(ts(tz, 2026, 4, 6, 18, 0)), "end is exclusive");
@@ -164,7 +168,7 @@ mod tests {
         let w = Window::build(
             tz,
             &weekdays(),
-            (9 * 60, 18 * 60),
+            &[(9 * 60, 18 * 60)],
             ts(tz, 2026, 4, 1, 0, 0),
             ts(tz, 2026, 5, 1, 0, 0),
         );
@@ -181,7 +185,7 @@ mod tests {
         let all = [Weekday::Sun];
         let from = ts(tz, 2026, 3, 29, 0, 0);
         let to = ts(tz, 2026, 3, 30, 0, 0);
-        let w = Window::build(tz, &all, (60, 4 * 60), from, to); // 01:00-04:00 local
+        let w = Window::build(tz, &all, &[(60, 4 * 60)], from, to); // 01:00-04:00 local
         // Real duration is 2h (01:00-02:00 and 03:00-04:00), not 3h.
         assert_eq!(w.capacity(from), 2 * 3600);
         // Every instant the window contains has a local time inside 01:00-04:00.
@@ -194,5 +198,109 @@ mod tests {
             }
             t += 60;
         }
+    }
+
+    #[test]
+    fn an_overnight_range_belongs_to_the_weekday_it_starts_on() {
+        let tz = chrono_tz::UTC;
+        // Fridays 18:00 until 06:00 the next morning. 2026-04-10 is a Friday.
+        let from = ts(tz, 2026, 4, 6, 0, 0);
+        let to = ts(tz, 2026, 4, 20, 0, 0);
+        let w = Window::build(tz, &[Weekday::Fri], &[(18 * 60, 30 * 60)], from, to);
+        assert!(w.contains(ts(tz, 2026, 4, 10, 18, 0)));
+        assert!(w.contains(ts(tz, 2026, 4, 10, 23, 59)));
+        assert!(
+            w.contains(ts(tz, 2026, 4, 11, 0, 0)),
+            "after midnight, a Saturday"
+        );
+        assert!(w.contains(ts(tz, 2026, 4, 11, 5, 59)));
+        assert!(!w.contains(ts(tz, 2026, 4, 11, 6, 0)), "end is exclusive");
+        assert!(
+            !w.contains(ts(tz, 2026, 4, 11, 18, 0)),
+            "Saturday evening is not allowed"
+        );
+        assert!(
+            !w.contains(ts(tz, 2026, 4, 10, 5, 0)),
+            "Friday morning belongs to Thursday"
+        );
+        assert!(!w.contains(ts(tz, 2026, 4, 10, 17, 59)));
+        assert_eq!(
+            w.capacity(from),
+            2 * 12 * 3600,
+            "two Fridays of twelve hours"
+        );
+    }
+
+    #[test]
+    fn the_tail_of_an_overnight_range_before_from_still_counts_after_from() {
+        let tz = chrono_tz::UTC;
+        // `from` lies in the small hours of Saturday, inside Friday's range.
+        let from = ts(tz, 2026, 4, 11, 3, 0);
+        let to = ts(tz, 2026, 4, 13, 0, 0);
+        let w = Window::build(tz, &[Weekday::Fri], &[(18 * 60, 30 * 60)], from, to);
+        assert!(!w.contains(ts(tz, 2026, 4, 11, 2, 59)), "before from");
+        assert!(w.contains(from));
+        assert!(w.contains(ts(tz, 2026, 4, 11, 5, 59)));
+        assert_eq!(w.capacity(from), 3 * 3600);
+    }
+
+    #[test]
+    fn the_head_of_an_overnight_range_is_cut_at_to() {
+        let tz = chrono_tz::UTC;
+        let from = ts(tz, 2026, 4, 6, 0, 0);
+        let to = ts(tz, 2026, 4, 11, 1, 0);
+        let w = Window::build(tz, &[Weekday::Fri], &[(18 * 60, 30 * 60)], from, to);
+        assert!(w.contains(ts(tz, 2026, 4, 11, 0, 59)));
+        assert!(!w.contains(to));
+        assert_eq!(w.capacity(from), 7 * 3600);
+    }
+
+    #[test]
+    fn several_ranges_per_day_are_all_allowed() {
+        let tz = chrono_tz::UTC;
+        let from = ts(tz, 2026, 4, 6, 0, 0);
+        let to = ts(tz, 2026, 4, 13, 0, 0);
+        let w = Window::build(
+            tz,
+            &weekdays(),
+            &[(18 * 60, 24 * 60), (6 * 60, 7 * 60)],
+            from,
+            to,
+        );
+        assert!(w.contains(ts(tz, 2026, 4, 7, 6, 30)));
+        assert!(w.contains(ts(tz, 2026, 4, 7, 20, 0)));
+        assert!(!w.contains(ts(tz, 2026, 4, 7, 7, 0)));
+        assert!(
+            !w.contains(ts(tz, 2026, 4, 7, 12, 0)),
+            "noon is in neither range"
+        );
+        assert!(!w.contains(ts(tz, 2026, 4, 11, 20, 0)), "Saturday");
+        assert_eq!(w.capacity(from), 5 * 7 * 3600);
+    }
+
+    #[test]
+    fn overlapping_and_repeated_ranges_count_once() {
+        let tz = chrono_tz::UTC;
+        let from = ts(tz, 2026, 4, 6, 0, 0);
+        let to = ts(tz, 2026, 4, 7, 0, 0);
+        let w = Window::build(
+            tz,
+            &[Weekday::Mon],
+            &[
+                (9 * 60, 12 * 60),
+                (10 * 60, 15 * 60),
+                (10 * 60, 15 * 60),
+                (22 * 60, 26 * 60),
+            ],
+            from,
+            to,
+        );
+        assert_eq!(
+            w.capacity(from),
+            (6 + 2) * 3600,
+            "09:00-15:00 and 22:00-24:00 (cut at to)"
+        );
+        assert!(w.contains(ts(tz, 2026, 4, 6, 14, 59)));
+        assert!(!w.contains(ts(tz, 2026, 4, 6, 15, 0)));
     }
 }

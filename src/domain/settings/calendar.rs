@@ -40,8 +40,16 @@ pub fn parse_days(days: &[String]) -> Result<Vec<Weekday>> {
         .collect()
 }
 
-/// "HH:MM-HH:MM" -> (start_minute, end_minute); end may be 24:00.
-pub fn parse_hours(s: &str) -> Result<(u32, u32)> {
+/// Ranges as (start minute, end minute) of the day they start on. A range that ends at or before
+/// its start runs past midnight, so its end lies beyond 24:00 (`18:00-06:00` is `(1080, 1800)`).
+pub fn parse_hours(ranges: &[String]) -> Result<Vec<(u32, u32)>> {
+    if ranges.is_empty() {
+        return Err(Error::Usage("config: schedule.hours is empty".into()));
+    }
+    ranges.iter().map(|r| parse_range(r)).collect()
+}
+
+fn parse_range(s: &str) -> Result<(u32, u32)> {
     let bad = || Error::Usage(format!("config: bad hours {s:?} (expected HH:MM-HH:MM)"));
     let (a, b) = s.split_once('-').ok_or_else(bad)?;
     let p = |x: &str| -> Option<u32> {
@@ -50,12 +58,15 @@ pub fn parse_hours(s: &str) -> Result<(u32, u32)> {
         (m < 60 && (h < 24 || (h == 24 && m == 0))).then_some(h * 60 + m)
     };
     let (start, end) = (p(a).ok_or_else(bad)?, p(b).ok_or_else(bad)?);
-    if start >= end {
+    if start == end {
         return Err(Error::Usage(format!(
-            "config: hours {s:?}: start must be before end"
+            "config: hours {s:?}: start and end are the same (use 00:00-24:00 for the whole day)"
         )));
     }
-    Ok((start, end))
+    if start >= 24 * 60 {
+        return Err(bad());
+    }
+    Ok((start, if end > start { end } else { end + 24 * 60 }))
 }
 
 pub fn weekday_index(w: Weekday) -> usize {
@@ -66,12 +77,31 @@ pub fn weekday_index(w: Weekday) -> usize {
 mod tests {
     use super::*;
 
+    fn one(s: &str) -> Result<Vec<(u32, u32)>> {
+        parse_hours(&[s.to_string()])
+    }
+
     #[test]
     fn hours_parse() {
-        assert_eq!(parse_hours("09:30-18:00").unwrap(), (570, 1080));
-        assert_eq!(parse_hours("00:00-24:00").unwrap(), (0, 1440));
-        assert!(parse_hours("18:00-09:00").is_err());
-        assert!(parse_hours("9-18").is_err());
-        assert!(parse_hours("09:00-25:00").is_err());
+        assert_eq!(one("09:30-18:00").unwrap(), [(570, 1080)]);
+        assert_eq!(one("00:00-24:00").unwrap(), [(0, 1440)]);
+        assert!(one("9-18").is_err());
+        assert!(one("09:00-25:00").is_err());
+        assert!(one("24:00-06:00").is_err());
+        assert!(one("09:00-09:00").is_err());
+        assert!(parse_hours(&[]).is_err());
+    }
+
+    #[test]
+    fn a_range_ending_before_its_start_runs_into_the_next_day() {
+        assert_eq!(one("18:00-06:00").unwrap(), [(1080, 1800)]);
+        assert_eq!(one("22:30-00:00").unwrap(), [(1350, 1440)]);
+        assert_eq!(one("23:00-00:30").unwrap(), [(1380, 1470)]);
+    }
+
+    #[test]
+    fn several_ranges_keep_their_order() {
+        let r = parse_hours(&["18:00-24:00".into(), "06:00-07:00".into()]).unwrap();
+        assert_eq!(r, [(1080, 1440), (360, 420)]);
     }
 }

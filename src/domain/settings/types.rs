@@ -8,7 +8,7 @@ pub struct ScheduleCfg {
     #[serde(default = "default_days")]
     pub days: Vec<String>,
     #[serde(default = "default_hours")]
-    pub hours: String,
+    pub hours: Hours,
     #[serde(default)]
     pub distribution: Distribution,
     #[serde(default)]
@@ -22,8 +22,43 @@ pub(super) fn default_days() -> Vec<String> {
         .collect()
 }
 
-pub(super) fn default_hours() -> String {
-    "09:00-18:00".to_string()
+pub(super) fn default_hours() -> Hours {
+    Hours::from("09:00-18:00")
+}
+
+/// Working hours: one `HH:MM-HH:MM` range or a list of them. A range that ends at or before its
+/// start runs past midnight into the next day (`18:00-06:00`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hours(pub Vec<String>);
+
+impl From<&str> for Hours {
+    fn from(range: &str) -> Hours {
+        Hours(vec![range.to_string()])
+    }
+}
+
+impl<'de> Deserialize<'de> for Hours {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Hours, D::Error> {
+        use serde::de::{self, SeqAccess, Visitor};
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = Hours;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a range like \"09:00-18:00\" or a list of them")
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Hours, E> {
+                Ok(Hours::from(v))
+            }
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Hours, A::Error> {
+                let mut ranges = Vec::new();
+                while let Some(r) = seq.next_element::<String>()? {
+                    ranges.push(r);
+                }
+                Ok(Hours(ranges))
+            }
+        }
+        d.deserialize_any(V)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]

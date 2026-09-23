@@ -38,7 +38,8 @@ to: now                   # `now` or a date (end of that day)
 timezone: Europe/Berlin   # default UTC
 schedule:                 # optional; without it original times are kept
   days: [mon, tue, wed, thu, fri]
-  hours: "09:30-18:00"
+  hours: "09:30-18:00"    # one range, or a list: ["18:00-24:00", "06:00-07:00"]
+                          # a range ending before it starts runs past midnight: "18:00-06:00"
   distribution: bursty    # uniform | weekday-weighted | bursty
   seed: 42
 identity:                 # first match wins; `set` needs name and email
@@ -55,6 +56,12 @@ paths:                                               # remove paths from history
 signing: strip            # strip | resign (re-sign through your git signing config)
 hook: { mode: verify }    # verify | rewrite
 ```
+
+Working hours may be several ranges, and a range may run past midnight. An overnight range belongs to the weekday it
+starts on: with `days: [fri]` and `hours: "18:00-06:00"` commits land on Friday evening and early Saturday, never on
+Saturday evening. Commits that already sit inside the window (and carry the configured timezone's offset) are left
+alone; every other commit is moved to a scheduled time inside it, so a commit made at noon with evening-only hours
+ends up on an evening, never earlier than its parents.
 
 ## Removing paths from history
 

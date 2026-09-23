@@ -118,7 +118,7 @@ mod tests {
         let tz: Tz = "Europe/Berlin".parse().unwrap();
         let from = ts(tz, 2026, 10, 25, 0, 0);
         let to = ts(tz, 2026, 10, 26, 0, 0);
-        let w = Window::build(tz, &[Weekday::Sun], (0, 4 * 60), from, to);
+        let w = Window::build(tz, &[Weekday::Sun], &[(0, 4 * 60)], from, to);
         assert_eq!(w.capacity(from), 5 * 3600);
         let mut r = rng_from_seed(3);
         let times = schedule(200, &w, from, Distribution::Uniform, &mut r).unwrap();
@@ -130,7 +130,7 @@ mod tests {
         let tz: Tz = "America/New_York".parse().unwrap();
         let from = ts(tz, 2026, 1, 1, 0, 0);
         let to = ts(tz, 2026, 7, 1, 0, 0);
-        let w = Window::build(tz, &weekdays(), (9 * 60 + 30, 17 * 60 + 45), from, to);
+        let w = Window::build(tz, &weekdays(), &[(9 * 60 + 30, 17 * 60 + 45)], from, to);
         for dist in [
             Distribution::Uniform,
             Distribution::WeekdayWeighted,
@@ -155,7 +155,7 @@ mod tests {
         let tz = chrono_tz::UTC;
         let from = ts(tz, 2026, 1, 1, 0, 0);
         let to = ts(tz, 2026, 3, 1, 0, 0);
-        let w = Window::build(tz, &weekdays(), (9 * 60, 18 * 60), from, to);
+        let w = Window::build(tz, &weekdays(), &[(9 * 60, 18 * 60)], from, to);
         let a = schedule(50, &w, from, Distribution::Bursty, &mut rng_from_seed(5)).unwrap();
         let b = schedule(50, &w, from, Distribution::Bursty, &mut rng_from_seed(5)).unwrap();
         let c = schedule(50, &w, from, Distribution::Bursty, &mut rng_from_seed(6)).unwrap();
@@ -168,7 +168,7 @@ mod tests {
         let tz = chrono_tz::UTC;
         let from = ts(tz, 2026, 1, 1, 0, 0);
         let to = ts(tz, 2026, 3, 1, 0, 0);
-        let w = Window::build(tz, &weekdays(), (9 * 60, 18 * 60), from, to);
+        let w = Window::build(tz, &weekdays(), &[(9 * 60, 18 * 60)], from, to);
         let floor = ts(tz, 2026, 2, 10, 12, 0);
         let times = schedule(100, &w, floor, Distribution::Uniform, &mut rng_from_seed(1)).unwrap();
         assert!(times.iter().all(|t| *t >= floor));
@@ -181,7 +181,7 @@ mod tests {
         let from = ts(tz, 2026, 4, 1, 0, 0);
         let floor = ts(tz, 2026, 4, 3, 18, 0); // Friday
         let to = ts(tz, 2026, 4, 6, 8, 0); // Monday
-        let w = Window::build(tz, &weekdays(), (9 * 60, 18 * 60), from, to);
+        let w = Window::build(tz, &weekdays(), &[(9 * 60, 18 * 60)], from, to);
         assert_eq!(w.capacity(floor), 0);
         let e = schedule(1, &w, floor, Distribution::Uniform, &mut rng_from_seed(1)).unwrap_err();
         assert!(matches!(e, crate::domain::error::Error::Precondition(_)));
@@ -195,7 +195,7 @@ mod tests {
     #[test]
     fn empty_window_is_an_error() {
         let tz = chrono_tz::UTC;
-        let w = Window::build(tz, &weekdays(), (540, 1080), 100, 50);
+        let w = Window::build(tz, &weekdays(), &[(540, 1080)], 100, 50);
         assert!(!w.contains(75));
         assert!(schedule(1, &w, 0, Distribution::Uniform, &mut rng_from_seed(1)).is_err());
     }
@@ -214,7 +214,7 @@ mod tests {
             Weekday::Sat,
             Weekday::Sun,
         ];
-        let w = Window::build(tz, &all, (9 * 60, 18 * 60), from, to);
+        let w = Window::build(tz, &all, &[(9 * 60, 18 * 60)], from, to);
         let times = schedule(
             7000,
             &w,
@@ -238,7 +238,7 @@ mod tests {
         let tz = chrono_tz::UTC;
         let from = ts(tz, 2026, 1, 5, 0, 0);
         let to = ts(tz, 2026, 1, 12, 0, 0); // one working week
-        let w = Window::build(tz, &weekdays(), (9 * 60, 18 * 60), from, to);
+        let w = Window::build(tz, &weekdays(), &[(9 * 60, 18 * 60)], from, to);
         for dist in [
             Distribution::Uniform,
             Distribution::WeekdayWeighted,
@@ -266,7 +266,7 @@ mod tests {
         let tz = chrono_tz::UTC;
         let from = ts(tz, 2026, 1, 5, 9, 0);
         let to = ts(tz, 2026, 1, 5, 9, 30); // 30 minutes only
-        let w = Window::build(tz, &weekdays(), (9 * 60, 18 * 60), from, to);
+        let w = Window::build(tz, &weekdays(), &[(9 * 60, 18 * 60)], from, to);
         let times = schedule(40, &w, from, Distribution::Bursty, &mut rng_from_seed(2)).unwrap();
         assert!(times.iter().all(|t| w.contains(*t)));
     }

@@ -14,8 +14,8 @@ pub(super) fn window_for(cfg: &Config, now: i64) -> Result<Option<(Window, i64)>
         return Ok(None);
     };
     let to = cfg.resolve_to(now)?;
-    let (days, hours) = (parse_days(&s.days)?, parse_hours(&s.hours)?);
-    let window = Window::build(cfg.tz()?, &days, hours, cfg.resolve_from()?, to);
+    let (days, hours) = (parse_days(&s.days)?, parse_hours(&s.hours.0)?);
+    let window = Window::build(cfg.tz()?, &days, &hours, cfg.resolve_from()?, to);
     Ok(Some((window, to)))
 }
 
