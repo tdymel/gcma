@@ -12,8 +12,8 @@ Write a better commit message for each commit you can improve: a concise imperat
 and an optional body explaining why. Judge from the current message and the stat; do not invent facts.
 Reply with JSONL ONLY (no prose, no code fences), one object per commit you change:
 {\"i\": <same index>, \"t\": \"<title>\", \"b\": \"<body, optional>\"}
-Omit commits whose message is already good. Keep any Signed-off-by / Co-authored-by lines out of the body;
-they are preserved automatically.";
+Omit commits whose message is already good. Keep every Signed-off-by / Co-authored-by line of the original message
+in your reply (they are protected: a reply that drops one is rejected).";
 
 #[derive(Serialize)]
 struct OutRow<'a> {
