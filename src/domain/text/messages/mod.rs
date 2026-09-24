@@ -110,4 +110,28 @@ mod tests {
         assert_eq!(out, b"S\n\nB: y\n");
         assert_eq!(run(&out, &rules, &["Drop"], &[], false), out);
     }
+
+    #[test]
+    fn adding_to_a_block_followed_by_blank_lines_joins_the_block_and_settles() {
+        let want = s(&["Assisted-By: Bot", "Reviewed-By: R"]);
+        for tail in ["\n", "\n\n", "\n \n\t\n"] {
+            let m = format!("s\n\nAssisted-By: Bot\nKey: v\n{tail}");
+            let once = add_trailers(m.as_bytes(), &want);
+            assert_eq!(
+                once, b"s\n\nAssisted-By: Bot\nKey: v\nReviewed-By: R\n",
+                "{tail:?}"
+            );
+            assert_eq!(add_trailers(&once, &want), once, "{tail:?}: second pass");
+        }
+    }
+
+    #[test]
+    fn a_body_followed_by_blank_lines_gets_exactly_one_separator() {
+        let want = s(&["Assisted-By: Bot"]);
+        for m in ["s\n\nbody\n\n\n", "s\n\nbody\n \n", "s\n\nbody\n"] {
+            let once = add_trailers(m.as_bytes(), &want);
+            assert_eq!(once, b"s\n\nbody\n\nAssisted-By: Bot\n", "{m:?}");
+            assert_eq!(add_trailers(&once, &want), once);
+        }
+    }
 }
