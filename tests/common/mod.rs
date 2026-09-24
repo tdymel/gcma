@@ -171,18 +171,30 @@ impl Repo {
         who: &[u8],
         email: &[u8],
     ) -> String {
+        self.commit_raw(name, msg.as_bytes(), unix, who, email)
+    }
+
+    /// Writes a commit object by hand, so names and message bytes are stored exactly as given
+    /// (`git commit` re-encodes messages that are not UTF-8).
+    pub fn commit_raw(
+        &self,
+        name: &str,
+        msg: &[u8],
+        unix: i64,
+        who: &[u8],
+        email: &[u8],
+    ) -> String {
         use std::io::Write;
         self.write(name, &format!("content of {name}\n"));
         self.git(&["add", name]);
         let tree = self.git(&["write-tree"]);
         let mut raw = format!("tree {tree}\n").into_bytes();
-        if let Some(parent) = self
+        if self
             .git_out(&["rev-parse", "-q", "--verify", "HEAD"])
             .status
             .success()
-            .then(|| self.git(&["rev-parse", "HEAD"]))
         {
-            raw.extend(format!("parent {parent}\n").bytes());
+            raw.extend(format!("parent {}\n", self.git(&["rev-parse", "HEAD"])).bytes());
         }
         for role in ["author", "committer"] {
             raw.extend(format!("{role} ").bytes());
@@ -191,7 +203,8 @@ impl Repo {
             raw.extend_from_slice(email);
             raw.extend(format!("> {unix} +0000\n").bytes());
         }
-        raw.extend(format!("\n{msg}\n").bytes());
+        raw.extend(b"\n");
+        raw.extend_from_slice(msg);
         let mut child = self
             .cmd("git")
             .args([
@@ -212,6 +225,18 @@ impl Repo {
         let oid = String::from_utf8(out.stdout).unwrap().trim().to_string();
         self.git(&["update-ref", "HEAD", &oid]);
         oid
+    }
+
+    /// Commit with exactly these message bytes, at `unix` in UTC, as the default identity.
+    pub fn commit_msg(&self, name: &str, msg: &[u8], unix: i64) -> String {
+        self.commit_raw(name, msg, unix, b"Old Me", b"me@home.org")
+    }
+
+    /// The message bytes of a commit, exactly as stored.
+    pub fn message_bytes(&self, rev: &str) -> Vec<u8> {
+        let raw = self.cat(&self.git(&["rev-parse", rev]));
+        let at = raw.windows(2).position(|w| w == b"\n\n").unwrap();
+        raw[at + 2..].to_vec()
     }
 
     /// Commit several files (path, content) at once, as the default identity.
