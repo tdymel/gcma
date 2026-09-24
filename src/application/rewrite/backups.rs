@@ -57,10 +57,13 @@ pub fn list_backups(repo: &dyn Repository) -> Result<Vec<Backup>> {
 
 fn find_backup(repo: &dyn Repository, id: &str) -> Result<Backup> {
     let all = list_backups(repo)?;
-    let hits: Vec<&Backup> = all
-        .iter()
-        .filter(|b| b.id == id || b.id.starts_with(id))
-        .collect();
+    // The full id always wins, even when it is also the prefix of a later backup.
+    let exact: Vec<&Backup> = all.iter().filter(|b| b.id == id).collect();
+    let hits: Vec<&Backup> = if exact.is_empty() {
+        all.iter().filter(|b| b.id.starts_with(id)).collect()
+    } else {
+        exact
+    };
     match hits.as_slice() {
         [one] => Ok((*one).clone()),
         [] => Err(Error::Usage(format!(
