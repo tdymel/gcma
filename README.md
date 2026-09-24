@@ -111,8 +111,8 @@ locally: `ghma restore <id> --prune`, then `git reflog expire --expire=now --all
   an untrusted branch can rewrite your unpushed history on push (backups exist). `ghma init` keeps it out of commits via
   `.git/info/exclude`.
 - `restore` also puts the index (and ghma's `.gitignore` change) back when path rules had changed the content.
-- Names, emails and messages need not be UTF-8: they are carried byte for byte (a name that does not match an identity rule
-  as text is left as it is). One limitation: with `signing: resign`, messages that are not valid UTF-8 may not be signed
+- Names, emails and messages need not be UTF-8: they are carried byte for byte (identity rules match them as text with invalid bytes
+  replaced, so an email rule still applies; a rule that matches sets both fields, otherwise the bytes are left as they are). One limitation: with `signing: resign`, messages that are not valid UTF-8 may not be signed
   exactly as written, and `plan`/`apply` warn about it.
 - Refused (exit 3): shallow clones, replace refs/grafts, detached HEAD, staged changes, rebase/merge/cherry-pick in progress.
 - Exit codes: 0 ok, 1 internal, 2 usage/config, 3 refused, 4 branch moved, 5 pushed commits (also for a dry run), 6 nonconforming,

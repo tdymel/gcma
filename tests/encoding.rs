@@ -78,3 +78,22 @@ fn plan_files_carry_non_utf8_names_through_export_and_apply() {
     assert_eq!(name_bytes(&r, "HEAD~1"), b"J\xf6rg M\xfcller");
     r.fsck();
 }
+
+#[test]
+fn an_email_rule_applies_to_an_author_whose_name_is_not_utf8() {
+    let r = Repo::new();
+    r.commit_as_bytes("a.txt", "one", 1_600_000_000, b"J\xf6rg", b"me@home.org");
+    r.config("version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n");
+    r.ghma_ok(&["apply", "--from", "root"]);
+    let log = r.log();
+    assert_eq!(
+        (log[0].an.as_str(), log[0].ae.as_str()),
+        ("Jane Doe", "jane@work.com")
+    );
+    assert!(
+        r.ghma(&["plan", "--check", "--from", "root"])
+            .status
+            .success()
+    );
+    r.fsck();
+}

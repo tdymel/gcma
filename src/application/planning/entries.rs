@@ -43,14 +43,12 @@ pub(super) fn build_entries(
     for (i, oid) in linear.iter().enumerate() {
         let c = &commits[oid];
         let mapped = |id: &RawIdent| -> Result<PIdent> {
-            // Identity rules match text; a name or email that is not UTF-8 is carried over as it is.
-            let mapped = match (
-                std::str::from_utf8(&id.name),
-                std::str::from_utf8(&id.email),
-            ) {
-                (Ok(n), Ok(e)) => cfg.map_identity(n, e),
-                _ => None,
-            };
+            // Identity rules match text, lossily for bytes that are not UTF-8 (the conformance check
+            // does the same). A rule that matches replaces both fields; otherwise the bytes stay.
+            let mapped = cfg.map_identity(
+                &String::from_utf8_lossy(&id.name),
+                &String::from_utf8_lossy(&id.email),
+            );
             let (name, email) = match mapped {
                 Some((n, e)) => (Text::from(n), Text::from(e)),
                 None => (Text::from_bytes(&id.name), Text::from_bytes(&id.email)),
