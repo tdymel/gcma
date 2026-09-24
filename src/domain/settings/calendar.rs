@@ -12,12 +12,7 @@ pub(super) fn parse_instant(s: &str, tz: &Tz, end_of_day: bool) -> Result<i64> {
         } else {
             d
         };
-        let naive = d.and_hms_opt(0, 0, 0).unwrap();
-        return match tz.from_local_datetime(&naive) {
-            chrono::LocalResult::Single(t) => Ok(t.timestamp()),
-            chrono::LocalResult::Ambiguous(a, _) => Ok(a.timestamp()),
-            chrono::LocalResult::None => Ok(tz.from_utc_datetime(&naive).timestamp()),
-        };
+        return Ok(local_midnight(d, tz));
     }
     chrono::DateTime::parse_from_rfc3339(s)
         .map(|t| t.timestamp())
@@ -26,6 +21,19 @@ pub(super) fn parse_instant(s: &str, tz: &Tz, end_of_day: bool) -> Result<i64> {
                 "config: cannot parse date {s:?} (use YYYY-MM-DD or RFC 3339)"
             ))
         })
+}
+
+/// The first instant at or after local midnight of `d`. When a DST gap swallows midnight (Sao Paulo
+/// before 2019, Havana, Beirut) that is the moment the gap ends; an overlap takes the earlier offset.
+fn local_midnight(d: NaiveDate, tz: &Tz) -> i64 {
+    let midnight = d.and_hms_opt(0, 0, 0).unwrap();
+    // Gaps are whole multiples of 15 minutes, and none spans more than a day.
+    (0..=24 * 4)
+        .find_map(|quarter| {
+            let naive = midnight + chrono::Duration::minutes(15 * quarter);
+            tz.from_local_datetime(&naive).earliest()
+        })
+        .map_or_else(|| tz.from_utc_datetime(&midnight).timestamp(), |t| t.timestamp())
 }
 
 pub fn parse_days(days: &[String]) -> Result<Vec<Weekday>> {
@@ -97,6 +105,27 @@ mod tests {
         assert_eq!(one("18:00-06:00").unwrap(), [(1080, 1800)]);
         assert_eq!(one("22:30-00:00").unwrap(), [(1350, 1440)]);
         assert_eq!(one("23:00-00:30").unwrap(), [(1380, 1470)]);
+    }
+
+    fn at(s: &str, tz: &str, end_of_day: bool) -> i64 {
+        parse_instant(s, &tz.parse().unwrap(), end_of_day).unwrap()
+    }
+
+    #[test]
+    fn midnight_swallowed_by_a_dst_gap_starts_when_the_gap_ends() {
+        // America/Havana: 2026-03-08 00:00 does not exist, clocks jump to 01:00 (-04:00 = 05:00Z).
+        let from = at("2026-03-08", "America/Havana", false);
+        assert_eq!(from, 1_772_946_000); // 2026-03-08T05:00:00Z
+        // The end of the previous day is that same instant.
+        assert_eq!(at("2026-03-07", "America/Havana", true), from);
+    }
+
+    #[test]
+    fn an_ordinary_midnight_and_an_overlap_are_unchanged() {
+        assert_eq!(at("2026-01-01", "UTC", false), 1_767_225_600);
+        assert_eq!(at("2026-01-01", "Europe/Berlin", false), 1_767_225_600 - 3600);
+        // America/Havana 2026-11-01 00:00 occurs twice; the earlier (CDT, -04:00) is used.
+        assert_eq!(at("2026-11-01", "America/Havana", false), 1_793_505_600);
     }
 
     #[test]
