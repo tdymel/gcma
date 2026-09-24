@@ -4,12 +4,14 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::application::ports::CommitStore;
 use crate::domain::error::{Error, Result};
 
-/// A work tree reached through the `git` binary.
-#[derive(Debug, Clone)]
+/// A work tree reached through the `git` binary. Commit reads and unsigned writes can be handed to
+/// another object backend (see `with_objects`); everything else always goes through git.
 pub struct GitCli {
     dir: PathBuf,
+    pub(super) objects: Option<Box<dyn CommitStore>>,
 }
 
 pub(super) struct Out {
@@ -23,13 +25,22 @@ impl GitCli {
     pub fn open(dir: &Path) -> Result<GitCli> {
         let probe = GitCli {
             dir: dir.to_path_buf(),
+            objects: None,
         };
         let top = probe
             .text(&["rev-parse", "--show-toplevel"])
             .map_err(|_| Error::Usage("not inside a git work tree".into()))?;
         Ok(GitCli {
             dir: PathBuf::from(top),
+            objects: None,
         })
+    }
+
+    /// Serves commit reads and unsigned commit writes from `objects` instead of spawning git.
+    #[cfg(feature = "gix")]
+    pub fn with_objects(mut self, objects: Box<dyn CommitStore>) -> GitCli {
+        self.objects = Some(objects);
+        self
     }
 
     /// The work tree root.

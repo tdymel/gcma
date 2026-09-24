@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::adapters::config_file::{self, CONFIG_FILE};
 use crate::adapters::git_cli::GitCli;
-use crate::adapters::repository::GitRepository;
+use crate::adapters::repository;
 use crate::domain::error::Result;
 use crate::domain::settings::{Backend, Config};
 
@@ -31,12 +31,12 @@ pub(super) fn open(
     dir: &Path,
     config: &Option<PathBuf>,
     flag: Option<Backend>,
-) -> Result<(GitRepository, Config)> {
+) -> Result<(GitCli, Config)> {
     let cli = GitCli::open(dir)?;
     let cfg = load_config(&cli, config)?;
     let env = std::env::var("GHMA_BACKEND").ok();
     let want = resolve_backend(flag, env.as_deref(), cfg.backend)?;
-    Ok((GitRepository::with_backend(cli, want)?, cfg))
+    Ok((repository::with_backend(cli, want)?, cfg))
 }
 
 fn load_config(cli: &GitCli, explicit: &Option<PathBuf>) -> Result<Config> {

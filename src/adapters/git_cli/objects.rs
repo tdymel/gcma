@@ -50,6 +50,30 @@ impl GitCli {
 
 impl CommitStore for GitCli {
     fn read_commits(&self, oids: &[String]) -> Result<Vec<Commit>> {
+        match &self.objects {
+            Some(o) => o.read_commits(oids),
+            None => self.cat_commits(oids),
+        }
+    }
+
+    fn objects_exist(&self, oids: &[String]) -> Result<bool> {
+        match &self.objects {
+            Some(o) => o.objects_exist(oids),
+            None => self.check_objects(oids),
+        }
+    }
+
+    fn write_commit(&self, commit: &NewCommit, signing: Signing) -> Result<String> {
+        match (&self.objects, signing) {
+            (Some(o), Signing::Strip) => o.write_commit(commit, signing),
+            (None, Signing::Strip) => self.write_raw(commit),
+            (_, Signing::Resign) => self.write_signed(commit),
+        }
+    }
+}
+
+impl GitCli {
+    fn cat_commits(&self, oids: &[String]) -> Result<Vec<Commit>> {
         if oids.is_empty() {
             return Ok(Vec::new());
         }
@@ -81,18 +105,11 @@ impl CommitStore for GitCli {
         Ok(commits)
     }
 
-    fn objects_exist(&self, oids: &[String]) -> Result<bool> {
+    fn check_objects(&self, oids: &[String]) -> Result<bool> {
         if oids.is_empty() {
             return Ok(true);
         }
         let out = self.run_stdin(&["cat-file", "--batch-check"], lines_input(oids).as_bytes())?;
         Ok(!String::from_utf8_lossy(&out).contains("missing"))
-    }
-
-    fn write_commit(&self, commit: &NewCommit, signing: Signing) -> Result<String> {
-        match signing {
-            Signing::Strip => self.write_raw(commit),
-            Signing::Resign => self.write_signed(commit),
-        }
     }
 }
