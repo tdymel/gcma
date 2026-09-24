@@ -13,7 +13,7 @@ use crate::domain::settings::Backend;
     about = "git hide my ass: safely reshape the history of the current branch"
 )]
 pub struct Cli {
-    /// Config file (default: .git-hide-my-ass.yml in the repository root).
+    /// Config file (default: ghma.yml in the repository root).
     #[arg(long, global = true)]
     pub config: Option<PathBuf>,
     /// Run as if started in this directory.

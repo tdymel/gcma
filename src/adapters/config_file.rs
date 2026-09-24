@@ -1,11 +1,11 @@
-//! Reads `.git-hide-my-ass.yml` into the domain `Config`.
+//! Reads `ghma.yml` into the domain `Config`.
 
 use std::path::Path;
 
 use crate::domain::error::{Error, Result};
 use crate::domain::settings::Config;
 
-pub const CONFIG_FILE: &str = ".git-hide-my-ass.yml";
+pub const CONFIG_FILE: &str = "ghma.yml";
 
 pub fn load(path: &Path) -> Result<Config> {
     let text = std::fs::read_to_string(path)

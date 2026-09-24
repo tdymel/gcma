@@ -104,11 +104,7 @@ fn a_shallow_clone_is_refused_even_for_a_dry_run() {
         .output()
         .unwrap();
     assert!(o.status.success(), "{}", stderr(&o));
-    std::fs::copy(
-        r.path().join(".git-hide-my-ass.yml"),
-        clone.join(".git-hide-my-ass.yml"),
-    )
-    .unwrap();
+    std::fs::copy(r.path().join("ghma.yml"), clone.join("ghma.yml")).unwrap();
     for cmd in ["plan", "apply"] {
         let o = base_cmd(bin(), &clone, r.home.path())
             .args([cmd, "--from", "root"])
@@ -194,7 +190,7 @@ fn a_rebase_in_progress_is_refused() {
 fn outside_a_repository_is_an_error_and_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join(".git-hide-my-ass.yml"), IDENTITY_CFG).unwrap();
+    std::fs::write(dir.path().join("ghma.yml"), IDENTITY_CFG).unwrap();
     let o = base_cmd(bin(), dir.path(), home.path())
         .args(["apply", "--from", "root"])
         .env("GIT_CEILING_DIRECTORIES", dir.path().parent().unwrap())

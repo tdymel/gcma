@@ -117,7 +117,7 @@ fn a_config_can_live_anywhere_when_named() {
     );
     r.ghma_ok(&["--config", cfg, "apply", "--from", "root"]);
     assert!(r.log().iter().all(|x| x.an == "Jane Doe"));
-    assert!(!r.path().join(".git-hide-my-ass.yml").exists());
+    assert!(!r.path().join("ghma.yml").exists());
 }
 
 #[test]
@@ -126,33 +126,29 @@ fn init_writes_once_refuses_to_overwrite_and_force_replaces() {
     r.linear(1, 1_600_000_000);
     let o = r.ghma(&["init"]);
     assert_eq!(Repo::code(&o), 0, "{}", err(&o));
-    let first = std::fs::read_to_string(r.path().join(".git-hide-my-ass.yml")).unwrap();
+    let first = std::fs::read_to_string(r.path().join("ghma.yml")).unwrap();
     assert!(first.contains("version: 1"));
     let exclude = std::fs::read_to_string(r.path().join(".git/info/exclude")).unwrap();
-    assert_eq!(exclude.matches("/.git-hide-my-ass.yml").count(), 1);
+    assert_eq!(exclude.matches("/ghma.yml").count(), 1);
 
-    std::fs::write(
-        r.path().join(".git-hide-my-ass.yml"),
-        "version: 1\n# mine\n",
-    )
-    .unwrap();
+    std::fs::write(r.path().join("ghma.yml"), "version: 1\n# mine\n").unwrap();
     let o = r.ghma(&["init"]);
     assert_eq!(Repo::code(&o), 3, "{}", err(&o));
     assert!(err(&o).contains("--force"), "{}", err(&o));
     assert!(
-        std::fs::read_to_string(r.path().join(".git-hide-my-ass.yml"))
+        std::fs::read_to_string(r.path().join("ghma.yml"))
             .unwrap()
             .contains("# mine")
     );
 
     r.ghma_ok(&["init", "--force"]);
     assert_eq!(
-        std::fs::read_to_string(r.path().join(".git-hide-my-ass.yml")).unwrap(),
+        std::fs::read_to_string(r.path().join("ghma.yml")).unwrap(),
         first
     );
     let exclude = std::fs::read_to_string(r.path().join(".git/info/exclude")).unwrap();
     assert_eq!(
-        exclude.matches("/.git-hide-my-ass.yml").count(),
+        exclude.matches("/ghma.yml").count(),
         1,
         "no duplicate entries"
     );

@@ -78,7 +78,7 @@ fn a_check_on_unpushed_commits_still_reports_nonconformance_with_exit_6() {
 fn nothing_to_rewrite_in_the_pushed_range_is_fine_without_the_flag() {
     let (r, _) = pushed_history();
     r.config("version: 1\n");
-    let o = r.ghma(&["--config", ".git-hide-my-ass.yml", "plan", "--from", "root"]);
+    let o = r.ghma(&["--config", "ghma.yml", "plan", "--from", "root"]);
     assert!(
         o.status.success(),
         "an inert config touches nothing: {}",

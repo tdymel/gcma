@@ -1,4 +1,4 @@
-//! User settings: the validated, in-memory form of `.git-hide-my-ass.yml`.
+//! User settings: the validated, in-memory form of `ghma.yml`.
 //! Reading the file lives in an adapter; this module only knows the rules.
 
 mod calendar;

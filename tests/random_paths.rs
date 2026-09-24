@@ -270,7 +270,7 @@ fn run_case(seed: u64) {
     let status: Vec<String> = r
         .git(&["status", "--porcelain"])
         .lines()
-        .filter(|l| !l.contains(".git-hide-my-ass.yml"))
+        .filter(|l| !l.contains("ghma.yml"))
         .map(String::from)
         .collect();
     assert!(status.is_empty(), "seed {seed}: {status:?}");

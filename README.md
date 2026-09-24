@@ -16,7 +16,7 @@ cargo install --path .           # or: cargo build --release  ->  target/release
 ## Usage
 
 ```
-ghma init                       # write a starter .git-hide-my-ass.yml (inert until you enable something)
+ghma init                       # write a starter ghma.yml (inert until you enable something)
 ghma plan  [--from <rev|root>]  # dry run; add --out plan.json to save, --check to exit 6 if anything is nonconforming
 ghma apply [--from <rev|root>]  # verify, back up, rewrite
 ghma restore [<id>] [--force|--prune]   # list, undo, or forget a backup
@@ -29,7 +29,7 @@ By default the range is `upstream..HEAD` (unpushed commits). Without an upstream
 `--from root`. Commits already on the upstream need `--rewrite-pushed`. Commits that already conform are left alone, so
 running `apply` twice is a no-op and the hook only touches new commits.
 
-## Config (`.git-hide-my-ass.yml`)
+## Config (`ghma.yml`)
 
 ```yaml
 version: 1
@@ -107,7 +107,7 @@ locally: `ghma restore <id> --prune`, then `git reflog expire --expire=now --all
   Backups are never pruned automatically. `ghma restore <id>` goes back; it refuses if the branch moved on (unless `--force`).
 - `apply` only moves the checked-out branch named in the plan, a plan from a file must carry the same path rules as the
   config, and every object id and the branch ref in it are validated; `.gitignore` is never written through a symlink.
-  The config file (`.git-hide-my-ass.yml`) is trusted like a script: with the hook in `rewrite` mode, a config pulled from
+  The config file (`ghma.yml`) is trusted like a script: with the hook in `rewrite` mode, a config pulled from
   an untrusted branch can rewrite your unpushed history on push (backups exist). `ghma init` keeps it out of commits via
   `.git/info/exclude`.
 - `restore` also puts the index (and ghma's `.gitignore` change) back when path rules had changed the content.
@@ -137,7 +137,7 @@ byte-identical commits. Opt out of `gix` with any of:
 ```sh
 ghma --backend git apply        # one run
 GHMA_BACKEND=git ghma apply     # environment
-# .git-hide-my-ass.yml
+# ghma.yml
 backend: git
 ```
 

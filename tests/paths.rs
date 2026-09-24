@@ -28,7 +28,7 @@ fn tracked(r: &Repo, rev: &str) -> Vec<String> {
 fn status_without_config(r: &Repo) -> String {
     r.git(&["status", "--porcelain"])
         .lines()
-        .filter(|l| !l.contains(".git-hide-my-ass.yml"))
+        .filter(|l| !l.contains("ghma.yml"))
         .collect::<Vec<_>>()
         .join("\n")
 }

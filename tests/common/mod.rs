@@ -110,7 +110,7 @@ impl Repo {
     }
 
     pub fn config(&self, yaml: &str) {
-        self.write(".git-hide-my-ass.yml", yaml);
+        self.write("ghma.yml", yaml);
     }
 
     /// Commit a new file at an explicit time as the default (old) identity.
