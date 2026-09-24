@@ -20,6 +20,8 @@ version: 1
 messages:
   strip_trailers: []         # e.g. [Co-Authored-By]
   add_trailers: []           # e.g. ["Assisted-By: Claude <noreply@anthropic.com>"]
+  rewrite_trailers: []       # e.g. [{match: '^Co-Authored-By: Claude (\\w+) .*$', replace: 'Assisted-By: Claude $1'}]
+  title_only: false          # true drops the message body (subject and trailers stay)
 
 #~ # Remove paths from history (gitignore syntax); they are added to .gitignore instead.
 #~ paths:

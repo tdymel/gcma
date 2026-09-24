@@ -49,6 +49,10 @@ messages:
   strip_trailers: [Signed-off-by, Co-Authored-By]   # dropped from the trailing trailer block
   add_trailers:                                      # appended unless that exact trailer is present
     - "Assisted-By: Claude <noreply@anthropic.com>"
+  rewrite_trailers:                                  # sed-like, on the lines of the trailer block, run first
+    - match: '^Co-Authored-By: Claude (Opus|Sonnet)\b.*<noreply@anthropic\.com>$'
+      replace: 'Assisted-By: Claude $1 <noreply@anthropic.com>'
+  title_only: false                                  # true drops the body; subject and trailer block stay
 paths:                                               # remove paths from history (gitignore syntax)
   exclude: ["secrets/", "*.env"]
   gitignore: true                                    # default: add the patterns to .gitignore
@@ -62,6 +66,14 @@ starts on: with `days: [fri]` and `hours: "18:00-06:00"` commits land on Friday 
 Saturday evening. Commits that already sit inside the window (and carry the configured timezone's offset) are left
 alone; every other commit is moved to a scheduled time inside it, so a commit made at noon with evening-only hours
 ends up on an evening, never earlier than its parents.
+
+Message rules run in this order: `rewrite_trailers`, `strip_trailers` (both repeated until nothing changes), `title_only`,
+`add_trailers`. A rewrite replaces every match of its regex (the Rust `regex` syntax, `$1` for groups) in each line of the
+final trailer block; a line that becomes empty is dropped and lines that become identical collapse. Patterns are Unicode
+patterns: a trailer line with bytes that are not UTF-8 only matches a `(?-u)` pattern. Rules must be idempotent (a rewrite
+must not produce something another rule or itself rewrites again), otherwise `plan --check` never settles. The subject is
+the first paragraph; `title_only` keeps it and the final trailer block, so a body paragraph that looks like `Key: value`
+lines at the very end counts as that block.
 
 ## Removing paths from history
 

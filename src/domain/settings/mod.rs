@@ -122,6 +122,13 @@ impl Config {
                 ));
             }
         }
+        for (i, r) in self.messages.rewrite_trailers.iter().enumerate() {
+            if r.replacement.contains(['\n', '\r']) {
+                return bad(format!(
+                    "messages.rewrite_trailers[{i}].replace must be a single line"
+                ));
+            }
+        }
         for k in &self.messages.strip_trailers {
             if k.trim().is_empty() || k.contains(':') {
                 return bad(format!("messages.strip_trailers: invalid key {k:?}"));
@@ -159,6 +166,8 @@ impl Config {
             && self.identity.is_empty()
             && self.messages.strip_trailers.is_empty()
             && self.messages.add_trailers.is_empty()
+            && self.messages.rewrite_trailers.is_empty()
+            && !self.messages.title_only
             && self.paths.exclude.is_empty()
             && self.signing == Signing::Strip
     }
@@ -189,8 +198,12 @@ impl Config {
     pub fn rewrite_message(&self, msg: &[u8]) -> Vec<u8> {
         messages::apply_trailer_rules(
             msg,
-            &self.messages.strip_trailers,
-            &self.messages.add_trailers,
+            &messages::Rules {
+                rewrite: &self.messages.rewrite_trailers,
+                strip: &self.messages.strip_trailers,
+                add: &self.messages.add_trailers,
+                title_only: self.messages.title_only,
+            },
         )
     }
 

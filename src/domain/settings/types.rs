@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::domain::text::messages::TrailerRewrite;
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScheduleCfg {
@@ -100,6 +102,39 @@ pub struct MessagesCfg {
     /// Full `Key: value` lines appended when no such trailer is present yet.
     #[serde(default)]
     pub add_trailers: Vec<String>,
+    /// sed-like rewrites of the trailer lines (`match` regex, `replace` template), run first.
+    #[serde(default, deserialize_with = "compile_rewrites")]
+    pub rewrite_trailers: Vec<TrailerRewrite>,
+    /// Drop the message body; the subject and the trailer block stay.
+    #[serde(default)]
+    pub title_only: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawRewrite {
+    #[serde(rename = "match")]
+    pattern: String,
+    replace: String,
+}
+
+/// Compiles every `match` while the config is read, so a bad regex is a config error up front.
+fn compile_rewrites<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Vec<TrailerRewrite>, D::Error> {
+    let raw = Vec::<RawRewrite>::deserialize(d)?;
+    raw.into_iter()
+        .enumerate()
+        .map(|(i, r)| {
+            let pattern = regex::bytes::Regex::new(&r.pattern).map_err(|e| {
+                serde::de::Error::custom(format!("messages.rewrite_trailers[{i}].match: {e}"))
+            })?;
+            Ok(TrailerRewrite {
+                pattern,
+                replacement: r.replace,
+            })
+        })
+        .collect()
 }
 
 /// What happens to a commit that touched nothing but excluded paths.
