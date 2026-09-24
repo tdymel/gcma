@@ -27,7 +27,9 @@ ghma hook install|uninstall     # pre-push hook
 
 By default the range is `upstream..HEAD` (unpushed commits). Without an upstream pass `--from <rev>` (exclusive) or
 `--from root`. Commits already on the upstream need `--rewrite-pushed`. Commits that already conform are left alone, so
-running `apply` twice is a no-op and the hook only touches new commits.
+running `apply` twice is a no-op and the hook only touches new commits. Every other commit of the range is rewritten,
+and with a `schedule` it gets a fresh time even if its old one was already inside the hours (a commit that only needs a new
+message or identity is rescheduled too), together with every descendant of a nonconforming commit.
 
 ## Config (`ghma.yml`)
 
