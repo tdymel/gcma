@@ -9,7 +9,7 @@ use super::timing::{Schedule, load_external_parents, window_for};
 use super::types::{Built, PlanOptions};
 use crate::application::pathrules::TreeRewriter;
 use crate::application::ports::Repository;
-use crate::application::preconditions::check_preconditions;
+use crate::application::preconditions::{check_preconditions, refuse_pushed};
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::Commit;
 use crate::domain::history::conform::{self, Ctx};
@@ -88,7 +88,12 @@ pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Re
     if suffix.is_empty() {
         return Ok(empty());
     }
-    refuse_pushed(repo, &suffix, range.upstream.as_deref(), opts)?;
+    refuse_pushed(
+        repo,
+        &suffix,
+        range.upstream.as_deref(),
+        opts.rewrite_pushed,
+    )?;
 
     let linear = linearize(&suffix, &commits);
     let outcome = match &rewriter {
@@ -171,26 +176,6 @@ fn new_tip_when_dropped(
                     .into(),
             )
         })
-}
-
-/// Pushed commits in the suffix need an explicit flag.
-fn refuse_pushed(
-    repo: &dyn Repository,
-    suffix: &[String],
-    upstream: Option<&str>,
-    opts: &PlanOptions,
-) -> Result<()> {
-    let Some(up) = upstream else { return Ok(()) };
-    let unpushed = repo.unpushed_among(suffix, up)?;
-    let pushed: Vec<&String> = suffix.iter().filter(|o| !unpushed.contains(*o)).collect();
-    if !pushed.is_empty() && !opts.rewrite_pushed {
-        return Err(Error::Pushed(format!(
-            "{} commit(s) to rewrite are already on the upstream (e.g. {}); pass --rewrite-pushed to proceed",
-            pushed.len(),
-            &pushed[0][..pushed[0].len().min(10)]
-        )));
-    }
-    Ok(())
 }
 
 /// `git commit-tree -S` recodes a message that is not valid UTF-8, so such a commit cannot be
