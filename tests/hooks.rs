@@ -111,6 +111,15 @@ fn hook_ignores_deletes_and_other_branches_and_install_is_safe() {
     let o = r.git_out(&["push", "-q", "origin", "--delete", "other"]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
 
+    // The hook is live all along: a nonconforming commit on the checked-out branch is blocked.
+    r.commit_at("bad-main.txt", "bad on main", 1_600_200_000);
+    let o = r.git_out(&["push", "-q", "origin", "main"]);
+    assert!(
+        !o.status.success(),
+        "the hook must judge the checked-out branch"
+    );
+    assert!(String::from_utf8_lossy(&o.stderr).contains("ghma apply"));
+
     // Install refuses to clobber a foreign hook, uninstall refuses to remove one.
     r.ghma_ok(&["hook", "uninstall"]);
     let hook = r.path().join(".git/hooks/pre-push");
@@ -188,4 +197,18 @@ fn hook_rewrite_mode_fixes_head_pushes() {
     assert_eq!(r.log().last().unwrap().an, "Jane Doe");
     let o = r.git_out(&["push", "-q", "origin", "HEAD"]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+}
+
+#[test]
+fn uninstalling_without_a_hook_says_so_and_succeeds() {
+    let r = Repo::new();
+    r.linear(1, 1_600_000_000);
+    let out = r.ghma_ok(&["hook", "uninstall"]);
+    assert!(out.contains("no hook installed"), "{out}");
+    r.ghma_ok(&["hook", "install"]);
+    assert!(r.ghma_ok(&["hook", "uninstall"]).contains("hook removed"));
+    assert!(
+        r.ghma_ok(&["hook", "uninstall"])
+            .contains("no hook installed")
+    );
 }

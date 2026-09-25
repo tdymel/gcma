@@ -66,14 +66,39 @@ fn a_check_on_unpushed_commits_still_reports_nonconformance_with_exit_6() {
 
 #[test]
 fn nothing_to_rewrite_in_the_pushed_range_is_fine_without_the_flag() {
-    let (r, _) = pushed_history();
-    r.config("version: 1\n");
-    let o = r.ghma(&["--config", "ghma.yml", "plan", "--from", "root"]);
-    assert!(
-        o.status.success(),
-        "an inert config touches nothing: {}",
-        stderr(&o)
-    );
+    // The pushed commits already follow the identity rule, so even an explicit whole-branch run
+    // has nothing to rewrite and must not trip over them being pushed.
+    let r = Repo::new();
+    for i in 0..3 {
+        r.commit_as(
+            &format!("f{i}.txt"),
+            &format!("c{i}"),
+            1_600_000_000 + i * 1000,
+            "Jane Doe",
+            "jane@work.com",
+        );
+    }
+    r.bare_remote();
+    r.git(&["push", "-q", "-u", "origin", "main"]);
+    r.config(IDENTITY_CFG);
+    for cmd in ["plan", "apply"] {
+        let o = r.ghma(&[cmd, "--from", "root"]);
+        assert!(o.status.success(), "{cmd}: {}", stderr(&o));
+        assert!(
+            String::from_utf8_lossy(&o.stdout).contains("Nothing to do"),
+            "{cmd}: {}",
+            String::from_utf8_lossy(&o.stdout)
+        );
+        assert!(
+            !stderr(&o).contains("no rules"),
+            "{cmd}: the config is not inert"
+        );
+    }
+    // The same range does trip once a pushed commit has to change.
+    r.commit_at("later.txt", "pushed too", 1_600_900_000);
+    r.git(&["push", "-q"]);
+    let o = r.ghma(&["plan", "--from", "root"]);
+    assert_eq!(Repo::code(&o), 5, "{}", stderr(&o));
 }
 
 #[test]
