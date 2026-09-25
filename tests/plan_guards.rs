@@ -1,4 +1,5 @@
-//! What `apply` and `plan` refuse: hand-edited plans, plans gone stale, impossible ranges.
+//! What `apply` and `plan` refuse beyond plain tampering (see `plans.rs`): hand-edited drops,
+//! plans gone stale, impossible ranges.
 //! Every refusal leaves the branch and the refs exactly as they were.
 
 mod common;
@@ -30,25 +31,6 @@ fn edited_plan(r: &Repo, edit: impl FnOnce(&mut serde_json::Value)) -> String {
     edit(&mut plan);
     std::fs::write(&path, serde_json::to_vec(&plan).unwrap()).unwrap();
     path
-}
-
-#[test]
-fn a_commit_cannot_be_both_rewritten_and_dropped() {
-    let r = Repo::new();
-    r.commit_files(&[("a.txt", "a\n")], "add a", T0);
-    r.commit_files(&[("secrets/k", "k\n")], "add key", T0 + 1000);
-    let tip = r.commit_files(&[("b.txt", "b\n")], "add b", T0 + 2000);
-    r.config(SECRETS_CFG);
-    let plan = edited_plan(&r, |p| {
-        p["dropped"]
-            .as_array_mut()
-            .unwrap()
-            .push(tip.clone().into())
-    });
-    let o = r.ghma(&["apply", "--plan", &plan]);
-    assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
-    assert!(stderr(&o).contains("more than once"), "{}", stderr(&o));
-    untouched(&r, &tip);
 }
 
 #[test]
@@ -104,22 +86,6 @@ fn a_plan_cannot_drop_a_merge_commit() {
     let o = r.ghma(&["apply", "--plan", &plan]);
     assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
     assert!(stderr(&o).contains("merge commit"), "{}", stderr(&o));
-    untouched(&r, &tip);
-}
-
-#[test]
-fn a_plan_whose_parent_no_longer_exists_is_refused() {
-    let r = Repo::new();
-    r.linear(3, T0);
-    r.config(IDENTITY_CFG);
-    let tip = r.git(&["rev-parse", "HEAD"]);
-    let ghost = "0123456789abcdef0123456789abcdef01234567";
-    let plan = edited_plan(&r, |p| {
-        p["entries"][1]["parents"] = serde_json::json!([{ "base": ghost }])
-    });
-    let o = r.ghma(&["apply", "--plan", &plan]);
-    assert_eq!(Repo::code(&o), 3, "{}", stderr(&o));
-    assert!(stderr(&o).contains("no longer exists"), "{}", stderr(&o));
     untouched(&r, &tip);
 }
 
