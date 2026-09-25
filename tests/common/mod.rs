@@ -9,6 +9,8 @@ use tempfile::TempDir;
 pub struct Repo {
     pub dir: TempDir,
     pub home: TempDir,
+    /// Forces the object backend of every `ghma` run (`git` or `gix`); `None` keeps the default.
+    pub backend: Option<&'static str>,
 }
 
 #[derive(Debug, Clone)]
@@ -47,11 +49,24 @@ impl Repo {
         let r = Repo {
             dir: tempfile::tempdir().unwrap(),
             home: tempfile::tempdir().unwrap(),
+            backend: None,
         };
         r.git(&["init", "-q", "-b", "main"]);
         r.git(&["config", "user.name", "Old Me"]);
         r.git(&["config", "user.email", "me@home.org"]);
         r.git(&["config", "commit.gpgsign", "false"]);
+        r
+    }
+
+    /// A repository whose `ghma` runs use the backend `seed` selects: the two alternate, so a
+    /// series of seeds covers both (only `git` when the `gix` feature is not built).
+    pub fn for_seed(seed: u64) -> Repo {
+        let mut r = Repo::new();
+        r.backend = Some(if cfg!(feature = "gix") && seed % 2 == 1 {
+            "gix"
+        } else {
+            "git"
+        });
         r
     }
 
@@ -81,7 +96,11 @@ impl Repo {
     }
 
     pub fn ghma(&self, args: &[&str]) -> Output {
-        self.cmd(bin()).args(args).output().unwrap()
+        let mut c = self.cmd(bin());
+        if let Some(b) = self.backend {
+            c.env("GHMA_BACKEND", b);
+        }
+        c.args(args).output().unwrap()
     }
 
     pub fn ghma_ok(&self, args: &[&str]) -> String {
