@@ -253,7 +253,7 @@ fn apply_with(fault: Fault) -> Error {
     let fx = fixture();
     let inner = GitCli::open(fx.dir.path()).unwrap();
     let plan = plan_for(&inner);
-    let other_tree = inner.read_commits(&[fx.root.clone()]).unwrap()[0]
+    let other_tree = inner.read_commits(std::slice::from_ref(&fx.root)).unwrap()[0]
         .tree
         .clone();
     let repo = Faulty {
