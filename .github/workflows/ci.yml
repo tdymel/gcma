@@ -80,6 +80,6 @@ jobs:
       - run: cargo build --release --locked
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ghma-linux-x86_64
-          path: target/release/ghma
+          name: gcma-linux-x86_64
+          path: target/release/gcma
           if-no-files-found: error

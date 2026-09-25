@@ -93,15 +93,15 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           TARGET: ${{ matrix.target }}
         run: |
-          name="ghma-${VERSION}-${TARGET}"
+          name="gcma-${VERSION}-${TARGET}"
           mkdir "$name"
-          cp "target/${TARGET}/release/ghma" README.md LICENSE-MIT LICENSE-APACHE "$name/"
+          cp "target/${TARGET}/release/gcma" README.md LICENSE-MIT LICENSE-APACHE "$name/"
           tar czf "$name.tar.gz" "$name"
           shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist-${{ matrix.target }}
-          path: ghma-*.tar.gz*
+          path: gcma-*.tar.gz*
           if-no-files-found: error
 
   publish:

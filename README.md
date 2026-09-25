@@ -1,4 +1,4 @@
-# ghma — git hide my ass
+# gcma — git cover my ass
 
 Reshape the history of the **current branch**: spread commits over a time range on chosen weekdays and working hours (with a
 believable distribution), rewrite author/committer identities, and clean or rewrite messages — without ever losing a commit
@@ -10,19 +10,19 @@ Needs a Unix system (Linux, macOS) and `git` on the `PATH` (refs, signing and ho
 recommended). Rust 1.90 or newer to build:
 
 ```sh
-cargo install --path .           # or: cargo build --release  ->  target/release/ghma
+cargo install --path .           # or: cargo build --release  ->  target/release/gcma
 ```
 
 ## Usage
 
 ```
-ghma init                       # write a starter ghma.yml (inert until you enable something)
-ghma plan  [--from <rev|root>]  # dry run; add --out plan.json to save, --check to exit 6 if anything is nonconforming
-ghma apply [--from <rev|root>]  # verify, back up, rewrite
-ghma restore [<id>] [--force|--prune]   # list, undo, or forget a backup
+gcma init                       # write a starter gcma.yml (inert until you enable something)
+gcma plan  [--from <rev|root>]  # dry run; add --out plan.json to save, --check to exit 6 if anything is nonconforming
+gcma apply [--from <rev|root>]  # verify, back up, rewrite
+gcma restore [<id>] [--force|--prune]   # list, undo, or forget a backup
 -C <dir>, --config <file>, --backend git|gix    # global options
-ghma export / import            # compact JSONL for LLM-written messages (see below)
-ghma hook install|uninstall     # pre-push hook
+gcma export / import            # compact JSONL for LLM-written messages (see below)
+gcma hook install|uninstall     # pre-push hook
 ```
 
 By default the range is `upstream..HEAD` (unpushed commits). Without an upstream pass `--from <rev>` (exclusive) or
@@ -31,7 +31,7 @@ running `apply` twice is a no-op and the hook only touches new commits. Every ot
 and with a `schedule` it gets a fresh time even if its old one was already inside the hours (a commit that only needs a new
 message or identity is rescheduled too), together with every descendant of a nonconforming commit.
 
-## Config (`ghma.yml`)
+## Config (`gcma.yml`)
 
 ```yaml
 version: 1
@@ -90,44 +90,44 @@ re-derives every tree from the rules and re-checks that nothing but `.gitignore`
 paths, so a hand-edited plan cannot change content. This is the one feature that changes trees; the backup keeps the originals.
 
 Dropping a commit on a side branch can leave a merge whose two parents are now the same commit, or one parent an ancestor of
-the other. That is valid in git and stable under re-running `apply`; ghma does not prune such parents because that would change
+the other. That is valid in git and stable under re-running `apply`; gcma does not prune such parents because that would change
 which commits the merge is "of".
 
 ### Purging removed paths for real
 
 Backups are the safety net, so the original commits (and anything in the excluded paths) stay reachable from
-`refs/ghma/backup/…`, the reflog, tags, other branches and any remote that already has them; `git push --mirror` or a
+`refs/gcma/backup/…`, the reflog, tags, other branches and any remote that already has them; `git push --mirror` or a
 `refs/*` refspec would upload the backup refs. If excluded files held secrets, rotate them. To purge the old history
-locally: `ghma restore <id> --prune`, then `git reflog expire --expire=now --all && git gc --prune=now`.
+locally: `gcma restore <id> --prune`, then `git reflog expire --expire=now --all && git gc --prune=now`.
 
 ## Safety model
 
 - New commits are built from the old tree (minus excluded paths, if configured) with remapped parents; before any ref moves,
   `apply` checks the trees, parent order, commit count (old minus dropped), the tip-tree diff, and that all unchanged commits
   are still reachable.
-- One atomic ref transaction creates `refs/ghma/backup/<branch>/<id>/{old,new}` and moves the branch with compare-and-swap.
-  Backups are never pruned automatically. `ghma restore <id>` goes back; it refuses if the branch moved on (unless `--force`).
+- One atomic ref transaction creates `refs/gcma/backup/<branch>/<id>/{old,new}` and moves the branch with compare-and-swap.
+  Backups are never pruned automatically. `gcma restore <id>` goes back; it refuses if the branch moved on (unless `--force`).
 - `apply` only moves the checked-out branch named in the plan, a plan from a file must carry the same path rules as the
   config, and every object id and the branch ref in it are validated; `.gitignore` is never written through a symlink.
-  The config file (`ghma.yml`) is trusted like a script: with the hook in `rewrite` mode, a config pulled from
-  an untrusted branch can rewrite your unpushed history on push (backups exist). `ghma init` keeps it out of commits via
+  The config file (`gcma.yml`) is trusted like a script: with the hook in `rewrite` mode, a config pulled from
+  an untrusted branch can rewrite your unpushed history on push (backups exist). `gcma init` keeps it out of commits via
   `.git/info/exclude`.
-- `restore` also puts the index (and ghma's `.gitignore` change) back when path rules had changed the content.
+- `restore` also puts the index (and gcma's `.gitignore` change) back when path rules had changed the content.
 - Names, emails and messages need not be UTF-8: they are carried byte for byte (identity rules match them as text with invalid bytes
   replaced, so an email rule still applies; a rule that matches sets both fields, otherwise the bytes are left as they are). One limitation: git recodes a message that is not valid UTF-8 when it signs, so with `signing: resign`
   `plan`/`apply` refuse (exit 3) to rewrite such commits; use `signing: strip` there.
 - Refused (exit 3): shallow clones, replace refs/grafts, detached HEAD, staged changes, rebase/merge/cherry-pick in progress.
 - Exit codes: 0 ok, 1 internal, 2 usage/config, 3 refused, 4 branch moved, 5 pushed commits (also for a dry run), 6 nonconforming,
-  7 bad LLM reply. `ghma restore --force` parks what it discards at `refs/ghma/discarded/…`.
+  7 bad LLM reply. `gcma restore --force` parks what it discards at `refs/gcma/discarded/…`.
 
 ## LLM workflow
 
 ```
-ghma plan --from root --all --out plan.json      # --all makes every commit editable
-ghma export --plan plan.json [--batch 100 --offset 0] > rows.jsonl   # prompt template goes to stderr
+gcma plan --from root --all --out plan.json      # --all makes every commit editable
+gcma export --plan plan.json [--batch 100 --offset 0] > rows.jsonl   # prompt template goes to stderr
 # give rows.jsonl to an LLM; it answers with JSONL: {"i": 3, "t": "Title", "b": "Body"}
-ghma import --plan plan.json reply.jsonl         # validated all-or-nothing; prints rows to retry on error
-ghma apply  --plan plan.json
+gcma import --plan plan.json reply.jsonl         # validated all-or-nothing; prints rows to retry on error
+gcma apply  --plan plan.json
 ```
 
 ## Backends and performance
@@ -137,20 +137,20 @@ The `git` backend spawns the `git` binary for every written commit (~2 ms each; 
 byte-identical commits. Opt out of `gix` with any of:
 
 ```sh
-ghma --backend git apply        # one run
-GHMA_BACKEND=git ghma apply     # environment
-# ghma.yml
+gcma --backend git apply        # one run
+GCMA_BACKEND=git gcma apply     # environment
+# gcma.yml
 backend: git
 ```
 
-Precedence: `--backend`, `GHMA_BACKEND`, config `backend:`, then the build default. A binary built with
+Precedence: `--backend`, `GCMA_BACKEND`, config `backend:`, then the build default. A binary built with
 `--no-default-features` has no gix and defaults to `git`; asking it for `gix` is an error. Only batch object reads and
 commit writes move between backends; refs, signing and hooks always use git. Measure on your machine with
-`cargo test --release --test perf -- --ignored --nocapture` (`GHMA_PERF_COMMITS=50000` for more).
+`cargo test --release --test perf -- --ignored --nocapture` (`GCMA_PERF_COMMITS=50000` for more).
 
 ## Hook
 
-`ghma hook install` adds a `pre-push` hook. In `verify` mode it blocks pushes of nonconforming commits ("run `ghma apply`").
+`gcma hook install` adds a `pre-push` hook. In `verify` mode it blocks pushes of nonconforming commits ("run `gcma apply`").
 In `rewrite` mode it rewrites them and aborts the push so you push again. Deletes and pushes of other branches are ignored; `git push origin HEAD` and a revision of the branch
 (`HEAD~1:main`) count as the checked-out branch. Skip it once with `git push --no-verify`. Remember that config errors block pushes too.
 
