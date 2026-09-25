@@ -121,6 +121,7 @@ pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Re
         .chain(&outcome.dropped)
         .cloned()
         .collect();
+    refuse_unsignable(cfg, &outcome.kept, &commits)?;
     let warnings = rewrite_warnings(repo, cfg, &touched, &commits)?;
 
     let mut plan = Plan::new(
@@ -192,6 +193,29 @@ fn refuse_pushed(
     Ok(())
 }
 
+/// `git commit-tree -S` recodes a message that is not valid UTF-8, so such a commit cannot be
+/// re-signed byte for byte; better to say so now than to fail verification at apply time.
+fn refuse_unsignable(
+    cfg: &Config,
+    linear: &[String],
+    commits: &HashMap<String, Commit>,
+) -> Result<()> {
+    if cfg.signing != Signing::Resign {
+        return Ok(());
+    }
+    let binary = linear
+        .iter()
+        .filter(|o| std::str::from_utf8(&commits[*o].message).is_err())
+        .count();
+    if binary > 0 {
+        return Err(Error::Precondition(format!(
+            "{binary} commit(s) have messages that are not valid UTF-8, which git recodes when it signs, \
+             so `signing: resign` cannot keep them as they are; use `signing: strip` for this branch"
+        )));
+    }
+    Ok(())
+}
+
 /// Non-fatal consequences of rewriting these commits.
 fn rewrite_warnings(
     repo: &dyn Repository,
@@ -219,15 +243,6 @@ fn rewrite_warnings(
             .count();
         if lossy > 0 {
             warnings.push(format!("{lossy} commit(s) carry extra headers (e.g. encoding) that `signing: resign` cannot preserve"));
-        }
-        let binary = linear
-            .iter()
-            .filter(|o| std::str::from_utf8(&commits[*o].message).is_err())
-            .count();
-        if binary > 0 {
-            warnings.push(format!(
-                "{binary} commit(s) have messages that are not valid UTF-8; `signing: resign` may not sign them exactly as they are"
-            ));
         }
     }
     Ok(warnings)

@@ -114,8 +114,8 @@ locally: `ghma restore <id> --prune`, then `git reflog expire --expire=now --all
   `.git/info/exclude`.
 - `restore` also puts the index (and ghma's `.gitignore` change) back when path rules had changed the content.
 - Names, emails and messages need not be UTF-8: they are carried byte for byte (identity rules match them as text with invalid bytes
-  replaced, so an email rule still applies; a rule that matches sets both fields, otherwise the bytes are left as they are). One limitation: with `signing: resign`, messages that are not valid UTF-8 may not be signed
-  exactly as written, and `plan`/`apply` warn about it.
+  replaced, so an email rule still applies; a rule that matches sets both fields, otherwise the bytes are left as they are). One limitation: git recodes a message that is not valid UTF-8 when it signs, so with `signing: resign`
+  `plan`/`apply` refuse (exit 3) to rewrite such commits; use `signing: strip` there.
 - Refused (exit 3): shallow clones, replace refs/grafts, detached HEAD, staged changes, rebase/merge/cherry-pick in progress.
 - Exit codes: 0 ok, 1 internal, 2 usage/config, 3 refused, 4 branch moved, 5 pushed commits (also for a dry run), 6 nonconforming,
   7 bad LLM reply. `ghma restore --force` parks what it discards at `refs/ghma/discarded/…`.
