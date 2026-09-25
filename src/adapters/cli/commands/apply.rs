@@ -1,4 +1,4 @@
-//! `ghma apply`: rewrite the branch from a fresh or a saved plan.
+//! `gcma apply`: rewrite the branch from a fresh or a saved plan.
 
 use std::path::PathBuf;
 
@@ -43,7 +43,7 @@ fn print_report(report: &ApplyReport, branch: &str) {
     };
     let id = report.backup_id.as_deref().unwrap_or("?");
     println!(
-        "Rewrote {} commit(s){dropped}; {branch} is now at {}.\nBackup: {id} (undo with `ghma restore {id}`)",
+        "Rewrote {} commit(s){dropped}; {branch} is now at {}.\nBackup: {id} (undo with `gcma restore {id}`)",
         report.rewritten,
         report.new_tip.as_deref().unwrap_or("?"),
     );

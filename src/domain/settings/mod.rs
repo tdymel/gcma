@@ -1,4 +1,4 @@
-//! User settings: the validated, in-memory form of `ghma.yml`.
+//! User settings: the validated, in-memory form of `gcma.yml`.
 //! Reading the file lives in an adapter; this module only knows the rules.
 
 mod calendar;
@@ -38,7 +38,7 @@ pub struct Config {
     pub signing: Signing,
     #[serde(default)]
     pub hook: HookCfg,
-    /// Object backend (`git` or `gix`); `--backend` and `GHMA_BACKEND` take precedence.
+    /// Object backend (`git` or `gix`); `--backend` and `GCMA_BACKEND` take precedence.
     pub backend: Option<Backend>,
 }
 

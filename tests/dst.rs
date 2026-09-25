@@ -39,7 +39,7 @@ fn check_change(from: &str, to: &str) {
     }
     r.config(&cfg(from, to));
     let old = r.log();
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
     let new = r.log();
     assert_same_content(&old, &new);
@@ -73,11 +73,11 @@ fn check_change(from: &str, to: &str) {
     );
 
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do")
     );
     assert!(
-        r.ghma(&["plan", "--check", "--from", "root"])
+        r.gcma(&["plan", "--check", "--from", "root"])
             .status
             .success()
     );

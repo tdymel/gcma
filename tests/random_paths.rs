@@ -208,7 +208,7 @@ fn run_case(seed: u64) {
     } else {
         "version: 1\npaths:\n  exclude: [\"secrets/\"]\n".to_string()
     });
-    let o = r.ghma(&["apply", "--from", "root"]);
+    let o = r.gcma(&["apply", "--from", "root"]);
     assert!(
         o.status.success(),
         "seed {seed}: {}{}",
@@ -270,24 +270,24 @@ fn run_case(seed: u64) {
     let status: Vec<String> = r
         .git(&["status", "--porcelain"])
         .lines()
-        .filter(|l| !l.contains("ghma.yml"))
+        .filter(|l| !l.contains("gcma.yml"))
         .map(String::from)
         .collect();
     assert!(status.is_empty(), "seed {seed}: {status:?}");
 
     // Idempotent and undoable; the old history is intact behind the backup.
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do"),
         "seed {seed}"
     );
     assert!(
-        r.ghma(&["plan", "--check", "--from", "root"])
+        r.gcma(&["plan", "--check", "--from", "root"])
             .status
             .success(),
         "seed {seed}"
     );
-    let backup = r.git(&["for-each-ref", "--format=%(refname)", "refs/ghma/backup/"]);
+    let backup = r.git(&["for-each-ref", "--format=%(refname)", "refs/gcma/backup/"]);
     if backup.is_empty() {
         // Nothing to rewrite: the history never had a secret and no schedule applied.
         assert!(
@@ -309,11 +309,11 @@ fn run_case(seed: u64) {
         r.git(&[
             "rev-list",
             "--count",
-            &format!("refs/ghma/backup/main/{id}/old")
+            &format!("refs/gcma/backup/main/{id}/old")
         ]),
         old_count.to_string()
     );
-    r.ghma_ok(&["restore", &id]);
+    r.gcma_ok(&["restore", &id]);
     assert_eq!(r.git(&["rev-parse", "HEAD"]), old_tip, "seed {seed}");
 }
 

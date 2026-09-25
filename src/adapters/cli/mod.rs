@@ -51,7 +51,7 @@ pub fn main() -> i32 {
     match run(cli) {
         Ok(()) => 0,
         Err(e) => {
-            eprintln!("ghma: {e}");
+            eprintln!("gcma: {e}");
             exit_code(&e)
         }
     }

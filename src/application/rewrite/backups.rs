@@ -9,9 +9,9 @@ use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::short;
 use crate::domain::history::plan::HEADS_PREFIX;
 
-pub const BACKUP_PREFIX: &str = "refs/ghma/backup/";
+pub const BACKUP_PREFIX: &str = "refs/gcma/backup/";
 /// Where a forced restore parks the tip it discards, so no commit loses its last reference.
-pub const DISCARDED_PREFIX: &str = "refs/ghma/discarded/";
+pub const DISCARDED_PREFIX: &str = "refs/gcma/discarded/";
 
 #[derive(Debug, Clone)]
 pub struct Backup {
@@ -67,7 +67,7 @@ fn find_backup(repo: &dyn Repository, id: &str) -> Result<Backup> {
     match hits.as_slice() {
         [one] => Ok((*one).clone()),
         [] => Err(Error::Usage(format!(
-            "no backup matches {id:?} (run `ghma restore` to list)"
+            "no backup matches {id:?} (run `gcma restore` to list)"
         ))),
         _ => Err(Error::Usage(format!(
             "{id:?} matches several backups; use the full id"
@@ -119,7 +119,7 @@ pub fn restore(repo: &dyn Repository, id: &str, force: bool) -> Result<RestoreRe
         parked = Some(name);
     }
     let moved_from = repo.read_commits(std::slice::from_ref(&tip))?;
-    repo.update_refs("ghma restore", &commands)?;
+    repo.update_refs("gcma restore", &commands)?;
     let restored = repo.read_commits(std::slice::from_ref(&b.old))?;
     let notes = match (moved_from.first(), restored.first()) {
         (Some(from), Some(to)) if from.tree != to.tree => sync_worktree(repo, from, &b.old),
@@ -137,7 +137,7 @@ pub fn prune(repo: &dyn Repository, id: &str) -> Result<Backup> {
     let b = find_backup(repo, id)?;
     let base = format!("{BACKUP_PREFIX}{}/{}", b.branch, b.id);
     repo.update_refs(
-        "ghma prune",
+        "gcma prune",
         &[
             RefUpdate::Delete {
                 name: format!("{base}/old"),

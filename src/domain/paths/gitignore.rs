@@ -3,7 +3,7 @@
 /// The file the patterns are added to (always at the repository root).
 pub const GITIGNORE: &str = ".gitignore";
 
-const HEADER: &str = "# added by ghma: paths removed from history";
+const HEADER: &str = "# added by gcma: paths removed from history";
 
 /// `existing` with every pattern appended that is not already a line of it. Idempotent; an
 /// existing file is only ever extended, never reordered.
@@ -46,7 +46,7 @@ mod tests {
     fn creates_the_file() {
         assert_eq!(
             with_patterns(None, &p(&["a/", "*.env"])),
-            b"# added by ghma: paths removed from history\na/\n*.env\n"
+            b"# added by gcma: paths removed from history\na/\n*.env\n"
         );
     }
 
@@ -55,7 +55,7 @@ mod tests {
         let out = with_patterns(Some(b"target\nsecrets/"), &p(&["secrets/", "*.env"]));
         assert_eq!(
             out,
-            b"target\nsecrets/\n\n# added by ghma: paths removed from history\n*.env\n"
+            b"target\nsecrets/\n\n# added by gcma: paths removed from history\n*.env\n"
         );
     }
 

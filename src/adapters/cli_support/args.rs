@@ -8,19 +8,19 @@ use crate::domain::settings::Backend;
 
 #[derive(Parser)]
 #[command(
-    name = "ghma",
+    name = "gcma",
     version,
-    about = "git hide my ass: safely reshape the history of the current branch"
+    about = "git cover my ass: safely reshape the history of the current branch"
 )]
 pub struct Cli {
-    /// Config file (default: ghma.yml in the repository root).
+    /// Config file (default: gcma.yml in the repository root).
     #[arg(long, global = true)]
     pub config: Option<PathBuf>,
     /// Run as if started in this directory.
     #[arg(short = 'C', global = true)]
     pub dir: Option<PathBuf>,
     /// Object backend: `gix` (default) or `git`.
-    /// Also settable with GHMA_BACKEND or `backend:` in the config.
+    /// Also settable with GCMA_BACKEND or `backend:` in the config.
     #[arg(long, global = true)]
     pub backend: Option<Backend>,
     #[command(subcommand)]
@@ -114,11 +114,11 @@ pub enum Cmd {
 pub enum HookCmd {
     /// Install the pre-push hook (bypass it for one push with `git push --no-verify`).
     Install {
-        /// Overwrite a pre-push hook that ghma did not write.
+        /// Overwrite a pre-push hook that gcma did not write.
         #[arg(long)]
         force: bool,
     },
-    /// Remove the pre-push hook if ghma wrote it.
+    /// Remove the pre-push hook if gcma wrote it.
     Uninstall,
     /// Entry point used by the installed shim.
     Run {

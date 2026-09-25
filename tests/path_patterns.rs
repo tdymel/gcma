@@ -31,7 +31,7 @@ fn case(patterns: &[&str], files: &[&str], expect: &[&str]) {
         "version: 1\npaths:\n  exclude: [{}]\n",
         list.join(", ")
     ));
-    let o = r.ghma(&["apply", "--from", "root"]);
+    let o = r.gcma(&["apply", "--from", "root"]);
     assert!(
         o.status.success(),
         "{patterns:?}: {}",
@@ -53,7 +53,7 @@ fn case(patterns: &[&str], files: &[&str], expect: &[&str]) {
         assert!(r.path().join(f).exists(), "{f} must stay in the project");
     }
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do"),
         "{patterns:?}: second run"
     );
@@ -170,7 +170,7 @@ fn the_last_matching_pattern_wins() {
     let r = Repo::new();
     r.commit_files(&[("a.txt", "a\n"), ("b.md", "b\n")], "one", 1_600_000_000);
     r.config("version: 1\npaths:\n  exclude: [\"!a.txt\", \"*.txt\"]\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     assert_eq!(
         remaining(&r),
         ["b.md"],
@@ -184,7 +184,7 @@ fn the_last_matching_pattern_wins() {
         1_600_000_000,
     );
     r.config("version: 1\npaths:\n  exclude: [\"*.txt\", \"!a.txt\"]\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     assert_eq!(
         remaining(&r),
         ["a.txt", "c.md"],
@@ -229,7 +229,7 @@ fn symlinks_and_submodule_paths_are_excluded_like_files_and_directories() {
     ]);
     r.git(&["commit", "-q", "-m", "link and submodule"]);
     r.config("version: 1\npaths:\n  exclude: [\"secret-link\", \"vendor/\"]\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     assert_eq!(remaining(&r), ["keep.txt", "real.txt"]);
     r.fsck();
 }
@@ -247,7 +247,7 @@ fn deeply_nested_files_vanish_with_their_empty_directories() {
         1_600_000_000,
     );
     r.config("version: 1\npaths:\n  exclude: [\"secret.txt\"]\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     assert_eq!(remaining(&r), ["a/b/other.txt", "keep.txt"]);
     assert!(
         !r.git(&["ls-tree", "-r", "-d", "--name-only", "HEAD"])
@@ -271,7 +271,7 @@ fn unusable_patterns_are_config_errors() {
             "version: 1\npaths:\n  exclude: [{}]\n",
             quote(pattern)
         ));
-        let o = r.ghma(&["plan", "--from", "root"]);
+        let o = r.gcma(&["plan", "--from", "root"]);
         assert_eq!(
             Repo::code(&o),
             2,

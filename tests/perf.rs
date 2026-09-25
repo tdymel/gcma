@@ -2,12 +2,12 @@
 //!
 //! ```text
 //! cargo test --release --test perf -- --ignored --nocapture
-//! GHMA_PERF_COMMITS=50000 cargo test --release --test perf -- --ignored --nocapture
+//! GCMA_PERF_COMMITS=50000 cargo test --release --test perf -- --ignored --nocapture
 //! ```
 //!
 //! Both backends run (only `git` with `--no-default-features`) on identical copies of
 //! the history and must produce the very same commits (same ids), proving the backends are
-//! interchangeable. `GHMA_PERF_BUDGET_SECS` optionally fails the test when a backend's `apply`
+//! interchangeable. `GCMA_PERF_BUDGET_SECS` optionally fails the test when a backend's `apply`
 //! exceeds the budget.
 
 mod common;
@@ -113,7 +113,7 @@ fn run_backend(backend: &'static str, src: &Repo, n: usize) -> Timing {
         let t = Instant::now();
         let mut a = be.to_vec();
         a.extend_from_slice(args);
-        let out = r.ghma_ok(&a);
+        let out = r.gcma_ok(&a);
         (t.elapsed(), out)
     };
 
@@ -141,10 +141,10 @@ fn run_backend(backend: &'static str, src: &Repo, n: usize) -> Timing {
         new_trees, old_trees,
         "every commit must keep its tree, in order"
     );
-    let id = r.ghma_ok(&["restore"]);
+    let id = r.gcma_ok(&["restore"]);
     let id = id.split_whitespace().next().unwrap().to_string();
     let t = Instant::now();
-    r.ghma_ok(&["restore", &id]);
+    r.gcma_ok(&["restore", &id]);
     let restore = t.elapsed();
     assert_eq!(r.git(&["rev-parse", "HEAD"]), old_tip);
     Timing {
@@ -162,7 +162,7 @@ fn run_backend(backend: &'static str, src: &Repo, n: usize) -> Timing {
 #[test]
 #[ignore = "performance test; run with --release --ignored --nocapture"]
 fn backends_perf() {
-    let n: usize = std::env::var("GHMA_PERF_COMMITS")
+    let n: usize = std::env::var("GCMA_PERF_COMMITS")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(5000);
@@ -202,7 +202,7 @@ fn backends_perf() {
             t.backend, results[0].backend
         );
     }
-    if let Some(budget) = std::env::var("GHMA_PERF_BUDGET_SECS")
+    if let Some(budget) = std::env::var("GCMA_PERF_BUDGET_SECS")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
     {

@@ -13,13 +13,13 @@ fn backend_selection_flag_env_and_config() {
     r.config(IDENTITY_CFG);
     // Unknown values are usage errors, from the flag, the env var and the config alike.
     assert_eq!(
-        Repo::code(&r.ghma(&["--backend", "bogus", "plan", "--from", "root"])),
+        Repo::code(&r.gcma(&["--backend", "bogus", "plan", "--from", "root"])),
         2
     );
     let o = r
         .cmd(bin())
         .args(["plan", "--from", "root"])
-        .env("GHMA_BACKEND", "bogus")
+        .env("GCMA_BACKEND", "bogus")
         .output()
         .unwrap();
     assert_eq!(Repo::code(&o), 2);
@@ -27,15 +27,15 @@ fn backend_selection_flag_env_and_config() {
     let plain = || {
         r.cmd(bin())
             .args(["plan", "--from", "root"])
-            .env_remove("GHMA_BACKEND")
+            .env_remove("GCMA_BACKEND")
             .output()
             .unwrap()
     };
     assert_eq!(Repo::code(&plain()), 2);
     // `git` always works; `gix` works exactly when it was compiled in.
     r.config(IDENTITY_CFG);
-    r.ghma_ok(&["--backend", "git", "plan", "--from", "root"]);
-    let gix = r.ghma(&["--backend", "gix", "plan", "--from", "root"]);
+    r.gcma_ok(&["--backend", "git", "plan", "--from", "root"]);
+    let gix = r.gcma(&["--backend", "gix", "plan", "--from", "root"]);
     let expected = if cfg!(feature = "gix") { 0 } else { 2 };
     assert_eq!(
         Repo::code(&gix),
@@ -47,11 +47,11 @@ fn backend_selection_flag_env_and_config() {
     r.config(&format!("{IDENTITY_CFG}backend: gix\n"));
     if !cfg!(feature = "gix") {
         assert_eq!(Repo::code(&plain()), 2);
-        r.ghma_ok(&["--backend", "git", "plan", "--from", "root"]);
+        r.gcma_ok(&["--backend", "git", "plan", "--from", "root"]);
         let o = r
             .cmd(bin())
             .args(["plan", "--from", "root"])
-            .env("GHMA_BACKEND", "git")
+            .env("GCMA_BACKEND", "git")
             .output()
             .unwrap();
         assert_eq!(Repo::code(&o), 0);
@@ -71,8 +71,8 @@ fn gix_and_git_backends_write_byte_identical_commits() {
     };
     let (a, b) = (mk(), mk());
     assert_eq!(a.git(&["rev-parse", "HEAD"]), b.git(&["rev-parse", "HEAD"]));
-    a.ghma_ok(&["--backend", "git", "apply", "--from", "root"]);
-    b.ghma_ok(&["--backend", "gix", "apply", "--from", "root"]);
+    a.gcma_ok(&["--backend", "git", "apply", "--from", "root"]);
+    b.gcma_ok(&["--backend", "gix", "apply", "--from", "root"]);
     let (la, lb) = (a.log(), b.log());
     assert_eq!(la.len(), 8);
     for (x, y) in la.iter().zip(&lb) {
@@ -82,7 +82,7 @@ fn gix_and_git_backends_write_byte_identical_commits() {
     b.fsck();
     // A rerun with the other backend is a no-op too.
     assert!(
-        b.ghma_ok(&["--backend", "git", "apply", "--from", "root"])
+        b.gcma_ok(&["--backend", "git", "apply", "--from", "root"])
             .contains("Nothing to do")
     );
 }

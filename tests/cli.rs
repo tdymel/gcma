@@ -14,7 +14,7 @@ fn identity_rewrite_preserves_everything_else() {
     let old = r.log();
     let old_tip = old.last().unwrap().oid.clone();
 
-    let plan = r.ghma_ok(&["plan", "--from", "root"]);
+    let plan = r.gcma_ok(&["plan", "--from", "root"]);
     assert!(plan.contains("6 to rewrite"), "{plan}");
     assert_eq!(
         r.git(&["rev-parse", "HEAD"]),
@@ -22,7 +22,7 @@ fn identity_rewrite_preserves_everything_else() {
         "plan must not write"
     );
 
-    let out = r.ghma_ok(&["apply", "--from", "root"]);
+    let out = r.gcma_ok(&["apply", "--from", "root"]);
     assert!(out.contains("Rewrote 6"), "{out}");
     let new = r.log();
     assert_same_content(&old, &new);
@@ -37,7 +37,7 @@ fn identity_rewrite_preserves_everything_else() {
     }
     r.fsck();
     // Backup refs exist and keep the old history reachable.
-    let refs = r.git(&["for-each-ref", "refs/ghma/backup/"]);
+    let refs = r.git(&["for-each-ref", "refs/gcma/backup/"]);
     assert!(refs.contains("/old") && refs.contains("/new"), "{refs}");
     assert_eq!(r.git(&["rev-list", "--count", &old_tip]), "6");
 }
@@ -48,23 +48,23 @@ fn second_apply_is_a_noop_and_restore_returns_the_original_tip() {
     r.linear(4, 1_600_000_000);
     r.config(IDENTITY_CFG);
     let old_tip = r.git(&["rev-parse", "HEAD"]);
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let new_tip = r.git(&["rev-parse", "HEAD"]);
     assert_ne!(old_tip, new_tip);
 
-    let again = r.ghma_ok(&["apply", "--from", "root"]);
+    let again = r.gcma_ok(&["apply", "--from", "root"]);
     assert!(again.contains("Nothing to do"), "{again}");
     assert_eq!(r.git(&["rev-parse", "HEAD"]), new_tip);
     assert!(
-        r.ghma(&["plan", "--check", "--from", "root"])
+        r.gcma(&["plan", "--check", "--from", "root"])
             .status
             .success()
     );
 
-    let list = r.ghma_ok(&["restore"]);
+    let list = r.gcma_ok(&["restore"]);
     let id = list.split_whitespace().next().unwrap().to_string();
     // The branch is still at the recorded new tip: restore works without --force.
-    r.ghma_ok(&["restore", &id]);
+    r.gcma_ok(&["restore", &id]);
     assert_eq!(r.git(&["rev-parse", "HEAD"]), old_tip);
     r.fsck();
 }
@@ -75,9 +75,9 @@ fn restore_refuses_when_the_branch_moved_unless_forced() {
     r.linear(3, 1_600_000_000);
     r.config(IDENTITY_CFG);
     let old_tip = r.git(&["rev-parse", "HEAD"]);
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let id = r
-        .ghma_ok(&["restore"])
+        .gcma_ok(&["restore"])
         .split_whitespace()
         .next()
         .unwrap()
@@ -91,19 +91,19 @@ fn restore_refuses_when_the_branch_moved_unless_forced() {
         "jane@work.com",
     );
     let moved = r.git(&["rev-parse", "HEAD"]);
-    let o = r.ghma(&["restore", &id]);
+    let o = r.gcma(&["restore", &id]);
     assert_eq!(Repo::code(&o), 4, "{}", String::from_utf8_lossy(&o.stderr));
     assert_eq!(
         r.git(&["rev-parse", "HEAD"]),
         moved,
         "refused restore must not move the branch"
     );
-    r.ghma_ok(&["restore", &id, "--force"]);
+    r.gcma_ok(&["restore", &id, "--force"]);
     assert_eq!(r.git(&["rev-parse", "HEAD"]), old_tip);
     // The discarded tip keeps a ref, so nothing is lost even after gc.
-    let holders = r.git(&["for-each-ref", "--contains", &moved, "refs/ghma/discarded/"]);
+    let holders = r.git(&["for-each-ref", "--contains", &moved, "refs/gcma/discarded/"]);
     assert!(holders.contains(&moved), "{holders}");
-    let o = r.ghma(&["restore", "--prune"]);
+    let o = r.gcma(&["restore", "--prune"]);
     assert_eq!(Repo::code(&o), 2);
 }
 
@@ -112,16 +112,16 @@ fn prune_is_explicit_and_removes_both_refs() {
     let r = Repo::new();
     r.linear(2, 1_600_000_000);
     r.config(IDENTITY_CFG);
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let id = r
-        .ghma_ok(&["restore"])
+        .gcma_ok(&["restore"])
         .split_whitespace()
         .next()
         .unwrap()
         .to_string();
-    assert!(!r.git(&["for-each-ref", "refs/ghma/backup/"]).is_empty());
-    r.ghma_ok(&["restore", &id, "--prune"]);
-    assert!(r.git(&["for-each-ref", "refs/ghma/backup/"]).is_empty());
+    assert!(!r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty());
+    r.gcma_ok(&["restore", &id, "--prune"]);
+    assert!(r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty());
 }
 
 #[test]
@@ -151,7 +151,7 @@ fn merge_history_keeps_parent_order_and_trees() {
         .tree
         .clone();
 
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let new = r.log();
     assert_same_content(&old, &new);
     let merge = new.iter().find(|x| x.parents.len() == 2).unwrap();
@@ -175,9 +175,9 @@ fn frozen_commits_keep_their_oids_and_only_the_rest_changes() {
     r.commit_at("c.txt", "c", 1_600_200_000);
     r.commit_at("d.txt", "d", 1_600_300_000);
     r.config(IDENTITY_CFG);
-    let plan = r.ghma_ok(&["plan", "--from", "root"]);
+    let plan = r.gcma_ok(&["plan", "--from", "root"]);
     assert!(plan.contains("2 kept as-is, 2 to rewrite"), "{plan}");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let rows = r.log();
     assert_eq!(rows[0].oid, a);
     assert_eq!(rows[1].oid, b);
@@ -203,7 +203,7 @@ fn raw_headers_and_non_utf8_messages_survive() {
         "fixture has an encoding header"
     );
 
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let new = r.git(&["rev-parse", "HEAD"]);
     let new_raw = r.cat(&new);
     assert!(
@@ -233,7 +233,7 @@ fn schedule_distributes_commits_into_working_hours() {
     r.linear(25, 1_500_000_000);
     r.config(&berlin_cfg(""));
     let old = r.log();
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let new = r.log();
     assert_same_content(&old, &new);
     assert_scheduled(&new);
@@ -246,11 +246,11 @@ fn schedule_distributes_commits_into_working_hours() {
     r.fsck();
     // Idempotent: rerun is a no-op and `--check` passes.
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do")
     );
     assert!(
-        r.ghma(&["plan", "--check", "--from", "root"])
+        r.gcma(&["plan", "--check", "--from", "root"])
             .status
             .success()
     );
@@ -264,11 +264,11 @@ fn every_distribution_conforms_and_is_deterministic() {
             let r = Repo::new();
             r.linear(15, 1_500_000_000);
             r.config(&berlin_cfg("").replace("bursty", dist));
-            r.ghma_ok(&["apply", "--from", "root"]);
+            r.gcma_ok(&["apply", "--from", "root"]);
             assert_scheduled(&r.log());
             tips.push(r.log().iter().map(|x| x.ct).collect::<Vec<_>>());
             assert!(
-                r.ghma(&["plan", "--check", "--from", "root"])
+                r.gcma(&["plan", "--check", "--from", "root"])
                     .status
                     .success(),
                 "{dist}"
@@ -283,16 +283,16 @@ fn hook_case_only_new_commits_are_rescheduled() {
     let r = Repo::new();
     r.linear(10, 1_500_000_000);
     r.config(&berlin_cfg(""));
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let settled = r.log();
     // Three new commits made "now-ish" (outside the allowed window).
     let t = settled.last().unwrap().ct + 3600 * 24 * 3 + 7 * 3600; // a night, a few days later
     for i in 0..3 {
         r.commit_at(&format!("new{i}.txt"), &format!("new {i}"), t + i * 60);
     }
-    let plan = r.ghma_ok(&["plan", "--from", "root"]);
+    let plan = r.gcma_ok(&["plan", "--from", "root"]);
     assert!(plan.contains("10 kept as-is, 3 to rewrite"), "{plan}");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let after = r.log();
     for (a, b) in settled.iter().zip(&after) {
         assert_eq!(a.oid, b.oid, "settled commits keep their OIDs");
@@ -316,7 +316,7 @@ fn schedule_with_merge_is_monotone_and_complete() {
     r.commit_at("z.txt", "z", 1_500_500_000);
     r.config(&berlin_cfg(""));
     let old = r.log();
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let new = r.log();
     assert_same_content(&old, &new);
     assert_scheduled(&new);
@@ -329,7 +329,7 @@ fn zero_capacity_window_is_refused_with_exit_3() {
     r.linear(3, 1_500_000_000);
     // Only Mondays 09:00-10:00 in a window that contains no Monday.
     r.config("version: 1\nfrom: 2026-01-06\nto: 2026-01-09\nschedule:\n  days: [mon]\n  hours: \"09:00-10:00\"\n");
-    let o = r.ghma(&["apply", "--from", "root"]);
+    let o = r.gcma(&["apply", "--from", "root"]);
     assert_eq!(Repo::code(&o), 3, "{}", String::from_utf8_lossy(&o.stderr));
     assert_eq!(r.log().len(), 3);
 }

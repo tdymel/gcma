@@ -19,11 +19,11 @@ fn run(strip: &[&str], add: &[&str], message: &str) -> String {
         }
     }
     r.config(&cfg);
-    let o = r.ghma(&["apply", "--from", "root"]);
+    let o = r.gcma(&["apply", "--from", "root"]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     let first = r.message_bytes("HEAD");
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do"),
         "a second run must be a no-op for {message:?}"
     );
@@ -158,7 +158,7 @@ fn merge_commits_get_the_same_treatment_and_keep_their_parents() {
     assert!(o.status.success());
     r.config("version: 1\nmessages:\n  strip_trailers: [Signed-off-by]\n  add_trailers: [\"Assisted-By: A <a@x>\"]\n");
     let old = r.log();
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let new = r.log();
     assert_same_content(&old, &new);
     let merge = new.iter().find(|x| x.parents.len() == 2).unwrap();
@@ -178,7 +178,7 @@ fn messages_that_are_not_utf8_survive_trailer_rules_byte_for_byte() {
         1_600_000_000,
     );
     r.config("version: 1\nmessages:\n  strip_trailers: [Signed-off-by]\n  add_trailers: [\"Assisted-By: A <a@x>\"]\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     assert_eq!(
         r.message_bytes("HEAD"),
         b"caf\xe9\n\nbody \xe9\n\nAssisted-By: A <a@x>\n".to_vec()
@@ -196,7 +196,7 @@ fn an_empty_message_is_left_alone_by_every_rule() {
     ] {
         r.config(cfg);
         assert!(
-            r.ghma_ok(&["apply", "--from", "root"])
+            r.gcma_ok(&["apply", "--from", "root"])
                 .contains("Nothing to do"),
             "{cfg}"
         );
@@ -210,16 +210,16 @@ fn run_with(messages_cfg: &str, message: &str) -> String {
     let r = Repo::new();
     r.commit_msg("a.txt", message.as_bytes(), 1_600_000_000);
     r.config(&format!("version: 1\nmessages:\n{messages_cfg}"));
-    let o = r.ghma(&["apply", "--from", "root"]);
+    let o = r.gcma(&["apply", "--from", "root"]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     let first = r.message_bytes("HEAD");
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do"),
         "a second run must be a no-op for {message:?}"
     );
     assert!(
-        r.ghma(&["plan", "--check", "--from", "root"])
+        r.gcma(&["plan", "--check", "--from", "root"])
             .status
             .success()
     );
@@ -356,7 +356,7 @@ fn rewrite_rules_that_are_not_valid_are_config_errors() {
         let r = Repo::new();
         r.linear(2, 1_600_000_000);
         r.config(&format!("version: 1\nmessages:\n{messages}"));
-        let o = r.ghma(&["plan", "--from", "root"]);
+        let o = r.gcma(&["plan", "--from", "root"]);
         assert_eq!(
             Repo::code(&o),
             2,
@@ -376,7 +376,7 @@ fn title_only_and_rewrites_count_as_rules_so_the_config_is_not_inert() {
     let r = Repo::new();
     r.commit_msg("a.txt", b"s\n\nbody\n", 1_600_000_000);
     r.config("version: 1\nmessages:\n  title_only: true\n");
-    let o = r.ghma(&["plan", "--from", "root"]);
+    let o = r.gcma(&["plan", "--from", "root"]);
     assert!(o.status.success());
     assert!(!String::from_utf8_lossy(&o.stderr).contains("no rules are configured"));
     assert!(
@@ -396,12 +396,12 @@ fn trailer_stripping_is_applied_and_idempotent() {
     );
     r.commit_at("b.txt", "second", 1_600_100_000);
     r.config("version: 1\nmessages:\n  strip_trailers: [Signed-off-by]\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let msg = r.git(&["log", "-1", "--format=%B", "HEAD~1"]);
     assert!(!msg.contains("Signed-off-by"), "{msg}");
     assert!(msg.contains("body"));
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do")
     );
 }
@@ -418,7 +418,7 @@ fn trailers_can_be_swapped_and_the_result_is_stable() {
     r.config(
         "version: 1\nmessages:\n  strip_trailers: [Co-Authored-By]\n  add_trailers: [\"Assisted-By: Bot <bot@x>\"]\n",
     );
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let first = r.git(&["log", "-1", "--format=%B", "HEAD~1"]);
     assert!(!first.contains("Co-Authored-By"), "{first}");
     assert!(
@@ -431,7 +431,7 @@ fn trailers_can_be_swapped_and_the_result_is_stable() {
         "{second}"
     );
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do")
     );
     r.fsck();
@@ -442,7 +442,7 @@ fn a_trailer_both_stripped_and_added_is_a_config_error() {
     let r = Repo::new();
     r.linear(1, 1_600_000_000);
     r.config("version: 1\nmessages:\n  strip_trailers: [Assisted-By]\n  add_trailers: [\"assisted-by: x\"]\n");
-    assert_eq!(Repo::code(&r.ghma(&["plan", "--from", "root"])), 2);
+    assert_eq!(Repo::code(&r.gcma(&["plan", "--from", "root"])), 2);
     r.config("version: 1\nmessages:\n  add_trailers: [\"not a trailer\"]\n");
-    assert_eq!(Repo::code(&r.ghma(&["plan", "--from", "root"])), 2);
+    assert_eq!(Repo::code(&r.gcma(&["plan", "--from", "root"])), 2);
 }

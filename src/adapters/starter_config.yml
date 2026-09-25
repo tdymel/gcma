@@ -1,4 +1,4 @@
-# ghma configuration. Everything is off until you enable it; see the README for the details.
+# gcma configuration. Everything is off until you enable it; see the README for the details.
 # Lines starting with `#~ ` are optional features: remove the marker to switch them on.
 version: 1
 

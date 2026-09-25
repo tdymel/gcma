@@ -43,7 +43,7 @@ pub fn warn_if_inert(cfg: &Config) {
     if cfg.is_inert() {
         eprintln!(
             "warning: no rules are configured, so nothing will change \
-             (write {CONFIG_FILE} with `ghma init` and enable what you need)"
+             (write {CONFIG_FILE} with `gcma init` and enable what you need)"
         );
     }
 }

@@ -248,7 +248,7 @@ fn plan_for(repo: &GitCli) -> Plan {
 }
 
 /// Applies the plan on a repository with `fault` switched on; returns the error and checks that
-/// nothing was left behind: the branch is where it was and no backup or other ghma ref exists.
+/// nothing was left behind: the branch is where it was and no backup or other gcma ref exists.
 fn apply_with(fault: Fault) -> Error {
     let fx = fixture();
     let inner = GitCli::open(fx.dir.path()).unwrap();
@@ -273,7 +273,7 @@ fn apply_with(fault: Fault) -> Error {
         "the branch must not have been moved by apply"
     );
     assert!(
-        repo.list_refs("refs/ghma/").unwrap().is_empty(),
+        repo.list_refs("refs/gcma/").unwrap().is_empty(),
         "no backup refs"
     );
     err
@@ -325,7 +325,7 @@ fn verification_rejects_unchanged_commits_that_fell_out_of_the_history() {
     let err = apply(&repo, &plan, false, NOW).expect_err("caught");
     assert_internal(err, "not reachable from the new tip");
     assert_eq!(git(fx.dir.path(), &["rev-parse", "main"]), fx.old_tip);
-    assert!(repo.list_refs("refs/ghma/").unwrap().is_empty());
+    assert!(repo.list_refs("refs/gcma/").unwrap().is_empty());
 }
 
 #[test]

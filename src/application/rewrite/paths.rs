@@ -127,7 +127,7 @@ fn sync_gitignore(
     }
     if repo.read_file(GITIGNORE)? != old {
         return Ok(Some(
-            "the working copy's .gitignore has local changes, so ghma left it alone; make sure it \
+            "the working copy's .gitignore has local changes, so gcma left it alone; make sure it \
              ignores the paths that were removed from history (see `git show HEAD:.gitignore`), or \
              `git add .` would commit them again"
                 .into(),

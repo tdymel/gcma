@@ -16,7 +16,7 @@ fn resigned_commits_verify_keep_their_identities_and_follow_the_schedule() {
     r.commit_at("c.txt", "three", 1_600_200_000);
     let old = r.log();
     r.config(&berlin_cfg("signing: resign\n"));
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let new = r.log();
     assert_same_content(&old, &new);
     assert_scheduled(&new);
@@ -32,7 +32,7 @@ fn resigned_commits_verify_keep_their_identities_and_follow_the_schedule() {
     }
     r.fsck();
     assert!(
-        r.ghma(&["plan", "--check", "--from", "root"])
+        r.gcma(&["plan", "--check", "--from", "root"])
             .status
             .success(),
         "a second run has nothing left to do"
@@ -53,7 +53,7 @@ fn signing_strip_and_resign() {
 
     // strip (default): the signed commits are nonconforming and lose the signature.
     r.config("version: 1\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     for row in r.log() {
         assert!(
             !String::from_utf8_lossy(&r.cat(&row.oid)).contains("gpgsig"),
@@ -62,14 +62,14 @@ fn signing_strip_and_resign() {
     }
     r.fsck();
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do")
     );
 
     // resign: unsigned commits are nonconforming and get signed; trees stay.
     let old = r.log();
     r.config("version: 1\nsigning: resign\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let new = r.log();
     assert_same_content(&old, &new);
     for row in &new {
@@ -80,7 +80,7 @@ fn signing_strip_and_resign() {
     }
     r.fsck();
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do"),
         "resign is idempotent"
     );

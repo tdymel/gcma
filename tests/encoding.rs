@@ -42,7 +42,7 @@ fn schedule_run_keeps_non_utf8_names_when_no_rule_matches() {
         r.config(&berlin_cfg(
             "identity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n",
         ));
-        let o = r.ghma(&["--backend", backend, "apply", "--from", "root"]);
+        let o = r.gcma(&["--backend", backend, "apply", "--from", "root"]);
         assert!(
             o.status.success(),
             "{backend}: {}",
@@ -66,15 +66,15 @@ fn plan_files_carry_non_utf8_names_through_export_and_apply() {
     let r = latin1_history();
     r.config(&berlin_cfg(""));
     let plan = r.path().join("plan.json");
-    r.ghma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
+    r.gcma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
     let json = std::fs::read_to_string(&plan).unwrap();
     assert!(
         json.contains("\"base64\""),
         "binary names are base64 in the plan: {json}"
     );
-    let o = r.ghma(&["export", "--plan", plan.to_str().unwrap()]);
+    let o = r.gcma(&["export", "--plan", plan.to_str().unwrap()]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    r.ghma_ok(&["apply", "--plan", plan.to_str().unwrap()]);
+    r.gcma_ok(&["apply", "--plan", plan.to_str().unwrap()]);
     assert_eq!(name_bytes(&r, "HEAD~1"), b"J\xf6rg M\xfcller");
     r.fsck();
 }
@@ -84,14 +84,14 @@ fn an_email_rule_applies_to_an_author_whose_name_is_not_utf8() {
     let r = Repo::new();
     r.commit_as_bytes("a.txt", "one", 1_600_000_000, b"J\xf6rg", b"me@home.org");
     r.config("version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let log = r.log();
     assert_eq!(
         (log[0].an.as_str(), log[0].ae.as_str()),
         ("Jane Doe", "jane@work.com")
     );
     assert!(
-        r.ghma(&["plan", "--check", "--from", "root"])
+        r.gcma(&["plan", "--check", "--from", "root"])
             .status
             .success()
     );

@@ -1,4 +1,4 @@
-//! `ghma init`: write a starter config and keep it out of commits.
+//! `gcma init`: write a starter config and keep it out of commits.
 
 use crate::adapters::cli_support::session::Session;
 use crate::adapters::config_file::{CONFIG_FILE, starter_config};

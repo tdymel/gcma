@@ -46,7 +46,7 @@ fn help_and_version_work_everywhere_and_list_every_command() {
         .arg("--version")
         .output()
         .unwrap();
-    assert!(out(&o).starts_with("ghma "), "{}", out(&o));
+    assert!(out(&o).starts_with("gcma "), "{}", out(&o));
     for sub in [
         "plan", "apply", "restore", "export", "import", "hook", "init",
     ] {
@@ -78,7 +78,7 @@ fn usage_mistakes_exit_2_and_say_what_was_wrong() {
             "no backup matches",
         ),
     ] {
-        let o = r.ghma(&args);
+        let o = r.gcma(&args);
         assert_eq!(Repo::code(&o), 2, "{args:?}: {}{}", out(&o), err(&o));
         assert!(
             err(&o).contains(why),
@@ -112,43 +112,43 @@ fn a_config_can_live_anywhere_when_named() {
     std::fs::write(&cfg, IDENTITY_CFG).unwrap();
     let cfg = cfg.to_str().unwrap();
     assert!(
-        r.ghma_ok(&["--config", cfg, "plan", "--from", "root"])
+        r.gcma_ok(&["--config", cfg, "plan", "--from", "root"])
             .contains("2 to rewrite")
     );
-    r.ghma_ok(&["--config", cfg, "apply", "--from", "root"]);
+    r.gcma_ok(&["--config", cfg, "apply", "--from", "root"]);
     assert!(r.log().iter().all(|x| x.an == "Jane Doe"));
-    assert!(!r.path().join("ghma.yml").exists());
+    assert!(!r.path().join("gcma.yml").exists());
 }
 
 #[test]
 fn init_writes_once_refuses_to_overwrite_and_force_replaces() {
     let r = Repo::new();
     r.linear(1, 1_600_000_000);
-    let o = r.ghma(&["init"]);
+    let o = r.gcma(&["init"]);
     assert_eq!(Repo::code(&o), 0, "{}", err(&o));
-    let first = std::fs::read_to_string(r.path().join("ghma.yml")).unwrap();
+    let first = std::fs::read_to_string(r.path().join("gcma.yml")).unwrap();
     assert!(first.contains("version: 1"));
     let exclude = std::fs::read_to_string(r.path().join(".git/info/exclude")).unwrap();
-    assert_eq!(exclude.matches("/ghma.yml").count(), 1);
+    assert_eq!(exclude.matches("/gcma.yml").count(), 1);
 
-    std::fs::write(r.path().join("ghma.yml"), "version: 1\n# mine\n").unwrap();
-    let o = r.ghma(&["init"]);
+    std::fs::write(r.path().join("gcma.yml"), "version: 1\n# mine\n").unwrap();
+    let o = r.gcma(&["init"]);
     assert_eq!(Repo::code(&o), 3, "{}", err(&o));
     assert!(err(&o).contains("--force"), "{}", err(&o));
     assert!(
-        std::fs::read_to_string(r.path().join("ghma.yml"))
+        std::fs::read_to_string(r.path().join("gcma.yml"))
             .unwrap()
             .contains("# mine")
     );
 
-    r.ghma_ok(&["init", "--force"]);
+    r.gcma_ok(&["init", "--force"]);
     assert_eq!(
-        std::fs::read_to_string(r.path().join("ghma.yml")).unwrap(),
+        std::fs::read_to_string(r.path().join("gcma.yml")).unwrap(),
         first
     );
     let exclude = std::fs::read_to_string(r.path().join(".git/info/exclude")).unwrap();
     assert_eq!(
-        exclude.matches("/ghma.yml").count(),
+        exclude.matches("/gcma.yml").count(),
         1,
         "no duplicate entries"
     );
@@ -163,10 +163,10 @@ fn two_rewrites_in_one_second_keep_two_distinct_backups() {
     let r = Repo::new();
     r.linear(3, 1_600_000_000);
     r.config(IDENTITY_CFG);
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     r.config("version: 1\nmessages:\n  add_trailers: [\"Assisted-By: A <a@x>\"]\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
-    let listing = r.ghma_ok(&["restore"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
+    let listing = r.gcma_ok(&["restore"]);
     let ids: Vec<&str> = listing
         .lines()
         .map(|l| l.split_whitespace().next().unwrap())
@@ -189,7 +189,7 @@ fn two_rewrites_in_one_second_keep_two_distinct_backups() {
         .next()
         .unwrap()
         .to_string();
-    r.ghma_ok(&["restore", &newest]);
+    r.gcma_ok(&["restore", &newest]);
     assert!(r.log().iter().all(|x| x.an == "Jane Doe"));
     assert!(
         !r.messages("HEAD")
@@ -203,14 +203,14 @@ fn pruning_a_backup_forgets_it_and_listing_shows_none() {
     let r = Repo::new();
     r.linear(2, 1_600_000_000);
     r.config(IDENTITY_CFG);
-    r.ghma_ok(&["apply", "--from", "root"]);
-    let listing = r.ghma_ok(&["restore"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
+    let listing = r.gcma_ok(&["restore"]);
     let id = listing.split_whitespace().next().unwrap().to_string();
-    let o = r.ghma(&["restore", &id, "--prune"]);
+    let o = r.gcma(&["restore", &id, "--prune"]);
     assert!(o.status.success(), "{}", err(&o));
     assert!(out(&o).contains("pruned backup"), "{}", out(&o));
-    assert_eq!(r.ghma_ok(&["restore"]).trim(), "No backups.");
-    let o = r.ghma(&["restore", &id]);
+    assert_eq!(r.gcma_ok(&["restore"]).trim(), "No backups.");
+    let o = r.gcma(&["restore", &id]);
     assert_eq!(Repo::code(&o), 2, "{}", err(&o));
 }
 
@@ -219,16 +219,16 @@ fn restoring_by_an_unambiguous_prefix_works_and_an_ambiguous_one_is_refused() {
     let r = Repo::new();
     r.linear(2, 1_600_000_000);
     r.config(IDENTITY_CFG);
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let id = r
-        .ghma_ok(&["restore"])
+        .gcma_ok(&["restore"])
         .split_whitespace()
         .next()
         .unwrap()
         .to_string();
-    let o = r.ghma(&["restore", &id[..4]]);
+    let o = r.gcma(&["restore", &id[..4]]);
     assert!(o.status.success(), "a prefix is enough: {}", err(&o));
-    let o = r.ghma(&["restore", ""]);
+    let o = r.gcma(&["restore", ""]);
     assert!(
         !o.status.success(),
         "the empty prefix must not match everything silently"
@@ -259,7 +259,7 @@ fn export_boundaries_are_clean() {
     let rows = |args: &[&str]| {
         let mut a = vec!["export", "--from", "root"];
         a.extend_from_slice(args);
-        let o = r.ghma(&a);
+        let o = r.gcma(&a);
         assert!(o.status.success(), "{args:?}: {}", err(&o));
         out(&o).lines().count()
     };
@@ -275,7 +275,7 @@ fn export_boundaries_are_clean() {
     assert_eq!(rows(&["--batch", "0"]), 0);
     assert_eq!(rows(&["--batch", "99999999999"]), 5);
     // The prelude (instructions) goes to stderr, rows only to stdout.
-    let o = r.ghma(&["export", "--from", "root", "--batch", "1"]);
+    let o = r.gcma(&["export", "--from", "root", "--batch", "1"]);
     assert!(err(&o).contains("Reply with JSONL ONLY"), "{}", err(&o));
     assert!(err(&o).contains("Rows 0..1 of 5"), "{}", err(&o));
     for l in out(&o).lines() {

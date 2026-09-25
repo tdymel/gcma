@@ -43,12 +43,12 @@ fn refs(r: &Repo) -> String {
 fn tampered(edit: impl FnOnce(&mut Value), code: i32, message: &str) {
     let r = merge_repo();
     let plan = r.path().join("plan.json");
-    r.ghma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
+    r.gcma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
     let mut json: Value = serde_json::from_slice(&std::fs::read(&plan).unwrap()).unwrap();
     edit(&mut json);
     std::fs::write(&plan, serde_json::to_vec(&json).unwrap()).unwrap();
     let before = refs(&r);
-    let o = r.ghma(&["apply", "--plan", plan.to_str().unwrap()]);
+    let o = r.gcma(&["apply", "--plan", plan.to_str().unwrap()]);
     assert_eq!(Repo::code(&o), code, "{message}: {}", stderr(&o));
     assert!(
         stderr(&o).contains(message),
@@ -231,9 +231,9 @@ fn a_truncated_or_missing_plan_file_is_a_usage_error() {
     let r = merge_repo();
     let plan = r.path().join("plan.json");
     std::fs::write(&plan, "{").unwrap();
-    let o = r.ghma(&["apply", "--plan", plan.to_str().unwrap()]);
+    let o = r.gcma(&["apply", "--plan", plan.to_str().unwrap()]);
     assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
-    let o = r.ghma(&["apply", "--plan", "nowhere.json"]);
+    let o = r.gcma(&["apply", "--plan", "nowhere.json"]);
     assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
     assert!(stderr(&o).contains("nowhere.json"));
 }
@@ -286,12 +286,12 @@ fn times_and_offsets_must_be_sane() {
 fn swapped_sibling_entries_are_refused_or_produce_a_valid_history() {
     let r = merge_repo();
     let plan = r.path().join("plan.json");
-    r.ghma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
+    r.gcma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
     let mut json: Value = serde_json::from_slice(&std::fs::read(&plan).unwrap()).unwrap();
     json["entries"].as_array_mut().unwrap().swap(2, 3);
     std::fs::write(&plan, serde_json::to_vec(&json).unwrap()).unwrap();
     let before = refs(&r);
-    let o = r.ghma(&["apply", "--plan", plan.to_str().unwrap()]);
+    let o = r.gcma(&["apply", "--plan", plan.to_str().unwrap()]);
     if o.status.success() {
         r.fsck();
         assert_eq!(r.log().len(), 6);
@@ -307,10 +307,10 @@ fn tip_moved_after_planning_is_refused() {
     r.linear(3, 1_600_000_000);
     r.config(CFG);
     let plan = r.path().join("plan.json");
-    r.ghma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
+    r.gcma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
     r.commit_at("extra.txt", "extra", 1_600_900_000);
     let tip = r.git(&["rev-parse", "HEAD"]);
-    let o = r.ghma(&["apply", "--plan", plan.to_str().unwrap()]);
+    let o = r.gcma(&["apply", "--plan", plan.to_str().unwrap()]);
     assert_eq!(Repo::code(&o), 4, "{}", String::from_utf8_lossy(&o.stderr));
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
 }
@@ -321,8 +321,8 @@ fn saved_plan_applies_later() {
     r.linear(3, 1_600_000_000);
     r.config(CFG);
     let plan = r.path().join("plan.json");
-    r.ghma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
-    r.ghma_ok(&["apply", "--plan", plan.to_str().unwrap()]);
+    r.gcma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
+    r.gcma_ok(&["apply", "--plan", plan.to_str().unwrap()]);
     assert!(r.log().iter().all(|x| x.an == "Jane Doe"));
 }
 
@@ -333,13 +333,13 @@ fn tampered_plan_is_rejected_before_anything_is_written() {
     r.config(CFG);
     let tip = r.git(&["rev-parse", "HEAD"]);
     let path = r.path().join("plan.json");
-    r.ghma_ok(&["plan", "--from", "root", "--out", path.to_str().unwrap()]);
+    r.gcma_ok(&["plan", "--from", "root", "--out", path.to_str().unwrap()]);
     let mut v: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     // Point entry 2's parent at entry 0 instead of entry 1.
     v["entries"][2]["parents"] = serde_json::json!([{"in": 0}]);
     std::fs::write(&path, serde_json::to_vec(&v).unwrap()).unwrap();
-    let o = r.ghma(&["apply", "--plan", path.to_str().unwrap()]);
+    let o = r.gcma(&["apply", "--plan", path.to_str().unwrap()]);
     assert!(!o.status.success());
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
-    assert!(r.git(&["for-each-ref", "refs/ghma/backup/"]).is_empty());
+    assert!(r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty());
 }

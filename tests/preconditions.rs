@@ -19,7 +19,7 @@ fn refs(r: &Repo) -> String {
 fn refused(r: &Repo, args: &[&str], why: &str) {
     let before = refs(r);
     let head = r.git(&["rev-parse", "HEAD"]);
-    let o = r.ghma(args);
+    let o = r.gcma(args);
     assert_eq!(Repo::code(&o), 3, "{args:?}: {}", stderr(&o));
     assert!(
         stderr(&o).to_lowercase().contains(&why.to_lowercase()),
@@ -29,7 +29,7 @@ fn refused(r: &Repo, args: &[&str], why: &str) {
     assert_eq!(refs(r), before, "no ref may change");
     assert_eq!(r.git(&["rev-parse", "HEAD"]), head);
     assert!(
-        !r.git(&["for-each-ref", "refs/ghma/"]).contains("backup"),
+        !r.git(&["for-each-ref", "refs/gcma/"]).contains("backup"),
         "no backup is created for a refused run"
     );
 }
@@ -67,7 +67,7 @@ fn staged_changes_are_refused_by_apply_but_not_by_plan() {
     let r = setup();
     r.write("staged.txt", "s\n");
     r.git(&["add", "staged.txt"]);
-    r.ghma_ok(&["plan", "--from", "root"]);
+    r.gcma_ok(&["plan", "--from", "root"]);
     refused(&r, &["apply", "--from", "root"], "staged changes");
     assert!(
         r.git(&["diff", "--cached", "--name-only"])
@@ -80,7 +80,7 @@ fn unstaged_and_untracked_files_do_not_block_and_survive() {
     let r = setup();
     r.write("f0.txt", "edited but not staged\n");
     r.write("untracked.txt", "new\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     assert_eq!(
         std::fs::read_to_string(r.path().join("f0.txt")).unwrap(),
         "edited but not staged\n"
@@ -104,7 +104,7 @@ fn a_shallow_clone_is_refused_even_for_a_dry_run() {
         .output()
         .unwrap();
     assert!(o.status.success(), "{}", stderr(&o));
-    std::fs::copy(r.path().join("ghma.yml"), clone.join("ghma.yml")).unwrap();
+    std::fs::copy(r.path().join("gcma.yml"), clone.join("gcma.yml")).unwrap();
     for cmd in ["plan", "apply"] {
         let o = base_cmd(bin(), &clone, r.home.path())
             .args([cmd, "--from", "root"])
@@ -145,7 +145,7 @@ fn a_merge_in_progress_is_refused() {
     let o = r.git_out(&["merge", "side"]);
     assert!(!o.status.success(), "the fixture must conflict");
     refused(&r, &["apply", "--from", "root"], "merge is in progress");
-    r.ghma_ok(&["plan", "--from", "root"]);
+    r.gcma_ok(&["plan", "--from", "root"]);
 }
 
 #[test]
@@ -181,7 +181,7 @@ fn a_rebase_in_progress_is_refused() {
     assert!(!o.status.success(), "the fixture must conflict");
     // Detached HEAD and a running rebase: either reason is a refusal.
     let before = refs(&r);
-    let o = r.ghma(&["apply", "--from", "root"]);
+    let o = r.gcma(&["apply", "--from", "root"]);
     assert_eq!(Repo::code(&o), 3, "{}", stderr(&o));
     assert_eq!(refs(&r), before);
 }
@@ -190,7 +190,7 @@ fn a_rebase_in_progress_is_refused() {
 fn outside_a_repository_is_an_error_and_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("ghma.yml"), IDENTITY_CFG).unwrap();
+    std::fs::write(dir.path().join("gcma.yml"), IDENTITY_CFG).unwrap();
     let o = base_cmd(bin(), dir.path(), home.path())
         .args(["apply", "--from", "root"])
         .env("GIT_CEILING_DIRECTORIES", dir.path().parent().unwrap())
@@ -209,24 +209,24 @@ fn outside_a_repository_is_an_error_and_writes_nothing() {
 fn a_repository_without_commits_is_a_clear_error() {
     let r = Repo::new();
     r.config(IDENTITY_CFG);
-    let o = r.ghma(&["apply", "--from", "root"]);
+    let o = r.gcma(&["apply", "--from", "root"]);
     assert!(!o.status.success());
     assert_ne!(Repo::code(&o), 101, "no panic: {}", stderr(&o));
-    assert!(stderr(&o).starts_with("ghma:"), "{}", stderr(&o));
+    assert!(stderr(&o).starts_with("gcma:"), "{}", stderr(&o));
 }
 
 #[test]
-fn without_a_config_file_ghma_is_inert_and_says_so_but_a_named_missing_file_is_an_error() {
+fn without_a_config_file_gcma_is_inert_and_says_so_but_a_named_missing_file_is_an_error() {
     let r = Repo::new();
     r.linear(2, 1_600_000_000);
-    let o = r.ghma(&["plan", "--from", "root"]);
+    let o = r.gcma(&["plan", "--from", "root"]);
     assert!(o.status.success(), "{}", stderr(&o));
     assert!(
         stderr(&o).contains("no rules are configured"),
         "{}",
         stderr(&o)
     );
-    let o = r.ghma(&["--config", "does-not-exist.yml", "plan", "--from", "root"]);
+    let o = r.gcma(&["--config", "does-not-exist.yml", "plan", "--from", "root"]);
     assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
     assert!(stderr(&o).contains("does-not-exist.yml"), "{}", stderr(&o));
 }
@@ -236,9 +236,9 @@ fn no_upstream_requires_from() {
     let r = Repo::new();
     r.linear(2, 1_600_000_000);
     r.config(IDENTITY_CFG);
-    let o = r.ghma(&["plan"]);
+    let o = r.gcma(&["plan"]);
     assert_eq!(Repo::code(&o), 2, "{}", String::from_utf8_lossy(&o.stderr));
-    let o = r.ghma(&["plan", "--from", "HEAD~5"]);
+    let o = r.gcma(&["plan", "--from", "HEAD~5"]);
     assert_eq!(Repo::code(&o), 2);
 }
 
@@ -247,7 +247,7 @@ fn from_rev_is_exclusive() {
     let r = Repo::new();
     let c = r.linear(4, 1_600_000_000);
     r.config(IDENTITY_CFG);
-    r.ghma_ok(&["apply", "--from", &c[1]]);
+    r.gcma_ok(&["apply", "--from", &c[1]]);
     let rows = r.log();
     assert_eq!(rows[0].an, "Old Me");
     assert_eq!(rows[1].an, "Old Me");

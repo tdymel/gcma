@@ -8,7 +8,7 @@ use crate::adapters::repository;
 use crate::domain::error::Result;
 use crate::domain::settings::{Backend, Config};
 
-/// `--backend`, then `GHMA_BACKEND`, then the config's `backend:`, then the build's default
+/// `--backend`, then `GCMA_BACKEND`, then the config's `backend:`, then the build's default
 /// (`gix` when compiled in, otherwise `git`).
 pub(super) fn resolve_backend(
     flag: Option<Backend>,
@@ -34,7 +34,7 @@ pub(super) fn open(
 ) -> Result<(GitCli, Config)> {
     let cli = GitCli::open(dir)?;
     let cfg = load_config(&cli, config)?;
-    let env = std::env::var("GHMA_BACKEND").ok();
+    let env = std::env::var("GCMA_BACKEND").ok();
     let want = resolve_backend(flag, env.as_deref(), cfg.backend)?;
     Ok((repository::with_backend(cli, want)?, cfg))
 }

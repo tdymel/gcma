@@ -17,15 +17,15 @@ fn stderr(o: &std::process::Output) -> String {
 fn untouched(r: &Repo, tip: &str) {
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip, "the branch moved");
     assert!(
-        r.git(&["for-each-ref", "refs/ghma/"]).is_empty(),
-        "ghma refs appeared"
+        r.git(&["for-each-ref", "refs/gcma/"]).is_empty(),
+        "gcma refs appeared"
     );
 }
 
 /// Saves a plan for `--from root`, lets `edit` change its JSON, and returns the file's path.
 fn edited_plan(r: &Repo, edit: impl FnOnce(&mut serde_json::Value)) -> String {
     let path = r.path().join("plan.json").to_str().unwrap().to_string();
-    r.ghma_ok(&["plan", "--from", "root", "--out", &path]);
+    r.gcma_ok(&["plan", "--from", "root", "--out", &path]);
     let mut plan: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     edit(&mut plan);
@@ -53,7 +53,7 @@ fn a_plan_cannot_drop_a_commit_that_changes_more_than_excluded_paths() {
             .unwrap()
             .push(victim.clone().into());
     });
-    let o = r.ghma(&["apply", "--plan", &plan]);
+    let o = r.gcma(&["apply", "--plan", &plan]);
     assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
     assert!(stderr(&o).contains("not excluded"), "{}", stderr(&o));
     untouched(&r, &tip);
@@ -83,7 +83,7 @@ fn a_plan_cannot_drop_a_merge_commit() {
             .unwrap()
             .push(merge.clone().into());
     });
-    let o = r.ghma(&["apply", "--plan", &plan]);
+    let o = r.gcma(&["apply", "--plan", &plan]);
     assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
     assert!(stderr(&o).contains("merge commit"), "{}", stderr(&o));
     untouched(&r, &tip);
@@ -99,12 +99,12 @@ fn a_plan_that_became_pushed_after_it_was_saved_exits_5_unless_allowed() {
     // Between planning and applying the commits are pushed.
     r.bare_remote();
     r.git(&["push", "-q", "-u", "origin", "main"]);
-    let o = r.ghma(&["apply", "--plan", &plan]);
+    let o = r.gcma(&["apply", "--plan", &plan]);
     assert_eq!(Repo::code(&o), 5, "{}", stderr(&o));
     assert!(stderr(&o).contains("--rewrite-pushed"), "{}", stderr(&o));
     untouched(&r, &tip);
 
-    r.ghma_ok(&["apply", "--plan", &plan, "--rewrite-pushed"]);
+    r.gcma_ok(&["apply", "--plan", &plan, "--rewrite-pushed"]);
     assert_ne!(r.git(&["rev-parse", "HEAD"]), tip);
     assert!(r.log().iter().all(|x| x.an == "Jane Doe"));
 }
@@ -117,7 +117,7 @@ fn a_branch_where_every_commit_only_touches_excluded_paths_is_refused() {
     r.config("version: 1\npaths:\n  exclude: [\"secrets/\"]\n  gitignore: false\n");
     let tip = r.git(&["rev-parse", "HEAD"]);
     for cmd in ["plan", "apply"] {
-        let o = r.ghma(&[cmd, "--from", "root"]);
+        let o = r.gcma(&[cmd, "--from", "root"]);
         assert_eq!(Repo::code(&o), 3, "{cmd}: {}", stderr(&o));
         assert!(
             stderr(&o).contains("nothing would be left"),
@@ -139,14 +139,14 @@ fn from_must_be_an_ancestor_of_the_branch() {
     r.config(IDENTITY_CFG);
     let tip = r.git(&["rev-parse", "HEAD"]);
     for cmd in ["plan", "apply"] {
-        let o = r.ghma(&[cmd, "--from", &elsewhere]);
+        let o = r.gcma(&[cmd, "--from", &elsewhere]);
         assert_eq!(Repo::code(&o), 2, "{cmd}: {}", stderr(&o));
         assert!(
             stderr(&o).contains("not an ancestor"),
             "{cmd}: {}",
             stderr(&o)
         );
-        let o = r.ghma(&[cmd, "--from", "no-such-rev"]);
+        let o = r.gcma(&[cmd, "--from", "no-such-rev"]);
         assert_eq!(Repo::code(&o), 2, "{cmd}: {}", stderr(&o));
     }
     untouched(&r, &tip);
@@ -161,7 +161,7 @@ fn a_schedule_ending_before_the_commit_it_must_follow_is_refused() {
     r.config("version: 1\nfrom: 2026-01-01\nto: 2026-01-10\nschedule:\n  days: [mon, tue, wed, thu, fri]\n  hours: \"09:00-17:00\"\n");
     let tip = r.git(&["rev-parse", "HEAD"]);
     for cmd in ["plan", "apply"] {
-        let o = r.ghma(&[cmd, "--from", &late]);
+        let o = r.gcma(&[cmd, "--from", &late]);
         assert_eq!(Repo::code(&o), 3, "{cmd}: {}", stderr(&o));
         assert!(
             stderr(&o).contains("not after the floor"),

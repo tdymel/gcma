@@ -1,4 +1,4 @@
-//! `ghma plan`: the dry run.
+//! `gcma plan`: the dry run.
 
 use std::path::PathBuf;
 

@@ -1,5 +1,5 @@
 fn main() {
-    // A closed pipe (`ghma plan | head`) is not an error worth a panic message.
+    // A closed pipe (`gcma plan | head`) is not an error worth a panic message.
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let text = info.to_string();
@@ -7,7 +7,7 @@ fn main() {
             default_hook(info);
         }
     }));
-    match std::panic::catch_unwind(ghma::main) {
+    match std::panic::catch_unwind(gcma::main) {
         Ok(code) => std::process::exit(code),
         Err(payload) => {
             let broken_pipe = payload

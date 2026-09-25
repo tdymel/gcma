@@ -9,7 +9,7 @@ use tempfile::TempDir;
 pub struct Repo {
     pub dir: TempDir,
     pub home: TempDir,
-    /// Forces the object backend of every `ghma` run (`git` or `gix`); `None` keeps the default.
+    /// Forces the object backend of every `gcma` run (`git` or `gix`); `None` keeps the default.
     pub backend: Option<&'static str>,
 }
 
@@ -28,7 +28,7 @@ pub struct Row {
 }
 
 pub fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_ghma")
+    env!("CARGO_BIN_EXE_gcma")
 }
 
 pub fn base_cmd(prog: &str, dir: &Path, home: &Path) -> Command {
@@ -58,7 +58,7 @@ impl Repo {
         r
     }
 
-    /// A repository whose `ghma` runs use the backend `seed` selects: the two alternate, so a
+    /// A repository whose `gcma` runs use the backend `seed` selects: the two alternate, so a
     /// series of seeds covers both (only `git` when the `gix` feature is not built).
     pub fn for_seed(seed: u64) -> Repo {
         let mut r = Repo::new();
@@ -95,19 +95,19 @@ impl Repo {
             .to_string()
     }
 
-    pub fn ghma(&self, args: &[&str]) -> Output {
+    pub fn gcma(&self, args: &[&str]) -> Output {
         let mut c = self.cmd(bin());
         if let Some(b) = self.backend {
-            c.env("GHMA_BACKEND", b);
+            c.env("GCMA_BACKEND", b);
         }
         c.args(args).output().unwrap()
     }
 
-    pub fn ghma_ok(&self, args: &[&str]) -> String {
-        let o = self.ghma(args);
+    pub fn gcma_ok(&self, args: &[&str]) -> String {
+        let o = self.gcma(args);
         assert!(
             o.status.success(),
-            "ghma {:?} failed ({:?}): {}{}",
+            "gcma {:?} failed ({:?}): {}{}",
             args,
             o.status.code(),
             String::from_utf8_lossy(&o.stdout),
@@ -129,7 +129,7 @@ impl Repo {
     }
 
     pub fn config(&self, yaml: &str) {
-        self.write("ghma.yml", yaml);
+        self.write("gcma.yml", yaml);
     }
 
     /// Commit a new file at an explicit time as the default (old) identity.

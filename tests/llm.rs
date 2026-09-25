@@ -23,12 +23,12 @@ fn setup(cfg: &str) -> (Repo, String) {
     r.commit_as("c.txt", "more", 1_600_200_000, "Other Dev", "other@x.org");
     r.config(cfg);
     let plan = r.path().join("plan.json").to_str().unwrap().to_string();
-    r.ghma_ok(&["plan", "--from", "root", "--all", "--out", &plan]);
+    r.gcma_ok(&["plan", "--from", "root", "--all", "--out", &plan]);
     (r, plan)
 }
 
 fn rows(r: &Repo, plan: &str) -> Vec<serde_json::Value> {
-    let o = r.ghma(&["export", "--plan", plan]);
+    let o = r.gcma(&["export", "--plan", plan]);
     assert!(o.status.success(), "{}", err(&o));
     out(&o)
         .lines()
@@ -77,7 +77,7 @@ fn a_reply_from_stdin_is_applied_and_the_protected_trailer_is_kept() {
         "{}",
         out(&o)
     );
-    r.ghma_ok(&["apply", "--plan", &plan]);
+    r.gcma_ok(&["apply", "--plan", &plan]);
     let subjects: Vec<String> = r.log().into_iter().map(|x| x.subject).collect();
     assert_eq!(
         subjects,
@@ -100,7 +100,7 @@ fn out_writes_a_new_plan_and_leaves_the_original_untouched() {
     std::fs::write(&reply, "{\"i\":1,\"t\":\"Better title\"}\n").unwrap();
     let edited = r.path().join("edited.json");
     let before = std::fs::read(&plan).unwrap();
-    r.ghma_ok(&[
+    r.gcma_ok(&[
         "import",
         "--plan",
         &plan,
@@ -110,7 +110,7 @@ fn out_writes_a_new_plan_and_leaves_the_original_untouched() {
     ]);
     assert_eq!(std::fs::read(&plan).unwrap(), before);
     assert_ne!(std::fs::read(&edited).unwrap(), before);
-    r.ghma_ok(&["apply", "--plan", edited.to_str().unwrap()]);
+    r.gcma_ok(&["apply", "--plan", edited.to_str().unwrap()]);
     assert_eq!(r.log()[1].subject, "Better title");
 }
 
@@ -125,8 +125,8 @@ fn rules_from_the_config_are_put_back_after_the_reply() {
         "{\"i\":0,\"t\":\"Nicer\",\"b\":\"Body text.\"}\n{\"i\":1,\"t\":\"Second\"}\n",
     )
     .unwrap();
-    r.ghma_ok(&["import", "--plan", &plan, reply.to_str().unwrap()]);
-    r.ghma_ok(&["apply", "--plan", &plan]);
+    r.gcma_ok(&["import", "--plan", &plan, reply.to_str().unwrap()]);
+    r.gcma_ok(&["apply", "--plan", &plan]);
     let msgs = r.messages("HEAD");
     let log = r.log();
     assert_eq!(
@@ -135,7 +135,7 @@ fn rules_from_the_config_are_put_back_after_the_reply() {
     );
     assert_eq!(msgs[&log[1].oid], "Second\n\nAssisted-By: A <a@x>\n");
     assert!(
-        r.ghma(&["plan", "--check", "--from", "root"])
+        r.gcma(&["plan", "--check", "--from", "root"])
             .status
             .success()
     );
@@ -171,7 +171,7 @@ fn a_bad_reply_changes_nothing_exits_7_and_lists_the_rows_to_retry() {
         ),
     ] {
         std::fs::write(&reply, text).unwrap();
-        let o = r.ghma(&["import", "--plan", &plan, reply.to_str().unwrap()]);
+        let o = r.gcma(&["import", "--plan", &plan, reply.to_str().unwrap()]);
         assert_eq!(Repo::code(&o), 7, "{text:?}: {}", err(&o));
         assert!(
             err(&o).contains(needle),
@@ -190,10 +190,10 @@ fn a_bad_reply_changes_nothing_exits_7_and_lists_the_rows_to_retry() {
 #[test]
 fn a_missing_reply_or_plan_file_is_a_usage_error() {
     let (r, plan) = setup("version: 1\n");
-    let o = r.ghma(&["import", "--plan", &plan, "no-such-reply.jsonl"]);
+    let o = r.gcma(&["import", "--plan", &plan, "no-such-reply.jsonl"]);
     assert_eq!(Repo::code(&o), 2, "{}", err(&o));
     assert!(err(&o).contains("no-such-reply.jsonl"));
-    let o = r.ghma(&["import", "--plan", "no-such-plan.json", "-"]);
+    let o = r.gcma(&["import", "--plan", "no-such-plan.json", "-"]);
     assert_eq!(Repo::code(&o), 2, "{}", err(&o));
 }
 
@@ -202,7 +202,7 @@ fn an_empty_reply_imports_nothing() {
     let (r, plan) = setup("version: 1\n");
     let reply = r.path().join("reply.jsonl");
     std::fs::write(&reply, "\n\n").unwrap();
-    let o = r.ghma(&["import", "--plan", &plan, reply.to_str().unwrap()]);
+    let o = r.gcma(&["import", "--plan", &plan, reply.to_str().unwrap()]);
     assert!(o.status.success(), "{}", err(&o));
     assert!(out(&o).contains("imported 0 message(s)"), "{}", out(&o));
 }
@@ -215,7 +215,7 @@ fn control_characters_in_the_prelude_cannot_reach_the_terminal() {
         serde_json::from_slice(&std::fs::read(&plan).unwrap()).unwrap();
     json["entries"][2]["author"]["name"] = serde_json::json!("Evil\u{1b}[2J");
     std::fs::write(&plan, serde_json::to_vec(&json).unwrap()).unwrap();
-    let o = r.ghma(&["export", "--plan", &plan]);
+    let o = r.gcma(&["export", "--plan", &plan]);
     assert!(o.status.success(), "{}", err(&o));
     assert!(
         !err(&o).contains('\u{1b}'),
@@ -237,7 +237,7 @@ fn llm_export_import_apply_roundtrip() {
     let old = r.log();
     let plan = r.path().join("plan.json");
     // Everything already conforms, so use --all to make all commits editable.
-    r.ghma_ok(&[
+    r.gcma_ok(&[
         "plan",
         "--from",
         "root",
@@ -246,7 +246,7 @@ fn llm_export_import_apply_roundtrip() {
         plan.to_str().unwrap(),
     ]);
 
-    let exported = r.ghma_ok(&["export", "--plan", plan.to_str().unwrap()]);
+    let exported = r.gcma_ok(&["export", "--plan", plan.to_str().unwrap()]);
     let rows: Vec<serde_json::Value> = exported
         .lines()
         .map(|l| serde_json::from_str(l).unwrap())
@@ -255,7 +255,7 @@ fn llm_export_import_apply_roundtrip() {
     assert_eq!(rows[0]["i"], 0);
     assert!(rows[0]["s"].as_str().unwrap().ends_with("1f"));
     assert!(rows[0].get("a").is_none(), "common author is not repeated");
-    let batch = r.ghma_ok(&[
+    let batch = r.gcma_ok(&[
         "export",
         "--plan",
         plan.to_str().unwrap(),
@@ -269,7 +269,7 @@ fn llm_export_import_apply_roundtrip() {
     // A bad reply changes nothing and exits 7.
     let bad = r.path().join("bad.jsonl");
     std::fs::write(&bad, "Sure, here you go\n{\"i\":0,\"t\":\"x\"}\n").unwrap();
-    let o = r.ghma(&[
+    let o = r.gcma(&[
         "import",
         "--plan",
         plan.to_str().unwrap(),
@@ -283,13 +283,13 @@ fn llm_export_import_apply_roundtrip() {
         "{\"i\":0,\"t\":\"Add first file\",\"b\":\"Introduces a.txt.\\n\\nSigned-off-by: Old Me <me@home.org>\"}\n{\"i\":1,\"t\":\"Add second file\"}\n",
     )
     .unwrap();
-    r.ghma_ok(&[
+    r.gcma_ok(&[
         "import",
         "--plan",
         plan.to_str().unwrap(),
         reply.to_str().unwrap(),
     ]);
-    r.ghma_ok(&["apply", "--plan", plan.to_str().unwrap()]);
+    r.gcma_ok(&["apply", "--plan", plan.to_str().unwrap()]);
 
     let new = r.log();
     assert_same_shape(&old, &new);
@@ -304,7 +304,7 @@ fn llm_export_import_apply_roundtrip() {
     r.fsck();
     // The edited messages are the new baseline: nothing left to do.
     assert!(
-        r.ghma(&["plan", "--check", "--from", "root"])
+        r.gcma(&["plan", "--check", "--from", "root"])
             .status
             .success()
     );

@@ -1,4 +1,4 @@
-//! `ghma hook`: install, uninstall, and the entry point of the installed shim.
+//! `gcma hook`: install, uninstall, and the entry point of the installed shim.
 
 use std::io::Read;
 

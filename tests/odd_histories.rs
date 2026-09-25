@@ -22,15 +22,15 @@ fn a_backup_of_another_branch_is_refused_and_leaves_both_branches_alone() {
     let r = Repo::new();
     r.linear(3, T0);
     r.config(IDENTITY_CFG);
-    r.ghma_ok(&["apply", "--from", "root"]);
-    let listing = r.ghma_ok(&["restore"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
+    let listing = r.gcma_ok(&["restore"]);
     let id = listing.split_whitespace().next().unwrap().to_string();
     r.git(&["checkout", "-q", "-b", "other"]);
     let (main, other) = (
         r.git(&["rev-parse", "main"]),
         r.git(&["rev-parse", "other"]),
     );
-    let o = r.ghma(&["restore", &id]);
+    let o = r.gcma(&["restore", &id]);
     assert_eq!(Repo::code(&o), 3, "{}", stderr(&o));
     assert!(
         stderr(&o).contains("belongs to branch main"),
@@ -41,7 +41,7 @@ fn a_backup_of_another_branch_is_refused_and_leaves_both_branches_alone() {
     assert_eq!(r.git(&["rev-parse", "other"]), other);
     // Once the right branch is checked out the same backup restores fine.
     r.git(&["checkout", "-q", "main"]);
-    r.ghma_ok(&["restore", &id]);
+    r.gcma_ok(&["restore", &id]);
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn apply_warns_about_tags_that_will_keep_pointing_at_the_old_commits() {
     let old_middle = r.git(&["rev-parse", "HEAD~1"]);
     r.git(&["tag", "v1", "HEAD~1"]);
     r.config(IDENTITY_CFG);
-    let o = r.ghma(&["apply", "--from", "root"]);
+    let o = r.gcma(&["apply", "--from", "root"]);
     assert!(o.status.success(), "{}", stderr(&o));
     assert!(
         stderr(&o).contains("warning: tags/notes point at"),
@@ -81,7 +81,7 @@ fn apply_with_resign_warns_about_headers_it_cannot_carry() {
             .contains("encoding ISO-8859-1")
     );
     r.config("version: 1\nsigning: resign\n");
-    let o = r.ghma(&["apply", "--from", "root"]);
+    let o = r.gcma(&["apply", "--from", "root"]);
     assert!(o.status.success(), "{}", stderr(&o));
     assert!(stderr(&o).contains("carry extra headers"), "{}", stderr(&o));
 }
@@ -97,7 +97,7 @@ fn resign_refuses_messages_that_git_would_recode_before_anything_is_written() {
     r.config("version: 1\nsigning: resign\n");
     let tip = r.git(&["rev-parse", "HEAD"]);
     for cmd in ["plan", "apply"] {
-        let o = r.ghma(&[cmd, "--from", "root"]);
+        let o = r.gcma(&[cmd, "--from", "root"]);
         assert_eq!(Repo::code(&o), 3, "{cmd}: {}", stderr(&o));
         assert!(
             stderr(&o).contains("not valid UTF-8"),
@@ -106,10 +106,10 @@ fn resign_refuses_messages_that_git_would_recode_before_anything_is_written() {
         );
     }
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
-    assert!(r.git(&["for-each-ref", "refs/ghma/"]).is_empty());
+    assert!(r.git(&["for-each-ref", "refs/gcma/"]).is_empty());
     // Stripping signatures keeps the bytes, so that config still works.
     r.config("version: 1\nsigning: strip\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     assert_eq!(r.message_bytes("HEAD"), b"caf\xe9\n");
 }
 
@@ -137,7 +137,7 @@ fn unrelated_roots_are_all_rewritten_and_stay_roots() {
         "identity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n",
     ));
     let old = r.log();
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let new = r.log();
     assert_same_content(&old, &new);
     assert_scheduled(&new);
@@ -145,16 +145,16 @@ fn unrelated_roots_are_all_rewritten_and_stay_roots() {
     assert!(new.iter().all(|x| x.an == "Jane Doe"));
     r.fsck();
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do")
     );
     let id = r
-        .ghma_ok(&["restore"])
+        .gcma_ok(&["restore"])
         .split_whitespace()
         .next()
         .unwrap()
         .to_string();
-    r.ghma_ok(&["restore", &id]);
+    r.gcma_ok(&["restore", &id]);
     assert_same_content(&old, &r.log());
 }
 
@@ -184,7 +184,7 @@ fn path_rules_handle_file_names_that_are_not_utf8() {
         ls("HEAD").iter().any(|n| n.ends_with(b".key")),
         "setup: the odd file is tracked"
     );
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
     assert_eq!(ls("HEAD"), [b"a.txt".to_vec(), b"b.txt".to_vec()]);
     assert_eq!(
@@ -197,7 +197,7 @@ fn path_rules_handle_file_names_that_are_not_utf8() {
         "the working copy keeps its files"
     );
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do")
     );
 }
@@ -214,10 +214,10 @@ fn a_commit_inside_the_hours_but_with_the_wrong_offset_is_fixed_and_its_neighbou
     let good = r.commit_at_offset("good.txt", "right offset", berlin(10), "+0100");
     r.commit_at_offset("bad.txt", "wrong offset", berlin(11), "+0000");
     r.config(&berlin_cfg(""));
-    let o = r.ghma(&["plan", "--check", "--from", "root"]);
+    let o = r.gcma(&["plan", "--check", "--from", "root"]);
     assert_eq!(Repo::code(&o), 6, "{}", stderr(&o));
     assert!(stderr(&o).contains("1 commit(s)"), "{}", stderr(&o));
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     assert_eq!(r.log()[0].oid, good, "the conforming commit keeps its id");
     assert!(
         r.committer_offsets().iter().all(|(_, off)| *off == 60),
@@ -226,7 +226,7 @@ fn a_commit_inside_the_hours_but_with_the_wrong_offset_is_fixed_and_its_neighbou
     );
     assert_scheduled(&r.log());
     assert!(
-        r.ghma(&["plan", "--check", "--from", "root"])
+        r.gcma(&["plan", "--check", "--from", "root"])
             .status
             .success()
     );

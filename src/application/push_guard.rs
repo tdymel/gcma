@@ -92,7 +92,7 @@ pub fn run_pre_push(
             let report = apply(repo, &built.plan, false, now)?;
             if !report.noop {
                 return Err(Error::Nonconforming(format!(
-                    "ghma rewrote {} unpushed commit(s) of {branch_ref} to follow the rules; run `git push` again",
+                    "gcma rewrote {} unpushed commit(s) of {branch_ref} to follow the rules; run `git push` again",
                     report.rewritten
                 )));
             }
@@ -104,8 +104,8 @@ pub fn run_pre_push(
             ""
         };
         return Err(Error::Nonconforming(format!(
-            "{n} commit(s) about to be pushed do not follow the ghma rules; \
-             run `ghma apply`{hint} (it rewrites the unpushed part of the branch) and push again"
+            "{n} commit(s) about to be pushed do not follow the gcma rules; \
+             run `gcma apply`{hint} (it rewrites the unpushed part of the branch) and push again"
         )));
     }
     Ok(())

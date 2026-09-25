@@ -164,7 +164,7 @@ fn run_case(seed: u64) {
     };
     r.config(&cfg);
 
-    let o = r.ghma(&["apply", "--from", "root"]);
+    let o = r.gcma(&["apply", "--from", "root"]);
     assert!(
         o.status.success(),
         "seed {seed}: apply failed: {}{}",
@@ -202,7 +202,7 @@ fn run_case(seed: u64) {
     let backups = r.git(&[
         "for-each-ref",
         "--format=%(refname) %(objectname)",
-        "refs/ghma/backup/",
+        "refs/gcma/backup/",
     ]);
     if backups.is_empty() {
         // Nothing needed rewriting (e.g. a case where every commit already conformed).
@@ -228,14 +228,14 @@ fn run_case(seed: u64) {
     }
 
     // Idempotent.
-    let again = r.ghma(&["apply", "--from", "root"]);
+    let again = r.gcma(&["apply", "--from", "root"]);
     assert!(again.status.success());
     assert!(
         String::from_utf8_lossy(&again.stdout).contains("Nothing to do"),
         "seed {seed}: second apply must be a no-op"
     );
     assert!(
-        r.ghma(&["plan", "--check", "--from", "root"])
+        r.gcma(&["plan", "--check", "--from", "root"])
             .status
             .success(),
         "seed {seed}: --check"
@@ -254,9 +254,9 @@ fn run_case(seed: u64) {
                 "me@home.org",
             );
         }
-        let plan = r.ghma_ok(&["plan", "--from", "root"]);
+        let plan = r.gcma_ok(&["plan", "--from", "root"]);
         assert!(plan.contains("3 to rewrite"), "seed {seed}: {plan}");
-        r.ghma_ok(&["apply", "--from", "root"]);
+        r.gcma_ok(&["apply", "--from", "root"]);
         let after = r.log();
         assert_eq!(after.len(), settled.len() + 3);
         for (a, b) in settled.iter().zip(&after) {
@@ -267,7 +267,7 @@ fn run_case(seed: u64) {
         }
         PARTIAL.fetch_add(1, Ordering::Relaxed);
         assert!(
-            r.ghma(&["plan", "--check", "--from", "root"])
+            r.gcma(&["plan", "--check", "--from", "root"])
                 .status
                 .success()
         );
@@ -277,7 +277,7 @@ fn run_case(seed: u64) {
 
     // Restore returns the exact original tip.
     if !backups.is_empty() {
-        let listing = r.ghma_ok(&["restore"]);
+        let listing = r.gcma_ok(&["restore"]);
         let id = listing
             .lines()
             .find(|l| l.contains(&format!("old {old_tip}")))
@@ -286,7 +286,7 @@ fn run_case(seed: u64) {
             .next()
             .unwrap()
             .to_string();
-        r.ghma_ok(&["restore", &id]);
+        r.gcma_ok(&["restore", &id]);
         assert_eq!(new_tip_of(&r), old_tip, "seed {seed}: restore");
         assert_eq!(r.log().len(), old.len());
     }

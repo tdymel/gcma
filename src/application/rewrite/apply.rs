@@ -50,8 +50,8 @@ pub fn ensure_plan_matches_config(plan: &Plan, cfg: &Config) -> Result<()> {
 }
 
 const SECRETS_NOTE: &str = "paths were removed from the rewritten commits only. The originals stay reachable from \
-     refs/ghma/backup, the reflog, tags, other branches and any remote. If they held secrets, rotate \
-     them; to purge the old history run `ghma restore <id> --prune`, `git reflog expire --expire=now \
+     refs/gcma/backup, the reflog, tags, other branches and any remote. If they held secrets, rotate \
+     them; to purge the old history run `gcma restore <id> --prune`, `git reflog expire --expire=now \
      --all` and `git gc --prune=now`.";
 
 pub fn apply(
@@ -216,7 +216,7 @@ fn move_branch(repo: &dyn Repository, plan: &Plan, new_tip: &str, now: i64) -> R
     let id = free_backup_id(repo, plan, new_tip, now)?;
     let base = format!("{BACKUP_PREFIX}{}/{id}", plan.branch_name());
     repo.update_refs(
-        "ghma apply",
+        "gcma apply",
         &[
             RefUpdate::Create {
                 name: format!("{base}/old"),

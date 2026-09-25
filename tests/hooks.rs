@@ -11,16 +11,16 @@ fn hook_case_only_new_commits_are_rescheduled() {
     let r = Repo::new();
     r.linear(10, 1_500_000_000);
     r.config(&berlin_cfg(""));
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let settled = r.log();
     // Three new commits made "now-ish" (outside the allowed window).
     let t = settled.last().unwrap().ct + 3600 * 24 * 3 + 7 * 3600; // a night, a few days later
     for i in 0..3 {
         r.commit_at(&format!("new{i}.txt"), &format!("new {i}"), t + i * 60);
     }
-    let plan = r.ghma_ok(&["plan", "--from", "root"]);
+    let plan = r.gcma_ok(&["plan", "--from", "root"]);
     assert!(plan.contains("10 kept as-is, 3 to rewrite"), "{plan}");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let after = r.log();
     for (a, b) in settled.iter().zip(&after) {
         assert_eq!(a.oid, b.oid, "settled commits keep their OIDs");
@@ -36,13 +36,13 @@ fn hook_verify_blocks_nonconforming_pushes_and_allows_conforming_ones() {
     r.bare_remote();
     r.config(IDENTITY_CFG);
     r.linear(3, 1_600_000_000);
-    r.ghma_ok(&["hook", "install"]);
+    r.gcma_ok(&["hook", "install"]);
 
     // First push of a new branch: nonconforming -> blocked.
     let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
     assert!(!o.status.success());
     assert!(
-        String::from_utf8_lossy(&o.stderr).contains("ghma apply"),
+        String::from_utf8_lossy(&o.stderr).contains("gcma apply"),
         "{}",
         String::from_utf8_lossy(&o.stderr)
     );
@@ -51,7 +51,7 @@ fn hook_verify_blocks_nonconforming_pushes_and_allows_conforming_ones() {
         "nothing was pushed"
     );
 
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
 
@@ -59,7 +59,7 @@ fn hook_verify_blocks_nonconforming_pushes_and_allows_conforming_ones() {
     r.commit_at("later.txt", "later", 1_700_000_000);
     let o = r.git_out(&["push", "-q"]);
     assert!(!o.status.success());
-    r.ghma_ok(&["apply"]);
+    r.gcma_ok(&["apply"]);
     let o = r.git_out(&["push", "-q"]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     assert_eq!(
@@ -74,7 +74,7 @@ fn hook_rewrite_mode_rewrites_then_aborts_and_the_retry_succeeds() {
     let remote = r.bare_remote();
     r.config(&format!("{IDENTITY_CFG}hook:\n  mode: rewrite\n"));
     r.linear(3, 1_600_000_000);
-    r.ghma_ok(&["hook", "install"]);
+    r.gcma_ok(&["hook", "install"]);
     let old_tip = r.git(&["rev-parse", "HEAD"]);
 
     let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
@@ -101,7 +101,7 @@ fn hook_ignores_deletes_and_other_branches_and_install_is_safe() {
     r.bare_remote();
     r.config(IDENTITY_CFG);
     r.commit_as("ok.txt", "ok", 1_600_000_000, "Jane Doe", "jane@work.com");
-    r.ghma_ok(&["hook", "install"]);
+    r.gcma_ok(&["hook", "install"]);
     r.git(&["push", "-q", "-u", "origin", "main"]);
     // A nonconforming commit on another branch is not judged when pushing main... and a delete is a no-op.
     r.git(&["checkout", "-q", "-b", "other"]);
@@ -118,16 +118,16 @@ fn hook_ignores_deletes_and_other_branches_and_install_is_safe() {
         !o.status.success(),
         "the hook must judge the checked-out branch"
     );
-    assert!(String::from_utf8_lossy(&o.stderr).contains("ghma apply"));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("gcma apply"));
 
     // Install refuses to clobber a foreign hook, uninstall refuses to remove one.
-    r.ghma_ok(&["hook", "uninstall"]);
+    r.gcma_ok(&["hook", "uninstall"]);
     let hook = r.path().join(".git/hooks/pre-push");
     std::fs::write(&hook, "#!/bin/sh\nexit 0\n").unwrap();
-    assert_eq!(Repo::code(&r.ghma(&["hook", "install"])), 3);
-    assert_eq!(Repo::code(&r.ghma(&["hook", "uninstall"])), 3);
-    r.ghma_ok(&["hook", "install", "--force"]);
-    r.ghma_ok(&["hook", "uninstall"]);
+    assert_eq!(Repo::code(&r.gcma(&["hook", "install"])), 3);
+    assert_eq!(Repo::code(&r.gcma(&["hook", "uninstall"])), 3);
+    r.gcma_ok(&["hook", "install", "--force"]);
+    r.gcma_ok(&["hook", "uninstall"]);
     assert!(!hook.exists());
 }
 
@@ -139,7 +139,7 @@ fn hook_ignores_pushes_of_non_tip_commits_and_judges_the_branch() {
     r.commit_as("a.txt", "a", 1_600_000_000, "Jane Doe", "jane@work.com");
     r.commit_as("b.txt", "b", 1_600_100_000, "Jane Doe", "jane@work.com");
     r.commit_at("bad.txt", "bad", 1_600_200_000); // nonconforming tip
-    r.ghma_ok(&["hook", "install"]);
+    r.gcma_ok(&["hook", "install"]);
     // Pushing HEAD~1 to main only sends conforming commits, but the hook only judges when the
     // pushed local ref is the checked-out branch, so `HEAD~1:main` is not judged at all.
     let o = r.git_out(&["push", "-q", "origin", "HEAD~1:refs/heads/main"]);
@@ -155,7 +155,7 @@ fn hook_judges_pushes_spelled_as_head_or_sha() {
     r.bare_remote();
     r.config(IDENTITY_CFG);
     r.commit_at("bad.txt", "bad", 1_600_200_000); // nonconforming tip
-    r.ghma_ok(&["hook", "install"]);
+    r.gcma_ok(&["hook", "install"]);
     let tip = r.git(&["rev-parse", "HEAD"]);
     let remote_spec = format!("{tip}:refs/heads/o2");
     for spec in [
@@ -168,7 +168,7 @@ fn hook_judges_pushes_spelled_as_head_or_sha() {
         assert!(!o.status.success(), "push {spec} must be blocked");
         let err = String::from_utf8_lossy(&o.stderr);
         assert!(
-            err.contains("do not follow the ghma rules"),
+            err.contains("do not follow the gcma rules"),
             "{spec}: {err}"
         );
         assert!(err.contains("--from"), "no-upstream hint missing: {err}");
@@ -185,7 +185,7 @@ fn hook_rewrite_mode_fixes_head_pushes() {
     r.bare_remote();
     r.config(&format!("{IDENTITY_CFG}hook: {{mode: rewrite}}\n"));
     r.commit_at("bad.txt", "bad", 1_600_200_000);
-    r.ghma_ok(&["hook", "install"]);
+    r.gcma_ok(&["hook", "install"]);
     let old_tip = r.git(&["rev-parse", "HEAD"]);
     let o = r.git_out(&["push", "-q", "origin", "HEAD"]);
     assert!(!o.status.success(), "the push is aborted after rewriting");
@@ -203,12 +203,12 @@ fn hook_rewrite_mode_fixes_head_pushes() {
 fn uninstalling_without_a_hook_says_so_and_succeeds() {
     let r = Repo::new();
     r.linear(1, 1_600_000_000);
-    let out = r.ghma_ok(&["hook", "uninstall"]);
+    let out = r.gcma_ok(&["hook", "uninstall"]);
     assert!(out.contains("no hook installed"), "{out}");
-    r.ghma_ok(&["hook", "install"]);
-    assert!(r.ghma_ok(&["hook", "uninstall"]).contains("hook removed"));
+    r.gcma_ok(&["hook", "install"]);
+    assert!(r.gcma_ok(&["hook", "uninstall"]).contains("hook removed"));
     assert!(
-        r.ghma_ok(&["hook", "uninstall"])
+        r.gcma_ok(&["hook", "uninstall"])
             .contains("no hook installed")
     );
 }

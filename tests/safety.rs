@@ -14,7 +14,7 @@ fn stderr(o: &std::process::Output) -> String {
 fn status_without_config(r: &Repo) -> String {
     r.git(&["status", "--porcelain"])
         .lines()
-        .filter(|l| !l.contains("ghma.yml"))
+        .filter(|l| !l.contains("gcma.yml"))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -25,11 +25,11 @@ fn plan_check_exits_6_and_changes_nothing() {
     r.linear(3, 1_600_000_000);
     r.config(IDENTITY_CFG);
     let tip = r.git(&["rev-parse", "HEAD"]);
-    let o = r.ghma(&["plan", "--check", "--from", "root"]);
+    let o = r.gcma(&["plan", "--check", "--from", "root"]);
     assert_eq!(Repo::code(&o), 6, "{}", stderr(&o));
     assert!(stderr(&o).contains("3 commit(s) do not follow"));
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
-    assert!(r.git(&["for-each-ref", "refs/ghma/"]).is_empty());
+    assert!(r.git(&["for-each-ref", "refs/gcma/"]).is_empty());
 }
 
 #[test]
@@ -39,14 +39,14 @@ fn the_hook_judges_a_nonconforming_ancestor_pushed_as_a_revision() {
     r.config(IDENTITY_CFG);
     r.commit_at("bad.txt", "bad", 1_600_000_000);
     r.commit_as("ok.txt", "ok", 1_600_100_000, "Jane Doe", "jane@work.com");
-    r.ghma_ok(&["hook", "install"]);
+    r.gcma_ok(&["hook", "install"]);
     let o = r.git_out(&["push", "-q", "origin", "HEAD~1:refs/heads/main"]);
     assert!(
         !o.status.success(),
         "the old identity must not slip through"
     );
     assert!(
-        stderr(&o).contains("do not follow the ghma rules"),
+        stderr(&o).contains("do not follow the gcma rules"),
         "{}",
         stderr(&o)
     );
@@ -59,7 +59,7 @@ fn the_hook_blocks_commits_that_would_only_be_dropped() {
     r.bare_remote();
     r.config("version: 1\npaths:\n  exclude: [\"secrets/\"]\n  gitignore: false\n");
     r.commit_files(&[("a.txt", "a\n")], "add a", 1_600_000_000);
-    r.ghma_ok(&["hook", "install"]);
+    r.gcma_ok(&["hook", "install"]);
     r.git(&["push", "-q", "-u", "origin", "main"]);
     r.commit_files(&[("secrets/k", "k\n")], "add key", 1_600_100_000);
     let o = r.git_out(&["push", "-q", "origin", "main"]);
@@ -78,9 +78,9 @@ fn restore_after_path_rules_leaves_index_and_gitignore_as_before() {
     );
     r.config(SECRETS_CFG);
     let tip = r.git(&["rev-parse", "HEAD"]);
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     assert!(r.path().join(".gitignore").exists());
-    let id = r.git(&["for-each-ref", "--format=%(refname)", "refs/ghma/backup/"]);
+    let id = r.git(&["for-each-ref", "--format=%(refname)", "refs/gcma/backup/"]);
     let id = id
         .lines()
         .next()
@@ -89,12 +89,12 @@ fn restore_after_path_rules_leaves_index_and_gitignore_as_before() {
         .nth(1)
         .unwrap()
         .to_string();
-    r.ghma_ok(&["restore", &id]);
+    r.gcma_ok(&["restore", &id]);
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
     assert_eq!(status_without_config(&r), "", "{}", r.git(&["status"]));
     assert!(
         !r.path().join(".gitignore").exists(),
-        "ghma's own .gitignore is gone again"
+        "gcma's own .gitignore is gone again"
     );
     assert!(r.path().join("secrets/k").exists());
 }
@@ -111,7 +111,7 @@ fn a_plan_cannot_retarget_other_refs_or_bring_its_own_path_rules() {
     r.config(SECRETS_CFG);
     let plan_path = r.path().join("plan.json");
     let plan_arg = plan_path.to_str().unwrap().to_string();
-    r.ghma_ok(&["plan", "--from", "root", "--out", &plan_arg]);
+    r.gcma_ok(&["plan", "--from", "root", "--out", &plan_arg]);
     let tip = r.git(&["rev-parse", "HEAD"]);
 
     // Another ref at the tip (a tag) must not be rewritten.
@@ -120,14 +120,14 @@ fn a_plan_cannot_retarget_other_refs_or_bring_its_own_path_rules() {
         serde_json::from_slice(&std::fs::read(&plan_path).unwrap()).unwrap();
     plan["branch_ref"] = "refs/tags/v1".into();
     std::fs::write(&plan_path, serde_json::to_vec(&plan).unwrap()).unwrap();
-    let o = r.ghma(&["apply", "--plan", &plan_arg]);
+    let o = r.gcma(&["apply", "--plan", &plan_arg]);
     assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
     assert_eq!(r.git(&["rev-parse", "v1"]), tip);
 
     // A plan made under other rules than the config's is refused.
-    r.ghma_ok(&["plan", "--from", "root", "--out", &plan_arg]);
+    r.gcma_ok(&["plan", "--from", "root", "--out", &plan_arg]);
     r.config("version: 1\npaths:\n  exclude: [\"b.txt\"]\n");
-    let o = r.ghma(&["apply", "--plan", &plan_arg]);
+    let o = r.gcma(&["apply", "--plan", &plan_arg]);
     assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
     assert!(stderr(&o).contains("path rules"), "{}", stderr(&o));
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
@@ -140,9 +140,9 @@ fn a_plan_for_another_branch_is_refused() {
     r.config(IDENTITY_CFG);
     let plan_path = r.path().join("plan.json");
     let plan_arg = plan_path.to_str().unwrap().to_string();
-    r.ghma_ok(&["plan", "--from", "root", "--out", &plan_arg]);
+    r.gcma_ok(&["plan", "--from", "root", "--out", &plan_arg]);
     r.git(&["checkout", "-q", "-b", "other"]);
-    let o = r.ghma(&["apply", "--plan", &plan_arg]);
+    let o = r.gcma(&["apply", "--plan", &plan_arg]);
     assert_eq!(Repo::code(&o), 3, "{}", stderr(&o));
 }
 
@@ -161,7 +161,7 @@ fn local_gitignore_edits_are_kept_and_reported() {
     );
     r.config(SECRETS_CFG);
     r.write(".gitignore", "target\nmine\n");
-    let o = r.ghma(&["apply", "--from", "root"]);
+    let o = r.gcma(&["apply", "--from", "root"]);
     assert!(o.status.success());
     assert!(
         stderr(&o).contains(".gitignore has local changes"),
@@ -183,7 +183,7 @@ fn identity_values_that_would_corrupt_a_commit_are_rejected() {
         r.config(&format!(
             "version: 1\nidentity:\n  - match: {{email: me@home.org}}\n    set: {{name: {bad}, email: j@w.com}}\n"
         ));
-        assert_eq!(Repo::code(&r.ghma(&["plan", "--from", "root"])), 2, "{bad}");
+        assert_eq!(Repo::code(&r.gcma(&["plan", "--from", "root"])), 2, "{bad}");
     }
 }
 
@@ -199,7 +199,7 @@ fn a_symlinked_gitignore_is_never_written_through() {
     r.config(SECRETS_CFG);
     let outside = r.home.path().join("outside");
     std::os::unix::fs::symlink(&outside, r.path().join(".gitignore")).unwrap();
-    let o = r.ghma(&["apply", "--from", "root"]);
+    let o = r.gcma(&["apply", "--from", "root"]);
     assert!(o.status.success(), "{}", stderr(&o));
     assert!(!outside.exists(), "the link target must not be created");
     assert!(stderr(&o).contains("symbolic link"), "{}", stderr(&o));
@@ -210,19 +210,19 @@ fn a_config_whose_to_precedes_from_is_a_usage_error() {
     let r = Repo::new();
     r.linear(1, 1_600_000_000);
     r.config("version: 1\nfrom: 2026-01-01\nto: 2025-01-01\nschedule: {}\n");
-    assert_eq!(Repo::code(&r.ghma(&["plan", "--from", "root"])), 2);
+    assert_eq!(Repo::code(&r.gcma(&["plan", "--from", "root"])), 2);
 }
 
 #[test]
 fn init_keeps_the_config_out_of_commits_and_starts_inert() {
     let r = Repo::new();
     r.linear(2, 1_600_000_000);
-    r.ghma_ok(&["init"]);
+    r.gcma_ok(&["init"]);
     assert!(
         r.git(&["status", "--porcelain"]).is_empty(),
         "the config is excluded"
     );
-    let o = r.ghma(&["plan", "--from", "root"]);
+    let o = r.gcma(&["plan", "--from", "root"]);
     assert!(o.status.success());
     assert!(
         stderr(&o).contains("no rules are configured"),
@@ -244,7 +244,7 @@ fn config_errors_exit_2() {
         "version: 1\ntimezone: Mars/Base\n",
     ] {
         r.config(bad);
-        let o = r.ghma(&["plan", "--from", "root"]);
+        let o = r.gcma(&["plan", "--from", "root"]);
         assert_eq!(
             Repo::code(&o),
             2,
@@ -260,10 +260,10 @@ fn all_flag_with_nothing_to_change_is_a_clean_noop() {
     r.linear(3, 1_600_000_000);
     r.config("version: 1\n");
     let tip = r.git(&["rev-parse", "HEAD"]);
-    let o = r.ghma_ok(&["apply", "--from", "root", "--all"]);
+    let o = r.gcma_ok(&["apply", "--from", "root", "--all"]);
     assert!(o.contains("Nothing to do"), "{o}");
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
-    assert!(r.git(&["for-each-ref", "refs/ghma/backup/"]).is_empty());
+    assert!(r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty());
 }
 
 #[test]
@@ -273,7 +273,7 @@ fn tags_pointing_into_the_rewrite_are_warned_about() {
     r.git(&["tag", "v1", "HEAD~1"]);
     r.git(&["tag", "-a", "-m", "annotated", "v2", "HEAD"]);
     r.config(IDENTITY_CFG);
-    let out = r.ghma_ok(&["plan", "--from", "root"]);
+    let out = r.gcma_ok(&["plan", "--from", "root"]);
     assert!(
         out.contains("refs/tags/v1") && out.contains("refs/tags/v2"),
         "{out}"

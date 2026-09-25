@@ -1,4 +1,4 @@
-//! `ghma restore`: list backups, restore one, or prune one.
+//! `gcma restore`: list backups, restore one, or prune one.
 
 use crate::adapters::cli_support::session::Session;
 use crate::application::rewrite::{list_backups, prune, restore};

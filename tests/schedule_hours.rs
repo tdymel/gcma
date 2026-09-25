@@ -90,7 +90,7 @@ fn two_ranges_in_one_day_evening_and_early_morning() {
         "uniform",
     ));
     let old = r.log();
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let new = r.log();
     assert_same_content(&old, &new);
     assert_all_allowed(&new, &WEEKDAYS, &[(1080, 1440), (360, 420)]);
@@ -108,11 +108,11 @@ fn two_ranges_in_one_day_evening_and_early_morning() {
     );
     r.fsck();
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do")
     );
     assert!(
-        r.ghma(&["plan", "--check", "--from", "root"])
+        r.gcma(&["plan", "--check", "--from", "root"])
             .status
             .success()
     );
@@ -124,7 +124,7 @@ fn a_range_running_past_midnight_spills_into_the_next_weekday() {
     noon_history(&r, 60);
     // Only Fridays 18:00 until 06:00 on Saturday.
     r.config(&cfg("[fri]", "\"18:00-06:00\"", "uniform"));
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let new = r.log();
     assert_all_allowed(&new, &[chrono::Weekday::Fri], &[(1080, 1800)]);
     let saturday_morning = new
@@ -157,7 +157,7 @@ fn overnight_range_and_a_second_range_together() {
         "[\"22:00-02:00\", \"12:30-13:30\"]",
         "bursty",
     ));
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let new = r.log();
     let all_days = [
         chrono::Weekday::Mon,
@@ -170,7 +170,7 @@ fn overnight_range_and_a_second_range_together() {
     ];
     assert_all_allowed(&new, &all_days, &[(1320, 1560), (750, 810)]);
     assert!(
-        r.ghma(&["plan", "--check", "--from", "root"])
+        r.gcma(&["plan", "--check", "--from", "root"])
             .status
             .success()
     );
@@ -199,7 +199,7 @@ fn a_commit_at_noon_moves_to_the_next_valid_slot_and_one_inside_stays() {
         "uniform",
     ));
     let old = r.log();
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let new = r.log();
     assert_eq!(
         new[0].oid, inside,
@@ -224,7 +224,7 @@ fn a_commit_just_outside_the_window_edges_is_moved_and_one_on_the_edge_is_not() 
         "\"09:00-17:00\"",
         "uniform",
     ));
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     let new = r.log();
     assert_eq!(new[0].oid, first, "09:00 is inside");
     assert_ne!(new[1].oid, second, "17:00 is outside and moves");
@@ -237,7 +237,7 @@ fn hours_as_a_single_string_and_as_a_list_mean_the_same() {
         let r = Repo::new();
         noon_history(&r, 12);
         r.config(&cfg("[mon, tue, wed]", hours, "uniform"));
-        r.ghma_ok(&["apply", "--from", "root"]);
+        r.gcma_ok(&["apply", "--from", "root"]);
         r.log().iter().map(|x| x.ct).collect::<Vec<_>>()
     };
     assert_eq!(build("\"18:00-22:00\""), build("[\"18:00-22:00\"]"));
@@ -256,7 +256,7 @@ fn invalid_hours_are_usage_errors() {
         let r = Repo::new();
         r.linear(2, 1_600_000_000);
         r.config(&cfg("[mon]", hours, "uniform"));
-        let o = r.ghma(&["plan", "--from", "root"]);
+        let o = r.gcma(&["plan", "--from", "root"]);
         assert_eq!(
             Repo::code(&o),
             2,
@@ -272,7 +272,7 @@ fn a_window_without_any_matching_day_is_refused_even_with_overnight_hours() {
     r.linear(3, 1_600_000_000);
     // The window starts on Tuesday 06:00, just when Monday's 18:00-06:00 range ends.
     r.config("version: 1\nfrom: \"2026-01-06T06:00:00+01:00\"\nto: \"2026-01-06T23:00:00+01:00\"\ntimezone: Europe/Berlin\nschedule:\n  days: [mon]\n  hours: \"18:00-06:00\"\n");
-    let o = r.ghma(&["apply", "--from", "root"]);
+    let o = r.gcma(&["apply", "--from", "root"]);
     assert_eq!(Repo::code(&o), 3, "{}", String::from_utf8_lossy(&o.stderr));
     assert_eq!(r.log().len(), 3, "nothing was rewritten");
 }
@@ -283,7 +283,7 @@ fn a_window_starting_after_midnight_still_gets_the_tail_of_the_previous_days_ran
     r.linear(4, 1_600_000_000);
     // Tuesday 2026-01-06 only, but Monday's range reaches into it until 06:00.
     r.config("version: 1\nfrom: 2026-01-06\nto: 2026-01-06\ntimezone: Europe/Berlin\nschedule:\n  days: [mon]\n  hours: \"18:00-06:00\"\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     for x in r.log() {
         assert_eq!(local_weekday(x.ct), chrono::Weekday::Tue);
         assert!(local_hour(x.ct) < 6, "{}", x.ct);

@@ -1,4 +1,4 @@
-//! `ghma export` and `ghma import`: the round trip through an LLM.
+//! `gcma export` and `gcma import`: the round trip through an LLM.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};

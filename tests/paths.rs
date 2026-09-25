@@ -28,7 +28,7 @@ fn tracked(r: &Repo, rev: &str) -> Vec<String> {
 fn status_without_config(r: &Repo) -> String {
     r.git(&["status", "--porcelain"])
         .lines()
-        .filter(|l| !l.contains("ghma.yml"))
+        .filter(|l| !l.contains("gcma.yml"))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -40,7 +40,7 @@ fn excluded_paths_leave_history_but_not_the_project() {
     r.config(CFG);
     let old_tip = r.git(&["rev-parse", "HEAD"]);
 
-    let plan = r.ghma_ok(&["plan", "--from", "root"]);
+    let plan = r.gcma_ok(&["plan", "--from", "root"]);
     assert!(
         plan.contains("to drop") && plan.contains("DROPPED"),
         "{plan}"
@@ -51,7 +51,7 @@ fn excluded_paths_leave_history_but_not_the_project() {
         "plan must not move the branch"
     );
 
-    let out = r.ghma_ok(&["apply", "--from", "root"]);
+    let out = r.gcma_ok(&["apply", "--from", "root"]);
     assert!(out.contains("dropped 1"), "{out}");
     r.fsck();
 
@@ -104,10 +104,10 @@ fn excluded_paths_leave_history_but_not_the_project() {
 
     // Stable, and undoable.
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do")
     );
-    let id = r.git(&["for-each-ref", "--format=%(refname)", "refs/ghma/backup/"]);
+    let id = r.git(&["for-each-ref", "--format=%(refname)", "refs/gcma/backup/"]);
     let id = id
         .lines()
         .next()
@@ -116,7 +116,7 @@ fn excluded_paths_leave_history_but_not_the_project() {
         .nth(1)
         .unwrap()
         .to_string();
-    r.ghma_ok(&["restore", &id]);
+    r.gcma_ok(&["restore", &id]);
     assert_eq!(r.git(&["rev-parse", "HEAD"]), old_tip);
     assert_eq!(r.log().len(), 4);
 }
@@ -127,7 +127,7 @@ fn a_tip_that_only_touches_excluded_paths_stays_as_the_gitignore_carrier() {
     r.commit_files(&[("a.txt", "a\n")], "add a", 1_600_000_000);
     r.commit_files(&[("secrets/key.pem", "k\n")], "add key", 1_600_100_000);
     r.config(CFG);
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
     // The files are still in the project, so something on the branch must ignore them.
     let rows = r.log();
@@ -143,7 +143,7 @@ fn a_tip_that_only_touches_excluded_paths_is_dropped_without_gitignore() {
     r.commit_files(&[("a.txt", "a\n")], "add a", 1_600_000_000);
     r.commit_files(&[("secrets/key.pem", "k\n")], "add key", 1_600_100_000);
     r.config("version: 1\npaths:\n  exclude: [\"secrets/\"]\n  gitignore: false\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
     let rows = r.log();
     assert_eq!(rows.len(), 1);
@@ -163,7 +163,7 @@ fn a_dropped_tip_hands_the_branch_to_a_kept_ancestor_that_carries_the_entry() {
     );
     r.commit_files(&[("secrets/k2", "2\n")], "add key2", 1_600_200_000);
     r.config(CFG);
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
     let rows = r.log();
     assert_eq!(rows.len(), 2, "the tip is dropped, nothing extra is kept");
@@ -177,7 +177,7 @@ fn keeping_commits_that_only_touch_excluded_paths_leaves_them_empty() {
     r.commit_files(&[("a.txt", "a\n")], "add a", 1_600_000_000);
     r.commit_files(&[("secrets/key.pem", "k\n")], "add key", 1_600_100_000);
     r.config("version: 1\npaths:\n  exclude: [\"secrets/\"]\n  only_excluded_commits: keep\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
     let rows = r.log();
     assert_eq!(rows.len(), 2);
@@ -191,7 +191,7 @@ fn gitignore_entries_can_be_turned_off() {
     let r = Repo::new();
     history_with_secrets(&r);
     r.config("version: 1\npaths:\n  exclude: [\"secrets/\"]\n  gitignore: false\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     assert_eq!(tracked(&r, "HEAD"), ["a.txt", "b.txt", "c.txt"]);
 }
 
@@ -209,7 +209,7 @@ fn an_existing_gitignore_is_extended_not_replaced() {
         1_600_100_000,
     );
     r.config("version: 1\npaths:\n  exclude: [\"*.env\"]\n");
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
     let ignore = r.git(&["show", "HEAD:.gitignore"]);
     assert!(
@@ -236,7 +236,7 @@ fn dropping_a_side_branch_commit_rewires_the_merge() {
     r.git(&["merge", "-q", "--no-ff", "-m", "merge feat", "feat"]);
     r.config(CFG);
     let old = r.log();
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
     let rows = r.log();
     assert_eq!(rows.len(), old.len() - 1);
@@ -256,14 +256,14 @@ fn rules_combine_with_schedule_and_identity() {
     r.config(&berlin_cfg(
         "paths:\n  exclude: [\"secrets/\"]\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n",
     ));
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
     let rows = r.log();
     assert_eq!(rows.len(), 3);
     assert_scheduled(&rows);
     assert!(rows.iter().all(|x| x.ae == "jane@work.com"));
     assert!(
-        r.ghma_ok(&["apply", "--from", "root"])
+        r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do")
     );
 }
@@ -274,7 +274,7 @@ fn an_edited_plan_cannot_change_trees() {
     history_with_secrets(&r);
     r.config(CFG);
     let plan_path = r.path().join("plan.json");
-    r.ghma_ok(&[
+    r.gcma_ok(&[
         "plan",
         "--from",
         "root",
@@ -289,7 +289,7 @@ fn an_edited_plan_cannot_change_trees() {
     plan["entries"][last]["tree"] = serde_json::Value::String(old_tree);
     std::fs::write(&plan_path, serde_json::to_vec(&plan).unwrap()).unwrap();
     let tip = r.git(&["rev-parse", "HEAD"]);
-    let o = r.ghma(&["apply", "--plan", plan_path.to_str().unwrap()]);
+    let o = r.gcma(&["apply", "--plan", plan_path.to_str().unwrap()]);
     assert_eq!(Repo::code(&o), 2, "{}", String::from_utf8_lossy(&o.stderr));
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip, "nothing moved");
 }
@@ -309,7 +309,7 @@ fn modified_gitignore_in_the_working_copy_is_left_alone() {
     );
     r.config(CFG);
     r.write(".gitignore", "target\nmine\n"); // unstaged local edit
-    r.ghma_ok(&["apply", "--from", "root"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
     assert_eq!(
         std::fs::read_to_string(r.path().join(".gitignore")).unwrap(),
         "target\nmine\n"

@@ -24,7 +24,7 @@ fn same_result(build: impl Fn(&Repo), cfg: &str, args: &[&str]) -> (Repo, Repo) 
     let run = |r: &Repo, backend: &str| {
         let mut full = vec!["--backend", backend];
         full.extend_from_slice(args);
-        let o = r.ghma(&full);
+        let o = r.gcma(&full);
         assert!(
             o.status.success(),
             "{backend}: {}{}",
@@ -52,7 +52,7 @@ fn same_result(build: impl Fn(&Repo), cfg: &str, args: &[&str]) -> (Repo, Repo) 
         r.git(&[
             "for-each-ref",
             "--format=%(objectname)",
-            "refs/ghma/backup/",
+            "refs/gcma/backup/",
         ])
     };
     assert_eq!(backups(&a), backups(&b));
@@ -306,7 +306,7 @@ fn plans_and_dry_runs_are_identical_too() {
     }
     let plan = |r: &Repo, backend: &str| {
         let out = r.path().join("plan.json");
-        r.ghma_ok(&[
+        r.gcma_ok(&[
             "--backend",
             backend,
             "plan",

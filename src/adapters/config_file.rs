@@ -1,11 +1,11 @@
-//! Reads `ghma.yml` into the domain `Config`.
+//! Reads `gcma.yml` into the domain `Config`.
 
 use std::path::Path;
 
 use crate::domain::error::{Error, Result};
 use crate::domain::settings::Config;
 
-pub const CONFIG_FILE: &str = "ghma.yml";
+pub const CONFIG_FILE: &str = "gcma.yml";
 
 pub fn load(path: &Path) -> Result<Config> {
     let text = std::fs::read_to_string(path)
