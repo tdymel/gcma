@@ -25,6 +25,8 @@ rand = "0.10"
 rand_chacha = "0.10"
 fnv = "1"
 ignore = "0.4"
+fs-err = "3.3.2"
+memchr = "2.8.3"
 
 [features]
 default = ["gix"]

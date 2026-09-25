@@ -112,7 +112,7 @@ impl Commit {
 
     pub fn parse(oid: &str, data: &[u8]) -> Result<Commit> {
         let bad = |what: &str| Error::Git(format!("commit {oid}: {what}"));
-        let (head, message) = match find_subslice(data, b"\n\n") {
+        let (head, message) = match memchr::memmem::find(data, b"\n\n") {
             Some(p) => (&data[..p], data[p + 2..].to_vec()),
             None => (data.strip_suffix(b"\n").unwrap_or(data), Vec::new()),
         };
@@ -161,10 +161,6 @@ impl Commit {
             message,
         })
     }
-}
-
-fn find_subslice(h: &[u8], n: &[u8]) -> Option<usize> {
-    h.windows(n.len()).position(|w| w == n)
 }
 
 /// A commit we want to create.

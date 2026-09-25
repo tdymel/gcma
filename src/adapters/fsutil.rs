@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::domain::error::{Error, Result};
 
 fn refuse_symlink(path: &Path) -> Result<()> {
-    match std::fs::symlink_metadata(path) {
+    match fs_err::symlink_metadata(path) {
         Ok(m) if m.file_type().is_symlink() => Err(Error::Precondition(format!(
             "{} is a symbolic link; refusing to read or write through it",
             path.display()
@@ -19,7 +19,7 @@ fn refuse_symlink(path: &Path) -> Result<()> {
 /// Reads the file; `None` when it does not exist. Refuses symbolic links.
 pub fn read_regular(path: &Path) -> Result<Option<Vec<u8>>> {
     refuse_symlink(path)?;
-    match std::fs::read(path) {
+    match fs_err::read(path) {
         Ok(b) => Ok(Some(b)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),
@@ -29,13 +29,13 @@ pub fn read_regular(path: &Path) -> Result<Option<Vec<u8>>> {
 /// Writes the file. Refuses symbolic links.
 pub fn write_regular(path: &Path, data: &[u8]) -> Result<()> {
     refuse_symlink(path)?;
-    Ok(std::fs::write(path, data)?)
+    Ok(fs_err::write(path, data)?)
 }
 
 /// Removes the file if it exists. Refuses symbolic links.
 pub fn remove_regular(path: &Path) -> Result<()> {
     refuse_symlink(path)?;
-    match std::fs::remove_file(path) {
+    match fs_err::remove_file(path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e.into()),

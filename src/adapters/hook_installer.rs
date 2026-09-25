@@ -20,7 +20,7 @@ pub fn install(path: &Path, force: bool) -> Result<PathBuf> {
         }
     }
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
+        fs_err::create_dir_all(dir)?;
     }
     let exe = std::env::current_exe()
         .map(|p| p.display().to_string())
@@ -30,7 +30,7 @@ pub fn install(path: &Path, force: bool) -> Result<PathBuf> {
         exe.replace('\'', "'\\''")
     );
     fsutil::write_regular(path, script.as_bytes())?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
+    fs_err::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
     Ok(path.to_path_buf())
 }
 
@@ -46,6 +46,6 @@ pub fn uninstall(path: &Path) -> Result<bool> {
             path.display()
         )));
     }
-    std::fs::remove_file(path)?;
+    fs_err::remove_file(path)?;
     Ok(true)
 }

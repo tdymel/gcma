@@ -29,7 +29,7 @@ pub fn run(s: &Session, force: bool) -> Result<()> {
         text.push_str(&line);
         text.push('\n');
         if let Some(dir) = exclude.parent() {
-            std::fs::create_dir_all(dir)?;
+            fs_err::create_dir_all(dir)?;
         }
         fsutil::write_regular(&exclude, text.as_bytes())?;
         println!("added {line} to .git/info/exclude so it is not committed by accident");

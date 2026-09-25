@@ -6,7 +6,7 @@ use crate::domain::error::{Error, Result};
 use crate::domain::history::plan::{OLDEST_PLAN_VERSION, PLAN_VERSION, Plan};
 
 pub fn save(plan: &Plan, path: &Path) -> Result<()> {
-    std::fs::write(path, serde_json::to_vec_pretty(plan)?)?;
+    fs_err::write(path, serde_json::to_vec_pretty(plan)?)?;
     Ok(())
 }
 
