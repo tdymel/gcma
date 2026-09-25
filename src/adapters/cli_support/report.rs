@@ -6,13 +6,13 @@ use crate::application::ports::CommitStore;
 use crate::domain::error::Result;
 
 /// Control characters in commit data must not reach the terminal.
-pub(super) fn sanitize(s: &str) -> String {
+pub fn sanitize(s: &str) -> String {
     s.chars()
         .map(|c| if c.is_control() && c != '\n' { '?' } else { c })
         .collect()
 }
 
-pub(super) fn print_plan(repo: &dyn CommitStore, b: &Built) -> Result<()> {
+pub fn print_plan(repo: &dyn CommitStore, b: &Built) -> Result<()> {
     let p = &b.plan;
     if p.is_empty() {
         if b.range_len == 0 {

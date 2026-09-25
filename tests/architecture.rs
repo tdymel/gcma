@@ -4,7 +4,7 @@
 //! application use cases and the ports they need; depends on the domain only
 //! infra       leaf adapters implementing ports or reading/writing files
 //! wiring      the composition of leaf adapters into one repository
-//! cli         the driving adapter; may use everything
+//! cli         the driving adapter (the commands and their shared support); may use everything
 
 use archunit::{FileInfo, assert_passes, project_files, project_layers};
 
@@ -35,6 +35,8 @@ fn layers_only_depend_inwards() {
         .defined_by("src/adapters/repository.rs")
         .layer("cli")
         .defined_by("src/adapters/cli/**")
+        .layer("cli")
+        .defined_by("src/adapters/cli_support/**")
         .where_layer("domain")
         .may_only_depend_on_layers(&[])
         .where_layer("application")
@@ -120,6 +122,7 @@ fn application_is_layered_internally() {
 const ADAPTER_PLACES: &[&str] = &[
     "src/adapters/mod.rs",
     "src/adapters/cli/",
+    "src/adapters/cli_support/",
     "src/adapters/git_cli/",
     "src/adapters/gix_store.rs",
     "src/adapters/config_file.rs",

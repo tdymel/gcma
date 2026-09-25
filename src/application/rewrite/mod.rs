@@ -5,5 +5,5 @@ mod backups;
 mod paths;
 mod verify;
 
-pub use apply::{apply, ensure_plan_matches_config};
+pub use apply::{ApplyReport, apply, ensure_plan_matches_config};
 pub use backups::{list_backups, prune, restore};
