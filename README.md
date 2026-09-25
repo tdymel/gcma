@@ -65,8 +65,9 @@ hook: { mode: verify }    # verify | rewrite
 
 Working hours may be several ranges, and a range may run past midnight. An overnight range belongs to the weekday it
 starts on: with `days: [fri]` and `hours: "18:00-06:00"` commits land on Friday evening and early Saturday, never on
-Saturday evening. Commits that already sit inside the window (and carry the configured timezone's offset) are left
-alone; every other commit is moved to a scheduled time inside it, so a commit made at noon with evening-only hours
+Saturday evening. A commit that conforms in every respect (time inside the window with the configured timezone's offset,
+no signature to strip, identity and message already as the rules want them) is left alone; every other commit is moved
+to a scheduled time inside it, so a commit made at noon with evening-only hours
 ends up on an evening, never earlier than its parents.
 
 Message rules run in this order: `rewrite_trailers`, `strip_trailers` (both repeated until nothing changes), `title_only`,
@@ -159,9 +160,11 @@ In `rewrite` mode it rewrites them and aborts the push so you push again. Delete
 Domain-driven design with a hexagonal layout (`src/`):
 
 ```
-domain/        pure model and rules (no I/O): error, settings, scheduling, text, history
-application/   use cases and the ports they need: planning, rewrite (apply/restore), llm, push_guard, ports
-adapters/      git_cli, gix_store, repository (composition), config_file, plan_file, hook_installer, cli
+domain/        pure model and rules (no I/O): error, settings, scheduling, text, paths, history
+application/   use cases and the ports they need: planning, rewrite (apply/restore), llm, push_guard,
+               preconditions, pathrules, ports
+adapters/      git_cli, gix_store, repository (composition), config_file, plan_file, hook_installer,
+               llm_jsonl, fsutil, convert, cli (the commands) and cli_support (grammar, session, output)
 ```
 
 Dependencies point inwards only: `domain` knows nothing of ours, `application` only the domain, the leaf adapters
