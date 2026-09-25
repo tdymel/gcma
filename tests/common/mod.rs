@@ -504,3 +504,24 @@ pub fn remote_tip(remote: &Path, branch: &str) -> String {
         .unwrap();
     String::from_utf8_lossy(&o.stdout).trim().to_string()
 }
+
+impl Repo {
+    /// (committer time, committer UTC offset in minutes) of every commit, oldest first.
+    pub fn committer_offsets(&self) -> Vec<(i64, i32)> {
+        self.git(&[
+            "log",
+            "--reverse",
+            "--topo-order",
+            "--format=%cd",
+            "--date=raw",
+        ])
+        .lines()
+        .map(|l| {
+            let (t, off) = l.split_once(' ').unwrap();
+            let sign = if off.starts_with('-') { -1 } else { 1 };
+            let (h, m): (i32, i32) = (off[1..3].parse().unwrap(), off[3..5].parse().unwrap());
+            (t.parse().unwrap(), sign * (h * 60 + m))
+        })
+        .collect()
+    }
+}

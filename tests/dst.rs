@@ -16,25 +16,6 @@ fn cfg(from: &str, to: &str) -> String {
     )
 }
 
-/// (committer time, committer UTC offset in minutes) of every commit, oldest first.
-fn committer_offsets(r: &Repo) -> Vec<(i64, i32)> {
-    r.git(&[
-        "log",
-        "--reverse",
-        "--topo-order",
-        "--format=%cd",
-        "--date=raw",
-    ])
-    .lines()
-    .map(|l| {
-        let (t, off) = l.split_once(' ').unwrap();
-        let sign = if off.starts_with('-') { -1 } else { 1 };
-        let (h, m): (i32, i32) = (off[1..3].parse().unwrap(), off[3..5].parse().unwrap());
-        (t.parse().unwrap(), sign * (h * 60 + m))
-    })
-    .collect()
-}
-
 /// The night of a day belongs to the day it starts on: 22:00-24:00 of a Saturday or Sunday, or the
 /// first four hours of the day after one.
 fn in_a_weekend_night(t: i64) -> bool {
@@ -64,7 +45,7 @@ fn check_change(from: &str, to: &str) {
     assert_same_content(&old, &new);
 
     let tz: chrono_tz::Tz = TZ.parse().unwrap();
-    let offsets = committer_offsets(&r);
+    let offsets = r.committer_offsets();
     for (t, off) in &offsets {
         assert!(
             in_a_weekend_night(*t),
