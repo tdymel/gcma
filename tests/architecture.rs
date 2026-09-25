@@ -29,6 +29,8 @@ fn layers_only_depend_inwards() {
         .defined_by("src/adapters/hook_installer.rs")
         .layer("infra")
         .defined_by("src/adapters/convert.rs")
+        .layer("infra")
+        .defined_by("src/adapters/fault_injection.rs")
         .layer("wiring")
         .defined_by("src/adapters/repository.rs")
         .layer("cli")
@@ -125,6 +127,7 @@ const ADAPTER_PLACES: &[&str] = &[
     "src/adapters/hook_installer.rs",
     "src/adapters/llm_jsonl.rs",
     "src/adapters/convert.rs",
+    "src/adapters/fault_injection.rs",
     "src/adapters/fsutil.rs",
     "src/adapters/repository.rs",
 ];

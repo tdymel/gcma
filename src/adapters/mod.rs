@@ -3,6 +3,8 @@
 pub mod cli;
 pub mod config_file;
 mod convert;
+#[cfg(test)]
+mod fault_injection;
 mod fsutil;
 pub mod git_cli;
 #[cfg(feature = "gix")]
