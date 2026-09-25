@@ -33,7 +33,10 @@ fn local_midnight(d: NaiveDate, tz: &Tz) -> i64 {
             let naive = midnight + chrono::Duration::minutes(15 * quarter);
             tz.from_local_datetime(&naive).earliest()
         })
-        .map_or_else(|| tz.from_utc_datetime(&midnight).timestamp(), |t| t.timestamp())
+        .map_or_else(
+            || tz.from_utc_datetime(&midnight).timestamp(),
+            |t| t.timestamp(),
+        )
 }
 
 pub fn parse_days(days: &[String]) -> Result<Vec<Weekday>> {
@@ -123,7 +126,10 @@ mod tests {
     #[test]
     fn an_ordinary_midnight_and_an_overlap_are_unchanged() {
         assert_eq!(at("2026-01-01", "UTC", false), 1_767_225_600);
-        assert_eq!(at("2026-01-01", "Europe/Berlin", false), 1_767_225_600 - 3600);
+        assert_eq!(
+            at("2026-01-01", "Europe/Berlin", false),
+            1_767_225_600 - 3600
+        );
         // America/Havana 2026-11-01 00:00 occurs twice; the earlier (CDT, -04:00) is used.
         assert_eq!(at("2026-11-01", "America/Havana", false), 1_793_505_600);
     }
