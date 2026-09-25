@@ -230,3 +230,28 @@ fn without_a_config_file_ghma_is_inert_and_says_so_but_a_named_missing_file_is_a
     assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
     assert!(stderr(&o).contains("does-not-exist.yml"), "{}", stderr(&o));
 }
+
+#[test]
+fn no_upstream_requires_from() {
+    let r = Repo::new();
+    r.linear(2, 1_600_000_000);
+    r.config(IDENTITY_CFG);
+    let o = r.ghma(&["plan"]);
+    assert_eq!(Repo::code(&o), 2, "{}", String::from_utf8_lossy(&o.stderr));
+    let o = r.ghma(&["plan", "--from", "HEAD~5"]);
+    assert_eq!(Repo::code(&o), 2);
+}
+
+#[test]
+fn from_rev_is_exclusive() {
+    let r = Repo::new();
+    let c = r.linear(4, 1_600_000_000);
+    r.config(IDENTITY_CFG);
+    r.ghma_ok(&["apply", "--from", &c[1]]);
+    let rows = r.log();
+    assert_eq!(rows[0].an, "Old Me");
+    assert_eq!(rows[1].an, "Old Me");
+    assert_eq!(rows[1].oid, c[1], "the --from commit itself is untouched");
+    assert_eq!(rows[2].an, "Jane Doe");
+    assert_eq!(rows[3].an, "Jane Doe");
+}

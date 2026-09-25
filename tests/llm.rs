@@ -222,3 +222,90 @@ fn control_characters_in_the_prelude_cannot_reach_the_terminal() {
         "escape sequences must be neutralised on stderr"
     );
 }
+
+#[test]
+fn llm_export_import_apply_roundtrip() {
+    let r = Repo::new();
+    r.commit_at(
+        "a.txt",
+        "wip\n\nSigned-off-by: Old Me <me@home.org>",
+        1_600_000_000,
+    );
+    r.commit_at("b.txt", "fix stuff", 1_600_100_000);
+    r.commit_at("c.txt", "more", 1_600_200_000);
+    r.config("version: 1\n");
+    let old = r.log();
+    let plan = r.path().join("plan.json");
+    // Everything already conforms, so use --all to make all commits editable.
+    r.ghma_ok(&[
+        "plan",
+        "--from",
+        "root",
+        "--all",
+        "--out",
+        plan.to_str().unwrap(),
+    ]);
+
+    let exported = r.ghma_ok(&["export", "--plan", plan.to_str().unwrap()]);
+    let rows: Vec<serde_json::Value> = exported
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0]["i"], 0);
+    assert!(rows[0]["s"].as_str().unwrap().ends_with("1f"));
+    assert!(rows[0].get("a").is_none(), "common author is not repeated");
+    let batch = r.ghma_ok(&[
+        "export",
+        "--plan",
+        plan.to_str().unwrap(),
+        "--batch",
+        "2",
+        "--offset",
+        "1",
+    ]);
+    assert_eq!(batch.lines().count(), 2);
+
+    // A bad reply changes nothing and exits 7.
+    let bad = r.path().join("bad.jsonl");
+    std::fs::write(&bad, "Sure, here you go\n{\"i\":0,\"t\":\"x\"}\n").unwrap();
+    let o = r.ghma(&[
+        "import",
+        "--plan",
+        plan.to_str().unwrap(),
+        bad.to_str().unwrap(),
+    ]);
+    assert_eq!(Repo::code(&o), 7);
+
+    let reply = r.path().join("reply.jsonl");
+    std::fs::write(
+        &reply,
+        "{\"i\":0,\"t\":\"Add first file\",\"b\":\"Introduces a.txt.\\n\\nSigned-off-by: Old Me <me@home.org>\"}\n{\"i\":1,\"t\":\"Add second file\"}\n",
+    )
+    .unwrap();
+    r.ghma_ok(&[
+        "import",
+        "--plan",
+        plan.to_str().unwrap(),
+        reply.to_str().unwrap(),
+    ]);
+    r.ghma_ok(&["apply", "--plan", plan.to_str().unwrap()]);
+
+    let new = r.log();
+    assert_same_shape(&old, &new);
+    assert_eq!(new[0].subject, "Add first file");
+    assert_eq!(new[1].subject, "Add second file");
+    assert_eq!(new[2].subject, "more");
+    let full = r.git(&["log", "-1", "--format=%B", "HEAD~2"]);
+    assert!(
+        full.contains("Introduces a.txt.") && full.contains("Signed-off-by: Old Me"),
+        "{full}"
+    );
+    r.fsck();
+    // The edited messages are the new baseline: nothing left to do.
+    assert!(
+        r.ghma(&["plan", "--check", "--from", "root"])
+            .status
+            .success()
+    );
+}

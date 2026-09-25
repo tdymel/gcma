@@ -11,16 +11,6 @@ fn stderr(o: &std::process::Output) -> String {
     String::from_utf8_lossy(&o.stderr).to_string()
 }
 
-fn remote_tip(remote: &std::path::Path) -> String {
-    let o = std::process::Command::new("git")
-        .arg("--git-dir")
-        .arg(remote)
-        .args(["rev-parse", "main"])
-        .output()
-        .unwrap();
-    String::from_utf8_lossy(&o.stdout).trim().to_string()
-}
-
 fn remote_files(remote: &std::path::Path) -> String {
     let o = std::process::Command::new("git")
         .arg("--git-dir")
@@ -116,7 +106,7 @@ fn rewriting_pushed_secrets_then_force_pushing_removes_them_from_the_remote_bran
     let o = r.git_out(&["push", "-q", "origin", "main"]);
     assert!(!o.status.success(), "non-fast-forward");
     r.git(&["push", "-q", "--force-with-lease", "origin", "main"]);
-    assert_eq!(remote_tip(&remote), r.git(&["rev-parse", "HEAD"]));
+    assert_eq!(remote_tip(&remote, "main"), r.git(&["rev-parse", "HEAD"]));
     assert!(!remote_files(&remote).contains("secrets/"));
     r.fsck();
 }
@@ -182,7 +172,7 @@ fn the_hook_in_rewrite_mode_removes_secrets_aborts_and_the_retry_succeeds() {
 
     let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
     assert!(o.status.success(), "{}", stderr(&o));
-    assert_eq!(remote_tip(&remote), r.git(&["rev-parse", "HEAD"]));
+    assert_eq!(remote_tip(&remote, "main"), r.git(&["rev-parse", "HEAD"]));
     assert!(!remote_files(&remote).contains("secrets/"));
     r.fsck();
 }
@@ -203,7 +193,7 @@ fn a_broken_config_blocks_the_push_and_no_verify_bypasses_the_hook() {
 
     let o = r.git_out(&["push", "-q", "--no-verify", "-u", "origin", "main"]);
     assert!(o.status.success(), "{}", stderr(&o));
-    assert_eq!(remote_tip(&remote), r.git(&["rev-parse", "HEAD"]));
+    assert_eq!(remote_tip(&remote, "main"), r.git(&["rev-parse", "HEAD"]));
 }
 
 #[test]
@@ -212,7 +202,7 @@ fn without_any_rules_the_hook_lets_everything_through() {
     r.commit_at("a.txt", "a", 1_600_000_000);
     let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
     assert!(o.status.success(), "{}", stderr(&o));
-    assert_eq!(remote_tip(&remote), r.git(&["rev-parse", "HEAD"]));
+    assert_eq!(remote_tip(&remote, "main"), r.git(&["rev-parse", "HEAD"]));
 }
 
 #[test]
@@ -223,7 +213,7 @@ fn without_a_config_file_the_hook_lets_everything_through() {
     r.commit_at("a.txt", "a", 1_600_000_000);
     let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
     assert!(o.status.success(), "{}", stderr(&o));
-    assert_eq!(remote_tip(&remote), r.git(&["rev-parse", "HEAD"]));
+    assert_eq!(remote_tip(&remote, "main"), r.git(&["rev-parse", "HEAD"]));
 }
 
 #[test]
@@ -253,4 +243,45 @@ fn the_hook_survives_a_push_of_a_new_branch_from_a_clean_history() {
     r.commit_as("b.txt", "b", 1_600_100_000, "Jane Doe", "jane@work.com");
     let o = r.git_out(&["push", "-q", "-u", "origin", "feature"]);
     assert!(o.status.success(), "{}", stderr(&o));
+}
+
+#[test]
+fn pushed_commits_need_the_flag() {
+    let r = Repo::new();
+    r.linear(3, 1_600_000_000);
+    r.bare_remote();
+    r.git(&["push", "-q", "-u", "origin", "main"]);
+    r.commit_at("local.txt", "local only", 1_600_900_000);
+    r.config(IDENTITY_CFG);
+
+    // Default range is upstream..HEAD: only the unpushed commit changes.
+    let plan = r.ghma_ok(&["plan"]);
+    assert!(plan.contains("1 to rewrite"), "{plan}");
+
+    // Forcing the whole branch hits pushed commits.
+    let o = r.ghma(&["plan", "--from", "root"]);
+    assert_eq!(Repo::code(&o), 5, "{}", String::from_utf8_lossy(&o.stderr));
+    let o = r.ghma(&["apply", "--from", "root"]);
+    assert_eq!(Repo::code(&o), 5);
+    assert_eq!(r.log().iter().filter(|x| x.an == "Jane Doe").count(), 0);
+
+    r.ghma_ok(&["apply", "--from", "root", "--rewrite-pushed"]);
+    assert_eq!(r.log().iter().filter(|x| x.an == "Jane Doe").count(), 4);
+}
+
+#[test]
+fn default_range_rewrites_only_unpushed_commits() {
+    let r = Repo::new();
+    let pushed = r.linear(3, 1_600_000_000);
+    r.bare_remote();
+    r.git(&["push", "-q", "-u", "origin", "main"]);
+    r.commit_at("l1.txt", "l1", 1_600_900_000);
+    r.commit_at("l2.txt", "l2", 1_600_950_000);
+    r.config(IDENTITY_CFG);
+    r.ghma_ok(&["apply"]);
+    let rows = r.log();
+    assert_eq!(rows[2].oid, pushed[2], "pushed commits are untouched");
+    assert_eq!(rows[3].an, "Jane Doe");
+    assert_eq!(rows[4].an, "Jane Doe");
+    r.fsck();
 }

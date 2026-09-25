@@ -231,3 +231,51 @@ fn init_keeps_the_config_out_of_commits_and_starts_inert() {
     );
     assert!(String::from_utf8_lossy(&o.stdout).contains("Nothing to do"));
 }
+
+#[test]
+fn config_errors_exit_2() {
+    let r = Repo::new();
+    r.linear(1, 1_600_000_000);
+    for bad in [
+        "version: 1\nlast: 6mo\n",
+        "version: 3\n",
+        "version: 1\nschedule: {}\n",
+        "version: 1\nidentity:\n  - match: {email: a@x}\n    set: {name: B, email: b@x}\n  - match: {email: b@x}\n    set: {name: C, email: c@x}\n",
+        "version: 1\ntimezone: Mars/Base\n",
+    ] {
+        r.config(bad);
+        let o = r.ghma(&["plan", "--from", "root"]);
+        assert_eq!(
+            Repo::code(&o),
+            2,
+            "{bad}: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+    }
+}
+
+#[test]
+fn all_flag_with_nothing_to_change_is_a_clean_noop() {
+    let r = Repo::new();
+    r.linear(3, 1_600_000_000);
+    r.config("version: 1\n");
+    let tip = r.git(&["rev-parse", "HEAD"]);
+    let o = r.ghma_ok(&["apply", "--from", "root", "--all"]);
+    assert!(o.contains("Nothing to do"), "{o}");
+    assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
+    assert!(r.git(&["for-each-ref", "refs/ghma/backup/"]).is_empty());
+}
+
+#[test]
+fn tags_pointing_into_the_rewrite_are_warned_about() {
+    let r = Repo::new();
+    r.linear(3, 1_600_000_000);
+    r.git(&["tag", "v1", "HEAD~1"]);
+    r.git(&["tag", "-a", "-m", "annotated", "v2", "HEAD"]);
+    r.config(IDENTITY_CFG);
+    let out = r.ghma_ok(&["plan", "--from", "root"]);
+    assert!(
+        out.contains("refs/tags/v1") && out.contains("refs/tags/v2"),
+        "{out}"
+    );
+}
