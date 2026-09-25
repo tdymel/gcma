@@ -104,9 +104,17 @@ impl GitCli {
     }
 
     pub(super) fn run(&self, args: &[&str]) -> Result<Vec<u8>> {
+        self.run_with(args, None)
+    }
+
+    pub(super) fn run_stdin(&self, args: &[&str], input: &[u8]) -> Result<Vec<u8>> {
+        self.run_with(args, Some(input))
+    }
+
+    fn run_with(&self, args: &[&str], input: Option<&[u8]>) -> Result<Vec<u8>> {
         let mut c = self.command();
         c.args(args);
-        let o = self.exec(c, None)?;
+        let o = self.exec(c, input)?;
         if !o.ok {
             return Err(Self::fail(args, &o));
         }
@@ -118,16 +126,6 @@ impl GitCli {
         let mut c = self.command();
         c.args(args);
         Ok(self.exec(c, None)?.ok)
-    }
-
-    pub(super) fn run_stdin(&self, args: &[&str], input: &[u8]) -> Result<Vec<u8>> {
-        let mut c = self.command();
-        c.args(args);
-        let o = self.exec(c, Some(input))?;
-        if !o.ok {
-            return Err(Self::fail(args, &o));
-        }
-        Ok(o.stdout)
     }
 
     pub(super) fn text(&self, args: &[&str]) -> Result<String> {

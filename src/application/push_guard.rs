@@ -25,59 +25,21 @@ pub fn run_pre_push(
 ) -> Result<()> {
     let remotes = repo.remotes()?;
     for p in pushed {
-        let (local_ref, local_sha, remote_sha) = (
-            p.local_ref.as_str(),
-            p.local_sha.as_str(),
-            p.remote_sha.as_str(),
-        );
-        if is_zero_oid(local_sha) {
+        if is_zero_oid(&p.local_sha) {
             continue; // a delete push
         }
-        // Only pushes of the checked-out branch are judged: by name, as `HEAD` (which is what
-        // `git push origin HEAD` and `HEAD:<ref>` report), or by a ref/sha that is the branch tip.
         let Some(branch_ref) = repo.current_branch_ref()? else {
             continue; // detached HEAD
         };
         let tip = repo.ref_value(&branch_ref)?;
-        // A raw revision (`git push origin HEAD~1:main` reports `HEAD~1`) that is part of the
-        // branch is judged as well; named refs other than the branch are not.
-        let ancestor_of_branch = !local_ref.starts_with("refs/")
-            && tip
-                .as_deref()
-                .is_some_and(|t| repo.is_ancestor(local_sha, t).unwrap_or(false));
-        let is_branch = local_ref == branch_ref
-            || local_ref == "HEAD"
-            || tip.as_deref() == Some(local_sha)
-            || ancestor_of_branch;
-        if !is_branch {
+        if !is_branch_push(repo, p, &branch_ref, tip.as_deref()) {
             continue;
         }
-        let known_remote = !is_zero_oid(remote_sha) && repo.resolve_commit(remote_sha)?.is_some();
-        let (exclude_commits, exclude_remotes, base) = if known_remote {
-            (
-                vec![remote_sha.to_string()],
-                None,
-                Some(remote_sha.to_string()),
-            )
-        } else if remotes.iter().any(|r| r == remote) {
-            (
-                Vec::new(),
-                Some(RemoteScope::Named(remote.to_string())),
-                None,
-            )
-        } else {
-            (Vec::new(), Some(RemoteScope::All), None)
-        };
-        let range = RangeSpec {
-            tip: local_sha.to_string(),
-            branch_ref: branch_ref.clone(),
-            exclude_commits,
-            exclude_remotes,
-            base,
-        };
+        let range = unpushed_range(repo, p, remote, &remotes, &branch_ref)?;
         // Rewriting is only possible when the pushed commit is the branch tip; the plan is built
         // once, with the strict (clean index) preconditions only when we are going to write.
-        let rewrite = cfg.hook.mode == HookMode::Rewrite && tip.as_deref() == Some(local_sha);
+        let rewrite =
+            cfg.hook.mode == HookMode::Rewrite && tip.as_deref() == Some(p.local_sha.as_str());
         let opts = PlanOptions {
             range: Some(range),
             strict: rewrite,
@@ -87,7 +49,6 @@ pub fn run_pre_push(
         if built.plan.is_empty() {
             continue;
         }
-        let n = built.plan.entries.len() + built.plan.dropped.len();
         if rewrite {
             let report = apply(repo, &built.plan, false, now)?;
             if !report.noop {
@@ -98,15 +59,68 @@ pub fn run_pre_push(
             }
             continue;
         }
-        let hint = if repo.upstream_oid(&branch_ref)?.is_none() {
-            " (the branch has no upstream: add `--from <rev>`)"
-        } else {
-            ""
-        };
-        return Err(Error::Nonconforming(format!(
-            "{n} commit(s) about to be pushed do not follow the gcma rules; \
-             run `gcma apply`{hint} (it rewrites the unpushed part of the branch) and push again"
-        )));
+        let n = built.plan.entries.len() + built.plan.dropped.len();
+        return Err(blocked(repo, &branch_ref, n)?);
     }
     Ok(())
+}
+
+/// Only pushes of the checked-out branch are judged: by name, as `HEAD` (which is what
+/// `git push origin HEAD` and `HEAD:<ref>` report), or by a ref/sha that is the branch tip. A raw
+/// revision (`git push origin HEAD~1:main` reports `HEAD~1`) that is part of the branch is judged
+/// as well; named refs other than the branch are not.
+fn is_branch_push(
+    repo: &dyn Repository,
+    p: &PushedRef,
+    branch_ref: &str,
+    tip: Option<&str>,
+) -> bool {
+    let ancestor_of_branch = !p.local_ref.starts_with("refs/")
+        && tip.is_some_and(|t| repo.is_ancestor(&p.local_sha, t).unwrap_or(false));
+    p.local_ref == branch_ref
+        || p.local_ref == "HEAD"
+        || tip == Some(p.local_sha.as_str())
+        || ancestor_of_branch
+}
+
+/// The commits the push would send: `remote_sha..local_sha`, or for a remote sha we do not have
+/// (a new branch) everything not on the remote's tracking refs.
+fn unpushed_range(
+    repo: &dyn Repository,
+    p: &PushedRef,
+    remote: &str,
+    remotes: &[String],
+    branch_ref: &str,
+) -> Result<RangeSpec> {
+    let known_remote = !is_zero_oid(&p.remote_sha) && repo.resolve_commit(&p.remote_sha)?.is_some();
+    let (exclude_commits, exclude_remotes, base) = if known_remote {
+        (vec![p.remote_sha.clone()], None, Some(p.remote_sha.clone()))
+    } else if remotes.iter().any(|r| r == remote) {
+        (
+            Vec::new(),
+            Some(RemoteScope::Named(remote.to_string())),
+            None,
+        )
+    } else {
+        (Vec::new(), Some(RemoteScope::All), None)
+    };
+    Ok(RangeSpec {
+        tip: p.local_sha.clone(),
+        branch_ref: branch_ref.to_string(),
+        exclude_commits,
+        exclude_remotes,
+        base,
+    })
+}
+
+fn blocked(repo: &dyn Repository, branch_ref: &str, n: usize) -> Result<Error> {
+    let hint = if repo.upstream_oid(branch_ref)?.is_none() {
+        " (the branch has no upstream: add `--from <rev>`)"
+    } else {
+        ""
+    };
+    Ok(Error::Nonconforming(format!(
+        "{n} commit(s) about to be pushed do not follow the gcma rules; \
+         run `gcma apply`{hint} (it rewrites the unpushed part of the branch) and push again"
+    )))
 }

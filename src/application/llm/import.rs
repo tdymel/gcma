@@ -53,73 +53,18 @@ pub fn import(plan: &mut Plan, reply: Vec<ReplyLine>, cfg: &Config) -> Result<Im
                 continue;
             }
         };
-        let mut bad = |m: String| {
-            errors.push(format!("row i={}: {m}", row.index));
-            retry.push(row.index);
+        let checked = match plan.entries.get(row.index) {
+            None => Err(format!("unknown index (valid: 0..{})", plan.entries.len())),
+            Some(_) if !seen.insert(row.index) => Err("duplicate index".to_string()),
+            Some(entry) => validate_row(&row, &entry.message, cfg),
         };
-        if row.index >= plan.entries.len() {
-            bad(format!("unknown index (valid: 0..{})", plan.entries.len()));
-            continue;
-        }
-        if !seen.insert(row.index) {
-            bad("duplicate index".into());
-            continue;
-        }
-        let title = row.title.trim();
-        if title.is_empty() {
-            bad("empty title".into());
-            continue;
-        }
-        if title.contains('\n') || title.contains('\r') {
-            bad("the title must be a single line".into());
-            continue;
-        }
-        if title.chars().count() > 200 {
-            bad("title longer than 200 characters".into());
-            continue;
-        }
-        let mut msg = title.as_bytes().to_vec();
-        if let Some(b) = row.body.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
-            msg.extend_from_slice(b"\n\n");
-            msg.extend_from_slice(b.as_bytes());
-        }
-        msg.push(b'\n');
-        if msg.iter().any(|&b| b < 0x20 && !matches!(b, b'\n' | b'\t')) {
-            bad("the message contains control characters".into());
-            continue;
-        }
-        let old = &plan.entries[row.index].message;
-        if let Some(missing) = protected_trailers(old, &cfg.messages.strip_trailers)
-            .into_iter()
-            .find(|t| !msg.split(|&c| c == b'\n').any(|l| l == t.as_slice()))
-        {
-            bad(format!(
-                "the trailer {:?} was dropped",
-                String::from_utf8_lossy(&missing)
-            ));
-            continue;
-        }
-        if messages::strip_trailers(&msg, &cfg.messages.strip_trailers) != msg {
-            bad("the message contains a trailer that `messages.strip_trailers` removes".into());
-            continue;
-        }
-        let had = messages::trailers(old);
-        if let Some(forged) = protected_trailers(&msg, &[])
-            .into_iter()
-            .find(|t| !had.contains(t))
-        {
-            bad(format!(
-                "the trailer {:?} is new; a reply may not add Signed-off-by or Co-authored-by lines",
-                String::from_utf8_lossy(&forged)
-            ));
-            continue;
-        }
-        // The reply cannot know about trailers the rules append; they are put back here.
-        let msg = cfg.rewrite_message(&msg);
-        if msg == *old {
-            unchanged += 1;
-        } else {
-            updates.push((row.index, msg));
+        match checked {
+            Ok(msg) if msg == plan.entries[row.index].message => unchanged += 1,
+            Ok(msg) => updates.push((row.index, msg)),
+            Err(why) => {
+                errors.push(format!("row i={}: {why}", row.index));
+                retry.push(row.index);
+            }
         }
     }
     if !errors.is_empty() {
@@ -139,6 +84,54 @@ pub fn import(plan: &mut Plan, reply: Vec<ReplyLine>, cfg: &Config) -> Result<Im
         changed,
         unchanged_rows: unchanged,
     })
+}
+
+/// The full message a reply row stands for (rules that append trailers applied), or why the row
+/// is refused. `old` is the message the entry has now.
+fn validate_row(row: &Reply, old: &[u8], cfg: &Config) -> std::result::Result<Vec<u8>, String> {
+    let title = row.title.trim();
+    if title.is_empty() {
+        return Err("empty title".into());
+    }
+    if title.contains('\n') || title.contains('\r') {
+        return Err("the title must be a single line".into());
+    }
+    if title.chars().count() > 200 {
+        return Err("title longer than 200 characters".into());
+    }
+    let mut msg = title.as_bytes().to_vec();
+    if let Some(b) = row.body.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
+        msg.extend_from_slice(b"\n\n");
+        msg.extend_from_slice(b.as_bytes());
+    }
+    msg.push(b'\n');
+    if msg.iter().any(|&b| b < 0x20 && !matches!(b, b'\n' | b'\t')) {
+        return Err("the message contains control characters".into());
+    }
+    if let Some(missing) = protected_trailers(old, &cfg.messages.strip_trailers)
+        .into_iter()
+        .find(|t| !msg.split(|&c| c == b'\n').any(|l| l == t.as_slice()))
+    {
+        return Err(format!(
+            "the trailer {:?} was dropped",
+            String::from_utf8_lossy(&missing)
+        ));
+    }
+    if messages::strip_trailers(&msg, &cfg.messages.strip_trailers) != msg {
+        return Err("the message contains a trailer that `messages.strip_trailers` removes".into());
+    }
+    let had = messages::trailers(old);
+    if let Some(forged) = protected_trailers(&msg, &[])
+        .into_iter()
+        .find(|t| !had.contains(t))
+    {
+        return Err(format!(
+            "the trailer {:?} is new; a reply may not add Signed-off-by or Co-authored-by lines",
+            String::from_utf8_lossy(&forged)
+        ));
+    }
+    // The reply cannot know about trailers the rules append; they are put back here.
+    Ok(cfg.rewrite_message(&msg))
 }
 
 #[cfg(test)]
