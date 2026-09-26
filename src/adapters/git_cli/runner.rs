@@ -111,10 +111,16 @@ impl GitCli {
         self.run_with(args, Some(input))
     }
 
-    fn run_with(&self, args: &[&str], input: Option<&[u8]>) -> Result<Vec<u8>> {
+    /// Spawns `git args` (with `stdin` piped in, if any) and collects the result, whatever the
+    /// exit status.
+    pub(super) fn output(&self, args: &[&str], stdin: Option<&[u8]>) -> Result<Out> {
         let mut c = self.command();
         c.args(args);
-        let o = self.exec(c, input)?;
+        self.exec(c, stdin)
+    }
+
+    fn run_with(&self, args: &[&str], input: Option<&[u8]>) -> Result<Vec<u8>> {
+        let o = self.output(args, input)?;
         if !o.ok {
             return Err(Self::fail(args, &o));
         }
@@ -123,9 +129,7 @@ impl GitCli {
 
     /// Runs and reports only whether git exited successfully.
     pub(super) fn succeeds(&self, args: &[&str]) -> Result<bool> {
-        let mut c = self.command();
-        c.args(args);
-        Ok(self.exec(c, None)?.ok)
+        Ok(self.output(args, None)?.ok)
     }
 
     pub(super) fn text(&self, args: &[&str]) -> Result<String> {
@@ -137,9 +141,7 @@ impl GitCli {
 
     /// Stdout of a command that may legitimately fail (an unresolvable rev, a missing ref).
     pub(super) fn try_text(&self, args: &[&str]) -> Result<Option<String>> {
-        let mut c = self.command();
-        c.args(args);
-        let o = self.exec(c, None)?;
+        let o = self.output(args, None)?;
         Ok(o.ok.then(|| String::from_utf8_lossy(&o.stdout).trim().to_string()))
     }
 }

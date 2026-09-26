@@ -20,18 +20,7 @@ pub fn run(s: &Session, force: bool) -> Result<()> {
     // The config names identities and paths you want hidden: keep it out of commits.
     let exclude = repo.git_path("info/exclude")?;
     let line = format!("/{CONFIG_FILE}");
-    let current = fsutil::read_regular(&exclude)?.unwrap_or_default();
-    if !String::from_utf8_lossy(&current).lines().any(|l| l == line) {
-        let mut text = String::from_utf8_lossy(&current).to_string();
-        if !text.is_empty() && !text.ends_with('\n') {
-            text.push('\n');
-        }
-        text.push_str(&line);
-        text.push('\n');
-        if let Some(dir) = exclude.parent() {
-            fs_err::create_dir_all(dir)?;
-        }
-        fsutil::write_regular(&exclude, text.as_bytes())?;
+    if fsutil::ensure_line_once(&exclude, &line)? {
         println!("added {line} to .git/info/exclude so it is not committed by accident");
     }
     Ok(())

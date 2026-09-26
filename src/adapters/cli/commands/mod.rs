@@ -1,4 +1,5 @@
-//! One module per command; `cli::run` only dispatches.
+//! One module per command. `cli` only parses and dispatches; each command opens what it needs
+//! from the `Session` and hands the printing to `cli_support::report`.
 
 pub mod apply;
 pub mod hook;

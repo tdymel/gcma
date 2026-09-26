@@ -32,7 +32,7 @@ pub fn export(
 }
 
 pub fn import(s: &Session, plan: PathBuf, out: Option<PathBuf>, reply: &str) -> Result<()> {
-    let (_, cfg) = s.open()?;
+    let cfg = s.load_config()?;
     let mut p = plan_file::load(&plan)?;
     let text = if reply == "-" {
         let mut s = String::new();

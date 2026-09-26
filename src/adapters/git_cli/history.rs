@@ -36,11 +36,8 @@ impl History for GitCli {
     }
 
     fn count_reachable(&self, rev: &str) -> Result<usize> {
-        Ok(self
-            .text(&["rev-list", "--count", rev])?
-            .trim()
-            .parse()
-            .unwrap_or(0))
+        let out = self.text(&["rev-list", "--count", rev])?;
+        parse_count(&out)
     }
 
     fn unpushed_among(&self, oids: &[String], upstream: &str) -> Result<HashSet<String>> {
@@ -121,5 +118,26 @@ impl History for GitCli {
             )));
         }
         Ok(stats)
+    }
+}
+
+/// The number `git rev-list --count` printed; anything else is a git failure, not zero commits.
+fn parse_count(out: &str) -> Result<usize> {
+    out.trim().parse().map_err(|_| {
+        Error::Git(format!(
+            "`git rev-list --count` printed {out:?}, not a number"
+        ))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_count_that_is_not_a_number_is_an_error() {
+        assert_eq!(parse_count("42\n").unwrap(), 42);
+        assert!(matches!(parse_count(""), Err(Error::Git(_))));
+        assert!(matches!(parse_count("fatal"), Err(Error::Git(_))));
     }
 }

@@ -1,56 +1,38 @@
-//! `gcma restore`: list backups, restore one, or prune one.
+//! `gcma restore`: list backups, restore one, or prune one. Never reads the config, so a broken
+//! `gcma.yml` cannot get in the way of an undo.
 
+use crate::adapters::cli_support::report::{print_backups, print_pruned, print_restored};
 use crate::adapters::cli_support::session::Session;
 use crate::application::rewrite::{list_backups, prune, restore};
 use crate::domain::error::{Error, Result};
 
 pub fn run(s: &Session, id: Option<String>, force: bool, prune_it: bool) -> Result<()> {
+    if id.is_none() && prune_it {
+        return Err(Error::Usage("--prune needs a backup id".into()));
+    }
+    let repo = s.open_repo()?;
     match id {
-        None if prune_it => Err(Error::Usage("--prune needs a backup id".into())),
-        None => list(s),
-        Some(id) if prune_it => forget(s, &id),
-        Some(id) => undo(s, &id, force),
-    }
-}
-
-fn list(s: &Session) -> Result<()> {
-    let (repo, _) = s.open()?;
-    let all = list_backups(&repo)?;
-    if all.is_empty() {
-        println!("No backups.");
-    }
-    for b in all {
-        println!(
-            "{}  branch {}  old {}  new {}",
-            b.id, b.branch, b.old, b.new
-        );
-    }
-    Ok(())
-}
-
-fn forget(s: &Session, id: &str) -> Result<()> {
-    let (repo, _) = s.open()?;
-    let b = prune(&repo, id)?;
-    println!(
-        "pruned backup {}. The original commits are only collected once nothing else (reflog, tags, \
-other branches) refers to them; see the README on purging history.",
-        b.id
-    );
-    Ok(())
-}
-
-fn undo(s: &Session, id: &str, force: bool) -> Result<()> {
-    let (repo, _) = s.open()?;
-    let report = restore(&repo, id, force)?;
-    println!("{} restored to {}", report.backup.branch, report.backup.old);
-    for n in &report.notes {
-        eprintln!("warning: {n}");
-    }
-    if let Some(r) = report.parked {
-        println!(
-            "The newer commits are kept at {r}. The index and working tree were not \
-             touched and may still hold their content (inspect with `git status`)."
-        );
+        None => {
+            let all = list_backups(&repo)?;
+            print_backups(all.iter().map(|b| {
+                (
+                    b.id.as_str(),
+                    b.branch.as_str(),
+                    b.old.as_str(),
+                    b.new.as_str(),
+                )
+            }));
+        }
+        Some(id) if prune_it => print_pruned(&prune(&repo, &id)?.id),
+        Some(id) => {
+            let r = restore(&repo, &id, force)?;
+            print_restored(
+                &r.backup.branch,
+                &r.backup.old,
+                &r.notes,
+                r.parked.as_deref(),
+            );
+        }
     }
     Ok(())
 }

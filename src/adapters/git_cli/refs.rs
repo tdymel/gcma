@@ -54,9 +54,10 @@ impl RefStore for GitCli {
             }
         }
         input.push_str("prepare\ncommit\n");
-        let mut c = self.command();
-        c.args(["update-ref", "-m", message, "--stdin"]);
-        let o = self.exec(c, Some(input.as_bytes()))?;
+        let o = self.output(
+            &["update-ref", "-m", message, "--stdin"],
+            Some(input.as_bytes()),
+        )?;
         if !o.ok {
             let why = String::from_utf8_lossy(&o.stderr).trim().to_string();
             // A compare-and-swap that lost, or a backup ref that exists already; anything else
