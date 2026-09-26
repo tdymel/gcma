@@ -1,14 +1,13 @@
 //! The apply use case: check, write, verify, then move the branch in one ref transaction.
 
 use super::backups::BACKUP_PREFIX;
-use super::paths::{check_dropped, expected_tree, plan_filter};
-use super::verify::{check_plan_against_history, verify};
+use super::prepared::{Prepared, prepare};
+use super::verify::verify;
 use super::worktree_sync::sync_worktree;
-use crate::application::pathrules::TreeRewriter;
 use crate::application::ports::{RefUpdate, Repository};
 use crate::application::preconditions::{check_preconditions, refuse_pushed};
 use crate::domain::error::{Error, Result};
-use crate::domain::history::commit::{Commit, NewCommit, short};
+use crate::domain::history::commit::{NewCommit, short};
 use crate::domain::history::plan::Plan;
 use crate::domain::settings::Config;
 
@@ -68,16 +67,15 @@ pub fn apply(
     check_repository(repo, plan, rewrite_pushed)?;
     let prepared = prepare(repo, plan)?;
     let new_oids = write_commits(repo, plan, &prepared)?;
-    verify(repo, plan, &prepared.old, &new_oids, &prepared.trees)?;
-    let new_tip = prepared.tip_target(plan, &new_oids);
+    verify(repo, plan, &prepared, &new_oids)?;
+    let new_tip = prepared.tip.resolve(&new_oids);
     if new_tip == plan.tip_oid {
         return Ok(noop(plan.entries.len()));
     }
     let id = move_branch(repo, plan, &new_tip, now)?;
-    let notes = if prepared.path_rules {
-        let old_tip = repo.read_commits(std::slice::from_ref(&plan.tip_oid))?;
+    let notes = if prepared.filter.is_some() {
         // With path rules the tree changed: the index and `.gitignore` must follow the branch.
-        let mut notes = sync_worktree(repo, &old_tip[0], &new_tip);
+        let mut notes = sync_worktree(repo, &prepared.old_tip, &new_tip);
         notes.push(SECRETS_NOTE.into());
         notes
     } else {
@@ -122,50 +120,6 @@ fn check_repository(repo: &dyn Repository, plan: &Plan, rewrite_pushed: bool) ->
         ));
     }
     Ok(())
-}
-
-/// What the plan was checked against: the old commits, and the tree each new commit must have.
-struct Prepared {
-    old: Vec<Commit>,
-    trees: Vec<String>,
-    path_rules: bool,
-}
-
-impl Prepared {
-    /// The branch tip after the rewrite, given the ids of the new commits.
-    fn tip_target(&self, plan: &Plan, new_oids: &[String]) -> String {
-        plan.tip_target()
-            .map(|p| p.resolve(new_oids))
-            .expect("checked in prepare")
-    }
-}
-
-/// Cross-checks the plan against the real history so an edited or stale plan cannot corrupt it.
-fn prepare(repo: &dyn Repository, plan: &Plan) -> Result<Prepared> {
-    let old_oids: Vec<String> = plan.entries.iter().map(|e| e.old_oid.clone()).collect();
-    let old = repo.read_commits(&old_oids)?;
-    let dropped = repo.read_commits(&plan.dropped)?;
-    check_plan_against_history(plan, &old, &dropped)?;
-    let filter = plan_filter(plan)?;
-    let rewriter = filter.as_ref().map(|f| TreeRewriter::new(repo, f));
-    check_dropped(repo, rewriter.as_ref(), &dropped)?;
-    let trees = plan
-        .entries
-        .iter()
-        .zip(&old)
-        .enumerate()
-        .map(|(i, (e, o))| expected_tree(rewriter.as_ref(), o, e, i))
-        .collect::<Result<Vec<String>>>()?;
-    if plan.tip_target().is_none() {
-        return Err(Error::Usage(
-            "the plan neither rewrites the tip nor says where the branch ends up".into(),
-        ));
-    }
-    Ok(Prepared {
-        old,
-        trees,
-        path_rules: rewriter.is_some(),
-    })
 }
 
 /// Writes the new commits, parents first (unreferenced objects; nothing is visible yet).

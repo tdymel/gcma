@@ -3,6 +3,7 @@
 mod apply;
 mod backups;
 mod paths;
+mod prepared;
 mod verify;
 mod worktree_sync;
 
