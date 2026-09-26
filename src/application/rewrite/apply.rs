@@ -1,8 +1,9 @@
 //! The apply use case: check, write, verify, then move the branch in one ref transaction.
 
 use super::backups::BACKUP_PREFIX;
-use super::paths::{check_dropped, expected_tree, plan_filter, sync_worktree};
+use super::paths::{check_dropped, expected_tree, plan_filter};
 use super::verify::{check_plan_against_history, verify};
+use super::worktree_sync::sync_worktree;
 use crate::application::pathrules::TreeRewriter;
 use crate::application::ports::{RefUpdate, Repository};
 use crate::application::preconditions::{check_preconditions, refuse_pushed};

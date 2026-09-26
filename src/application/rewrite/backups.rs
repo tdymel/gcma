@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use super::paths::sync_worktree;
+use super::worktree_sync::sync_worktree;
 use crate::application::ports::{RefUpdate, Repository};
 use crate::application::preconditions::check_preconditions;
 use crate::domain::error::{Error, Result};
