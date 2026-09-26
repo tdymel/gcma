@@ -26,24 +26,35 @@ pub(super) fn resolve_backend(
     }))
 }
 
-/// Opens the repository with the selected backend and loads the config.
+/// Opens the repository with the backend from `--backend` or `GCMA_BACKEND` (or the build's
+/// default), without reading any config. This is what the undo path (`restore`, `hook install`
+/// and `uninstall`) uses, so a broken `gcma.yml` can never block it.
+pub(super) fn open_repo(dir: &Path, flag: Option<Backend>) -> Result<GitCli> {
+    attach(GitCli::open(dir)?, flag, None)
+}
+
+/// Opens the repository and loads the config; the config's `backend:` is the third choice.
 pub(super) fn open(
     dir: &Path,
     config: &Option<PathBuf>,
     flag: Option<Backend>,
 ) -> Result<(GitCli, Config)> {
     let cli = GitCli::open(dir)?;
-    let cfg = load_config(&cli, config)?;
-    let env = std::env::var("GCMA_BACKEND").ok();
-    let want = resolve_backend(flag, env.as_deref(), cfg.backend)?;
-    Ok((repository::with_backend(cli, want)?, cfg))
+    let cfg = load_config(config, || Ok(cli.dir().to_path_buf()))?;
+    let repo = attach(cli, flag, cfg.backend)?;
+    Ok((repo, cfg))
 }
 
-fn load_config(cli: &GitCli, explicit: &Option<PathBuf>) -> Result<Config> {
+/// Loads the config: the explicit file, else `gcma.yml` in the repository root (`root` is only
+/// asked for in that case), else the defaults.
+pub(super) fn load_config(
+    explicit: &Option<PathBuf>,
+    root: impl FnOnce() -> Result<PathBuf>,
+) -> Result<Config> {
     match explicit {
         Some(p) => config_file::load(p),
         None => {
-            let p = cli.dir().join(CONFIG_FILE);
+            let p = root()?.join(CONFIG_FILE);
             if p.exists() {
                 config_file::load(&p)
             } else {
@@ -51,6 +62,11 @@ fn load_config(cli: &GitCli, explicit: &Option<PathBuf>) -> Result<Config> {
             }
         }
     }
+}
+
+fn attach(cli: GitCli, flag: Option<Backend>, cfg: Option<Backend>) -> Result<GitCli> {
+    let env = std::env::var("GCMA_BACKEND").ok();
+    repository::with_backend(cli, resolve_backend(flag, env.as_deref(), cfg)?)
 }
 
 #[cfg(test)]

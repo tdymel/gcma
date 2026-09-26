@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use super::args::RangeArgs;
-use super::backend::open;
+use super::backend::{load_config, open, open_repo};
 use crate::adapters::config_file::CONFIG_FILE;
 use crate::adapters::git_cli::GitCli;
 use crate::application::planning::PlanOptions;
@@ -20,6 +20,20 @@ impl Session {
     /// The repository (with the selected backend) and the config.
     pub fn open(&self) -> Result<(GitCli, Config)> {
         open(&self.start, &self.config, self.backend)
+    }
+
+    /// The repository alone: the config is never read, so a broken one cannot block commands
+    /// that undo or clean up (`restore`, `hook install`, `hook uninstall`).
+    pub fn open_repo(&self) -> Result<GitCli> {
+        open_repo(&self.start, self.backend)
+    }
+
+    /// The config alone, without opening an object backend (an explicit `--config` needs no
+    /// repository at all).
+    pub fn load_config(&self) -> Result<Config> {
+        load_config(&self.config, || {
+            Ok(GitCli::open(&self.start)?.dir().to_path_buf())
+        })
     }
 }
 

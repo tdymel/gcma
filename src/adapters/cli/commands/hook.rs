@@ -8,18 +8,14 @@ use crate::adapters::hook_installer;
 use crate::application::push_guard::{self, PushedRef};
 use crate::domain::error::{Error, Result};
 
-const PRE_PUSH: &str = "hooks/pre-push";
-
 pub fn run(s: &Session, cmd: HookCmd) -> Result<()> {
     match cmd {
         HookCmd::Install { force } => {
-            let (repo, _) = s.open()?;
-            let path = hook_installer::install(&repo.git_path(PRE_PUSH)?, force)?;
+            let path = hook_installer::install(&s.open_repo()?, force)?;
             println!("installed {}", path.display());
         }
         HookCmd::Uninstall => {
-            let (repo, _) = s.open()?;
-            let removed = hook_installer::uninstall(&repo.git_path(PRE_PUSH)?)?;
+            let removed = hook_installer::uninstall(&s.open_repo()?)?;
             println!(
                 "{}",
                 if removed {
