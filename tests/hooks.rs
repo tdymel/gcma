@@ -4,8 +4,6 @@ mod common;
 
 use common::*;
 
-const IDENTITY_CFG: &str = "version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n";
-
 #[test]
 fn hook_case_only_new_commits_are_rescheduled() {
     let r = Repo::new();

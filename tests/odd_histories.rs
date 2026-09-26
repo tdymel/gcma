@@ -10,9 +10,6 @@ use std::os::unix::ffi::OsStrExt;
 use chrono::TimeZone;
 use common::*;
 
-const IDENTITY_CFG: &str = "version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n";
-const T0: i64 = 1_600_000_000;
-
 fn stderr(o: &std::process::Output) -> String {
     String::from_utf8_lossy(&o.stderr).to_string()
 }

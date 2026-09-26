@@ -5,8 +5,6 @@ mod common;
 
 use common::*;
 
-const IDENTITY_CFG: &str = "version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n";
-
 fn out(o: &std::process::Output) -> String {
     String::from_utf8_lossy(&o.stdout).to_string()
 }

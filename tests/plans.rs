@@ -6,8 +6,6 @@ mod common;
 use common::*;
 use serde_json::{Value, json};
 
-const CFG: &str = "version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n";
-
 fn stderr(o: &std::process::Output) -> String {
     String::from_utf8_lossy(&o.stderr).to_string()
 }
@@ -31,7 +29,7 @@ fn merge_repo() -> Repo {
         .unwrap();
     assert!(o.status.success());
     r.commit_at("z.txt", "z", 1_600_500_000);
-    r.config(CFG);
+    r.config(IDENTITY_CFG);
     r
 }
 
@@ -305,7 +303,7 @@ fn swapped_sibling_entries_are_refused_or_produce_a_valid_history() {
 fn tip_moved_after_planning_is_refused() {
     let r = Repo::new();
     r.linear(3, 1_600_000_000);
-    r.config(CFG);
+    r.config(IDENTITY_CFG);
     let plan = r.path().join("plan.json");
     r.gcma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
     r.commit_at("extra.txt", "extra", 1_600_900_000);
@@ -319,7 +317,7 @@ fn tip_moved_after_planning_is_refused() {
 fn saved_plan_applies_later() {
     let r = Repo::new();
     r.linear(3, 1_600_000_000);
-    r.config(CFG);
+    r.config(IDENTITY_CFG);
     let plan = r.path().join("plan.json");
     r.gcma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
     r.gcma_ok(&["apply", "--plan", plan.to_str().unwrap()]);
@@ -330,7 +328,7 @@ fn saved_plan_applies_later() {
 fn tampered_plan_is_rejected_before_anything_is_written() {
     let r = Repo::new();
     r.linear(3, 1_600_000_000);
-    r.config(CFG);
+    r.config(IDENTITY_CFG);
     let tip = r.git(&["rev-parse", "HEAD"]);
     let path = r.path().join("plan.json");
     r.gcma_ok(&["plan", "--from", "root", "--out", path.to_str().unwrap()]);

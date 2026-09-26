@@ -4,9 +4,6 @@ mod common;
 
 use common::*;
 
-const IDENTITY_CFG: &str = "version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n";
-const SECRETS_CFG: &str = "version: 1\npaths:\n  exclude: [\"secrets/\"]\n";
-
 fn stderr(o: &std::process::Output) -> String {
     String::from_utf8_lossy(&o.stderr).to_string()
 }

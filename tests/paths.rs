@@ -4,8 +4,6 @@ mod common;
 
 use common::*;
 
-const CFG: &str = "version: 1\npaths:\n  exclude: [\"secrets/\"]\n";
-
 /// a, key only, b + key2, c.
 fn history_with_secrets(r: &Repo) {
     r.commit_files(&[("a.txt", "a\n")], "add a", 1_600_000_000);
@@ -37,7 +35,7 @@ fn status_without_config(r: &Repo) -> String {
 fn excluded_paths_leave_history_but_not_the_project() {
     let r = Repo::new();
     history_with_secrets(&r);
-    r.config(CFG);
+    r.config(SECRETS_CFG);
     let old_tip = r.git(&["rev-parse", "HEAD"]);
 
     let plan = r.gcma_ok(&["plan", "--from", "root"]);
@@ -126,7 +124,7 @@ fn a_tip_that_only_touches_excluded_paths_stays_as_the_gitignore_carrier() {
     let r = Repo::new();
     r.commit_files(&[("a.txt", "a\n")], "add a", 1_600_000_000);
     r.commit_files(&[("secrets/key.pem", "k\n")], "add key", 1_600_100_000);
-    r.config(CFG);
+    r.config(SECRETS_CFG);
     r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
     // The files are still in the project, so something on the branch must ignore them.
@@ -162,7 +160,7 @@ fn a_dropped_tip_hands_the_branch_to_a_kept_ancestor_that_carries_the_entry() {
         1_600_100_000,
     );
     r.commit_files(&[("secrets/k2", "2\n")], "add key2", 1_600_200_000);
-    r.config(CFG);
+    r.config(SECRETS_CFG);
     r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
     let rows = r.log();
@@ -234,7 +232,7 @@ fn dropping_a_side_branch_commit_rewires_the_merge() {
     r.git(&["checkout", "-q", "main"]);
     r.commit_files(&[("y.txt", "y\n")], "main: y", 1_600_300_000);
     r.git(&["merge", "-q", "--no-ff", "-m", "merge feat", "feat"]);
-    r.config(CFG);
+    r.config(SECRETS_CFG);
     let old = r.log();
     r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
@@ -272,7 +270,7 @@ fn rules_combine_with_schedule_and_identity() {
 fn an_edited_plan_cannot_change_trees() {
     let r = Repo::new();
     history_with_secrets(&r);
-    r.config(CFG);
+    r.config(SECRETS_CFG);
     let plan_path = r.path().join("plan.json");
     r.gcma_ok(&[
         "plan",
@@ -307,7 +305,7 @@ fn modified_gitignore_in_the_working_copy_is_left_alone() {
         "add b",
         1_600_100_000,
     );
-    r.config(CFG);
+    r.config(SECRETS_CFG);
     r.write(".gitignore", "target\nmine\n"); // unstaged local edit
     r.gcma_ok(&["apply", "--from", "root"]);
     assert_eq!(
