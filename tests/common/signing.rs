@@ -30,6 +30,17 @@ pub fn remote_tip(remote: &Path, branch: &str) -> String {
     String::from_utf8_lossy(&o.stdout).trim().to_string()
 }
 
+/// The files of `main` in a bare repository, one path per line.
+pub fn remote_files(remote: &Path) -> String {
+    let o = Command::new("git")
+        .arg("--git-dir")
+        .arg(remote)
+        .args(["ls-tree", "-r", "--name-only", "main"])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&o.stdout).to_string()
+}
+
 impl Repo {
     /// Configures SSH signing and returns the allowed-signers file that verifies it.
     pub fn ssh_signing(&self) -> PathBuf {

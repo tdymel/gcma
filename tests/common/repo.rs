@@ -344,6 +344,29 @@ impl Repo {
         .collect()
     }
 
+    /// All refs and their targets: the thing that must not change when a run is refused.
+    pub fn refs(&self) -> String {
+        self.git(&["for-each-ref", "--format=%(refname) %(objectname)"])
+    }
+
+    /// `git status --porcelain` without the line of the config file.
+    pub fn status_without_config(&self) -> String {
+        self.git(&["status", "--porcelain"])
+            .lines()
+            .filter(|l| !l.contains("gcma.yml"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// The id of the first backup `gcma restore` lists.
+    pub fn backup_id(&self) -> String {
+        self.gcma_ok(&["restore"])
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .to_string()
+    }
+
     /// Raw commit object bytes.
     pub fn cat(&self, oid: &str) -> Vec<u8> {
         self.cmd("git")
