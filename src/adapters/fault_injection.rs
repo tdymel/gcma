@@ -37,12 +37,19 @@ struct Faulty {
     other_commit: String,
 }
 
+/// Forwards the listed methods of a port to the wrapped repository, unchanged.
+macro_rules! forward {
+    ($($name:ident($($arg:ident: $ty:ty),*) -> $ret:ty;)*) => {
+        $(fn $name(&self, $($arg: $ty),*) -> $ret {
+            self.inner.$name($($arg),*)
+        })*
+    };
+}
+
 impl CommitStore for Faulty {
-    fn read_commits(&self, oids: &[String]) -> Result<Vec<Commit>> {
-        self.inner.read_commits(oids)
-    }
-    fn objects_exist(&self, oids: &[String]) -> Result<bool> {
-        self.inner.objects_exist(oids)
+    forward! {
+        read_commits(oids: &[String]) -> Result<Vec<Commit>>;
+        objects_exist(oids: &[String]) -> Result<bool>;
     }
     fn write_commit(&self, c: &NewCommit, signing: Signing) -> Result<String> {
         let mut message = c.message.to_vec();
@@ -68,35 +75,21 @@ impl CommitStore for Faulty {
 }
 
 impl TreeStore for Faulty {
-    fn read_tree(&self, oid: &str) -> Result<Vec<TreeEntry>> {
-        self.inner.read_tree(oid)
-    }
-    fn write_tree(&self, entries: &[TreeEntry]) -> Result<String> {
-        self.inner.write_tree(entries)
-    }
-    fn read_blob(&self, oid: &str) -> Result<Vec<u8>> {
-        self.inner.read_blob(oid)
-    }
-    fn write_blob(&self, data: &[u8]) -> Result<String> {
-        self.inner.write_blob(data)
+    forward! {
+        read_tree(oid: &str) -> Result<Vec<TreeEntry>>;
+        write_tree(entries: &[TreeEntry]) -> Result<String>;
+        read_blob(oid: &str) -> Result<Vec<u8>>;
+        write_blob(data: &[u8]) -> Result<String>;
     }
 }
 
 impl RefStore for Faulty {
-    fn current_branch_ref(&self) -> Result<Option<String>> {
-        self.inner.current_branch_ref()
-    }
-    fn ref_value(&self, name: &str) -> Result<Option<String>> {
-        self.inner.ref_value(name)
-    }
-    fn resolve_commit(&self, rev: &str) -> Result<Option<String>> {
-        self.inner.resolve_commit(rev)
-    }
-    fn upstream_oid(&self, branch_ref: &str) -> Result<Option<String>> {
-        self.inner.upstream_oid(branch_ref)
-    }
-    fn list_refs(&self, prefix: &str) -> Result<Vec<(String, String)>> {
-        self.inner.list_refs(prefix)
+    forward! {
+        current_branch_ref() -> Result<Option<String>>;
+        ref_value(name: &str) -> Result<Option<String>>;
+        resolve_commit(rev: &str) -> Result<Option<String>>;
+        upstream_oid(branch_ref: &str) -> Result<Option<String>>;
+        list_refs(prefix: &str) -> Result<Vec<(String, String)>>;
     }
     fn update_refs(&self, message: &str, updates: &[RefUpdate]) -> Result<()> {
         if let Fault::BranchMovesBeforeTransaction = self.fault {
@@ -109,29 +102,19 @@ impl RefStore for Faulty {
         }
         self.inner.update_refs(message, updates)
     }
-    fn remotes(&self) -> Result<Vec<String>> {
-        self.inner.remotes()
-    }
-    fn labels_pointing_at(&self, oids: &HashSet<String>) -> Result<Vec<String>> {
-        self.inner.labels_pointing_at(oids)
+    forward! {
+        remotes() -> Result<Vec<String>>;
+        labels_pointing_at(oids: &HashSet<String>) -> Result<Vec<String>>;
     }
 }
 
 impl History for Faulty {
-    fn merge_base(&self, a: &str, b: &str) -> Result<Option<String>> {
-        self.inner.merge_base(a, b)
-    }
-    fn is_ancestor(&self, ancestor: &str, descendant: &str) -> Result<bool> {
-        self.inner.is_ancestor(ancestor, descendant)
-    }
-    fn list_range(&self, range: &RevRange) -> Result<Vec<String>> {
-        self.inner.list_range(range)
-    }
-    fn count_reachable(&self, rev: &str) -> Result<usize> {
-        self.inner.count_reachable(rev)
-    }
-    fn unpushed_among(&self, oids: &[String], upstream: &str) -> Result<HashSet<String>> {
-        self.inner.unpushed_among(oids, upstream)
+    forward! {
+        merge_base(a: &str, b: &str) -> Result<Option<String>>;
+        is_ancestor(ancestor: &str, descendant: &str) -> Result<bool>;
+        list_range(range: &RevRange) -> Result<Vec<String>>;
+        count_reachable(rev: &str) -> Result<usize>;
+        unpushed_among(oids: &[String], upstream: &str) -> Result<HashSet<String>>;
     }
     fn all_reachable_from(&self, commits: &[String], tip: &str) -> Result<bool> {
         match self.fault {
@@ -145,41 +128,23 @@ impl History for Faulty {
             _ => self.inner.same_tree(a, b),
         }
     }
-    fn changed_paths(&self, a: &str, b: &str) -> Result<Vec<String>> {
-        self.inner.changed_paths(a, b)
-    }
-    fn change_stats(&self, oids: &[String]) -> Result<Vec<(u64, u64, u64)>> {
-        self.inner.change_stats(oids)
+    forward! {
+        changed_paths(a: &str, b: &str) -> Result<Vec<String>>;
+        change_stats(oids: &[String]) -> Result<Vec<(u64, u64, u64)>>;
     }
 }
 
 impl WorkTree for Faulty {
-    fn is_shallow(&self) -> Result<bool> {
-        self.inner.is_shallow()
-    }
-    fn has_replace_refs(&self) -> Result<bool> {
-        self.inner.has_replace_refs()
-    }
-    fn has_grafts(&self) -> Result<bool> {
-        self.inner.has_grafts()
-    }
-    fn index_dirty(&self) -> Result<bool> {
-        self.inner.index_dirty()
-    }
-    fn operation_in_progress(&self) -> Result<Option<&'static str>> {
-        self.inner.operation_in_progress()
-    }
-    fn read_file(&self, rel: &str) -> Result<Option<Vec<u8>>> {
-        self.inner.read_file(rel)
-    }
-    fn write_file(&self, rel: &str, data: &[u8]) -> Result<()> {
-        self.inner.write_file(rel, data)
-    }
-    fn remove_file(&self, rel: &str) -> Result<()> {
-        self.inner.remove_file(rel)
-    }
-    fn reset_index_to_head(&self) -> Result<()> {
-        self.inner.reset_index_to_head()
+    forward! {
+        is_shallow() -> Result<bool>;
+        has_replace_refs() -> Result<bool>;
+        has_grafts() -> Result<bool>;
+        index_dirty() -> Result<bool>;
+        operation_in_progress() -> Result<Option<&'static str>>;
+        read_file(rel: &str) -> Result<Option<Vec<u8>>>;
+        write_file(rel: &str, data: &[u8]) -> Result<()>;
+        remove_file(rel: &str) -> Result<()>;
+        reset_index_to_head() -> Result<()>;
     }
 }
 
