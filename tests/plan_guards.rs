@@ -6,10 +6,6 @@ mod common;
 
 use common::*;
 
-fn stderr(o: &std::process::Output) -> String {
-    String::from_utf8_lossy(&o.stderr).to_string()
-}
-
 fn untouched(r: &Repo, tip: &str) {
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip, "the branch moved");
     assert!(

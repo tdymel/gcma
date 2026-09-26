@@ -4,10 +4,6 @@ mod common;
 
 use common::*;
 
-fn stderr(o: &std::process::Output) -> String {
-    String::from_utf8_lossy(&o.stderr).to_string()
-}
-
 fn status_without_config(r: &Repo) -> String {
     r.git(&["status", "--porcelain"])
         .lines()

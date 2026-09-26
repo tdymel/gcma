@@ -4,10 +4,6 @@ mod common;
 
 use common::*;
 
-fn stderr(o: &std::process::Output) -> String {
-    String::from_utf8_lossy(&o.stderr).to_string()
-}
-
 fn remote_files(remote: &std::path::Path) -> String {
     let o = std::process::Command::new("git")
         .arg("--git-dir")

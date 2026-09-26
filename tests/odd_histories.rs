@@ -10,10 +10,6 @@ use std::os::unix::ffi::OsStrExt;
 use chrono::TimeZone;
 use common::*;
 
-fn stderr(o: &std::process::Output) -> String {
-    String::from_utf8_lossy(&o.stderr).to_string()
-}
-
 #[test]
 fn a_backup_of_another_branch_is_refused_and_leaves_both_branches_alone() {
     let r = Repo::new();

@@ -5,10 +5,6 @@ mod common;
 
 use common::*;
 
-fn stderr(o: &std::process::Output) -> String {
-    String::from_utf8_lossy(&o.stderr).to_string()
-}
-
 /// All refs and their targets: the thing that must not change when a run is refused.
 fn refs(r: &Repo) -> String {
     r.git(&["for-each-ref", "--format=%(refname) %(objectname)"])

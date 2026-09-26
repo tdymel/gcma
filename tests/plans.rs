@@ -6,10 +6,6 @@ mod common;
 use common::*;
 use serde_json::{Value, json};
 
-fn stderr(o: &std::process::Output) -> String {
-    String::from_utf8_lossy(&o.stderr).to_string()
-}
-
 /// A history with a merge: a - b - (s1 | m1) - merge - z.
 fn merge_repo() -> Repo {
     let r = Repo::new();
