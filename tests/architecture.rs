@@ -10,33 +10,35 @@ use archunit::{FileInfo, assert_passes, project_files, project_layers};
 
 const MAX_NON_BLANK_LINES: usize = 350;
 
+/// Every place under `src/` that belongs to a layer: (layer, glob). The layer rules and the check
+/// that no adapter file escapes them are both derived from this one list, so they cannot drift.
+/// archunit ignores an edge with an unassigned end, so a file missing here is not checked at all.
+const PLACES: &[(&str, &str)] = &[
+    ("domain", "src/domain/**"),
+    ("application", "src/application/**"),
+    ("infra", "src/adapters/git_cli/**"),
+    ("infra", "src/adapters/gix_store.rs"),
+    ("infra", "src/adapters/config_file.rs"),
+    ("infra", "src/adapters/plan_file.rs"),
+    ("infra", "src/adapters/hook_installer.rs"),
+    ("infra", "src/adapters/llm_jsonl.rs"),
+    ("infra", "src/adapters/convert.rs"),
+    ("infra", "src/adapters/fsutil.rs"),
+    ("infra", "src/adapters/fault_injection.rs"),
+    ("wiring", "src/adapters/repository.rs"),
+    ("cli", "src/adapters/mod.rs"),
+    ("cli", "src/adapters/cli/**"),
+    ("cli", "src/adapters/cli_support/**"),
+];
+
 #[test]
 fn layers_only_depend_inwards() {
-    let rule = project_layers()
-        .layer("domain")
-        .defined_by("src/domain/**")
-        .layer("application")
-        .defined_by("src/application/**")
-        .layer("infra")
-        .defined_by("src/adapters/git_cli/**")
-        .layer("infra")
-        .defined_by("src/adapters/gix_store.rs")
-        .layer("infra")
-        .defined_by("src/adapters/config_file.rs")
-        .layer("infra")
-        .defined_by("src/adapters/plan_file.rs")
-        .layer("infra")
-        .defined_by("src/adapters/hook_installer.rs")
-        .layer("infra")
-        .defined_by("src/adapters/convert.rs")
-        .layer("infra")
-        .defined_by("src/adapters/fault_injection.rs")
-        .layer("wiring")
-        .defined_by("src/adapters/repository.rs")
-        .layer("cli")
-        .defined_by("src/adapters/cli/**")
-        .layer("cli")
-        .defined_by("src/adapters/cli_support/**")
+    let layers = PLACES
+        .iter()
+        .fold(project_layers(), |layers, (layer, glob)| {
+            layers.layer(*layer).defined_by(*glob)
+        });
+    let rule = layers
         .where_layer("domain")
         .may_only_depend_on_layers(&[])
         .where_layer("application")
@@ -118,31 +120,24 @@ fn application_is_layered_internally() {
     assert_passes!(rule);
 }
 
-/// Where an adapter file may live. A file outside these places would escape the layer rules.
-const ADAPTER_PLACES: &[&str] = &[
-    "src/adapters/mod.rs",
-    "src/adapters/cli/",
-    "src/adapters/cli_support/",
-    "src/adapters/git_cli/",
-    "src/adapters/gix_store.rs",
-    "src/adapters/config_file.rs",
-    "src/adapters/plan_file.rs",
-    "src/adapters/hook_installer.rs",
-    "src/adapters/llm_jsonl.rs",
-    "src/adapters/convert.rs",
-    "src/adapters/fault_injection.rs",
-    "src/adapters/fsutil.rs",
-    "src/adapters/repository.rs",
-];
+/// Whether `path` is covered by a glob of `PLACES`: a `dir/**` prefix or an exact file.
+fn is_placed(path: &str) -> bool {
+    PLACES
+        .iter()
+        .any(|(_, glob)| match glob.strip_suffix("**") {
+            Some(dir) => path.starts_with(dir),
+            None => path == *glob,
+        })
+}
 
 #[test]
-fn every_adapter_file_belongs_to_a_known_place() {
+fn every_adapter_file_is_assigned_to_a_layer() {
     let rule = project_files()
         .in_path("src/adapters/**")
         .should()
         .adhere_to(
-            |file: &FileInfo| ADAPTER_PLACES.iter().any(|p| file.path.starts_with(p)),
-            "live in a place the layer rules know about",
+            |file: &FileInfo| is_placed(&file.path),
+            "be assigned to a layer in PLACES",
         );
     assert_passes!(rule);
 }
@@ -152,6 +147,9 @@ const FORBIDDEN_IN_INNER_LAYERS: &[&str] = &[
     "std::fs",
     "std::process",
     "std::env",
+    "fs_err",
+    // A dev-dependency, which archunit does not see as an external module.
+    "tempfile",
     "Utc::now",
     "Local::now",
     "SystemTime::now",
@@ -161,15 +159,72 @@ const FORBIDDEN_IN_INNER_LAYERS: &[&str] = &[
     "clap::",
 ];
 
+/// Items that must not be named inside a grouped `std::{...}` import, which the plain text
+/// patterns above cannot see.
+const FORBIDDEN_STD_ITEMS: &[&str] = &["fs", "process", "env", "SystemTime", "Instant"];
+
+/// The body of every `std::{ ... }` group in `source`, however many lines it spans or how deeply
+/// it nests.
+fn std_groups(source: &str) -> Vec<&str> {
+    let mut groups = Vec::new();
+    let mut rest = source;
+    while let Some(at) = rest.find("std::{") {
+        let body = &rest[at + "std::{".len()..];
+        let mut depth = 1;
+        let end = body
+            .char_indices()
+            .find(|&(_, c)| {
+                match c {
+                    '{' => depth += 1,
+                    '}' => depth -= 1,
+                    _ => {}
+                }
+                depth == 0
+            })
+            .map_or(body.len(), |(i, _)| i);
+        groups.push(&body[..end]);
+        rest = &body[end..];
+    }
+    groups
+}
+
+fn touches_io_or_the_clock(source: &str) -> bool {
+    FORBIDDEN_IN_INNER_LAYERS
+        .iter()
+        .any(|bad| source.contains(bad))
+        || std_groups(source).iter().any(|group| {
+            group
+                .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .any(|word| FORBIDDEN_STD_ITEMS.contains(&word))
+        })
+}
+
+#[test]
+fn the_source_scan_sees_grouped_imports() {
+    for bad in [
+        "use std::fs;",
+        "use std::{fs, env};",
+        "use std::{io, path::Path, process::Command};",
+        "use std::{\n    collections::HashMap,\n    env,\n};",
+        "use std::{io::{self, Read}, time::Instant};",
+        "use fs_err as fs;",
+    ] {
+        assert!(touches_io_or_the_clock(bad), "should flag {bad:?}");
+    }
+    for good in [
+        "use std::{collections::HashMap, path::Path};",
+        "use std::{fmt, io::{self, Read}};\nfn fs_like() {}",
+        "use std::fmt;",
+    ] {
+        assert!(!touches_io_or_the_clock(good), "should not flag {good:?}");
+    }
+}
+
 #[test]
 fn domain_and_application_do_no_io_and_read_no_clock() {
     for scope in ["src/domain/**", "src/application/**"] {
         let rule = project_files().in_path(scope).should().adhere_to(
-            |file: &FileInfo| {
-                !FORBIDDEN_IN_INNER_LAYERS
-                    .iter()
-                    .any(|bad| file.content.contains(bad))
-            },
+            |file: &FileInfo| !touches_io_or_the_clock(&file.content),
             "not touch the file system, processes, the environment, the clock or the CLI",
         );
         assert_passes!(rule);
@@ -201,6 +256,7 @@ fn domain_uses_no_io_or_framework_crates() {
         "serde_yaml_ng",
         "serde_json",
         "tempfile",
+        "fs_err",
     ] {
         let rule = project_files()
             .in_path("src/domain/**")
@@ -213,7 +269,15 @@ fn domain_uses_no_io_or_framework_crates() {
 
 #[test]
 fn application_uses_no_adapter_crates() {
-    for banned in ["clap", "gix", "serde_yaml", "serde_yaml_ng", "serde_json"] {
+    for banned in [
+        "clap",
+        "gix",
+        "serde_yaml",
+        "serde_yaml_ng",
+        "serde_json",
+        "fs_err",
+        "tempfile",
+    ] {
         let rule = project_files()
             .in_path("src/application/**")
             .should_not()
