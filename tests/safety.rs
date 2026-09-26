@@ -4,14 +4,6 @@ mod common;
 
 use common::*;
 
-fn status_without_config(r: &Repo) -> String {
-    r.git(&["status", "--porcelain"])
-        .lines()
-        .filter(|l| !l.contains("gcma.yml"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 #[test]
 fn plan_check_exits_6_and_changes_nothing() {
     let r = Repo::new();
@@ -84,7 +76,7 @@ fn restore_after_path_rules_leaves_index_and_gitignore_as_before() {
         .to_string();
     r.gcma_ok(&["restore", &id]);
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
-    assert_eq!(status_without_config(&r), "", "{}", r.git(&["status"]));
+    assert_eq!(r.status_without_config(), "", "{}", r.git(&["status"]));
     assert!(
         !r.path().join(".gitignore").exists(),
         "gcma's own .gitignore is gone again"

@@ -4,16 +4,6 @@ mod common;
 
 use common::*;
 
-fn remote_files(remote: &std::path::Path) -> String {
-    let o = std::process::Command::new("git")
-        .arg("--git-dir")
-        .arg(remote)
-        .args(["ls-tree", "-r", "--name-only", "main"])
-        .output()
-        .unwrap();
-    String::from_utf8_lossy(&o.stdout).to_string()
-}
-
 fn pushed_history() -> (Repo, std::path::PathBuf) {
     let r = Repo::new();
     r.linear(3, 1_600_000_000);

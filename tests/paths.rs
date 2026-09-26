@@ -23,14 +23,6 @@ fn tracked(r: &Repo, rev: &str) -> Vec<String> {
         .collect()
 }
 
-fn status_without_config(r: &Repo) -> String {
-    r.git(&["status", "--porcelain"])
-        .lines()
-        .filter(|l| !l.contains("gcma.yml"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 #[test]
 fn excluded_paths_leave_history_but_not_the_project() {
     let r = Repo::new();
@@ -93,7 +85,7 @@ fn excluded_paths_leave_history_but_not_the_project() {
         std::fs::read_to_string(r.path().join("secrets/key.pem")).unwrap(),
         "k1\n"
     );
-    assert_eq!(status_without_config(&r), "", "{}", r.git(&["status"]));
+    assert_eq!(r.status_without_config(), "", "{}", r.git(&["status"]));
     assert!(
         std::fs::read_to_string(r.path().join(".gitignore"))
             .unwrap()
@@ -132,7 +124,7 @@ fn a_tip_that_only_touches_excluded_paths_stays_as_the_gitignore_carrier() {
     assert_eq!(rows.len(), 2);
     assert_eq!(tracked(&r, "HEAD"), [".gitignore", "a.txt"]);
     assert_eq!(tracked(&r, &rows[0].oid), ["a.txt"]);
-    assert_eq!(status_without_config(&r), "");
+    assert_eq!(r.status_without_config(), "");
 }
 
 #[test]
@@ -166,7 +158,7 @@ fn a_dropped_tip_hands_the_branch_to_a_kept_ancestor_that_carries_the_entry() {
     let rows = r.log();
     assert_eq!(rows.len(), 2, "the tip is dropped, nothing extra is kept");
     assert_eq!(tracked(&r, "HEAD"), [".gitignore", "a.txt", "b.txt"]);
-    assert_eq!(status_without_config(&r), "");
+    assert_eq!(r.status_without_config(), "");
 }
 
 #[test]

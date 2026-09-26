@@ -5,13 +5,8 @@ mod common;
 
 use common::*;
 
-/// All refs and their targets: the thing that must not change when a run is refused.
-fn refs(r: &Repo) -> String {
-    r.git(&["for-each-ref", "--format=%(refname) %(objectname)"])
-}
-
 fn refused(r: &Repo, args: &[&str], why: &str) {
-    let before = refs(r);
+    let before = r.refs();
     let head = r.git(&["rev-parse", "HEAD"]);
     let o = r.gcma(args);
     assert_eq!(Repo::code(&o), 3, "{args:?}: {}", stderr(&o));
@@ -20,7 +15,7 @@ fn refused(r: &Repo, args: &[&str], why: &str) {
         "expected {why:?} in: {}",
         stderr(&o)
     );
-    assert_eq!(refs(r), before, "no ref may change");
+    assert_eq!(r.refs(), before, "no ref may change");
     assert_eq!(r.git(&["rev-parse", "HEAD"]), head);
     assert!(
         !r.git(&["for-each-ref", "refs/gcma/"]).contains("backup"),
@@ -174,10 +169,10 @@ fn a_rebase_in_progress_is_refused() {
     let o = r.git_out(&["rebase", "main"]);
     assert!(!o.status.success(), "the fixture must conflict");
     // Detached HEAD and a running rebase: either reason is a refusal.
-    let before = refs(&r);
+    let before = r.refs();
     let o = r.gcma(&["apply", "--from", "root"]);
     assert_eq!(Repo::code(&o), 3, "{}", stderr(&o));
-    assert_eq!(refs(&r), before);
+    assert_eq!(r.refs(), before);
 }
 
 #[test]

@@ -29,10 +29,6 @@ fn merge_repo() -> Repo {
     r
 }
 
-fn refs(r: &Repo) -> String {
-    r.git(&["for-each-ref", "--format=%(refname) %(objectname)"])
-}
-
 /// Saves a plan, lets `edit` change its JSON, and applies it. Nothing may change unless `code` is 0.
 fn tampered(edit: impl FnOnce(&mut Value), code: i32, message: &str) {
     let r = merge_repo();
@@ -41,7 +37,7 @@ fn tampered(edit: impl FnOnce(&mut Value), code: i32, message: &str) {
     let mut json: Value = serde_json::from_slice(&std::fs::read(&plan).unwrap()).unwrap();
     edit(&mut json);
     std::fs::write(&plan, serde_json::to_vec(&json).unwrap()).unwrap();
-    let before = refs(&r);
+    let before = r.refs();
     let o = r.gcma(&["apply", "--plan", plan.to_str().unwrap()]);
     assert_eq!(Repo::code(&o), code, "{message}: {}", stderr(&o));
     assert!(
@@ -50,7 +46,7 @@ fn tampered(edit: impl FnOnce(&mut Value), code: i32, message: &str) {
         stderr(&o)
     );
     assert_eq!(
-        refs(&r),
+        r.refs(),
         before,
         "a refused plan must not move or create any ref"
     );
@@ -284,14 +280,14 @@ fn swapped_sibling_entries_are_refused_or_produce_a_valid_history() {
     let mut json: Value = serde_json::from_slice(&std::fs::read(&plan).unwrap()).unwrap();
     json["entries"].as_array_mut().unwrap().swap(2, 3);
     std::fs::write(&plan, serde_json::to_vec(&json).unwrap()).unwrap();
-    let before = refs(&r);
+    let before = r.refs();
     let o = r.gcma(&["apply", "--plan", plan.to_str().unwrap()]);
     if o.status.success() {
         r.fsck();
         assert_eq!(r.log().len(), 6);
     } else {
         assert_ne!(Repo::code(&o), 101, "no panic: {}", stderr(&o));
-        assert_eq!(refs(&r), before, "{}", stderr(&o));
+        assert_eq!(r.refs(), before, "{}", stderr(&o));
     }
 }
 
