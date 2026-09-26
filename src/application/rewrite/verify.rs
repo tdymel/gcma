@@ -128,15 +128,7 @@ pub fn verify(
         }
     }
     // Everything that keeps its OID must still be an ancestor of the new tip.
-    let mut bases: Vec<String> = plan
-        .entries
-        .iter()
-        .flat_map(|e| e.parents.iter())
-        .filter_map(|p| match p {
-            Parent::Base(b) => Some(b.clone()),
-            Parent::In(_) => None,
-        })
-        .collect();
+    let mut bases: Vec<String> = plan.base_oids().cloned().collect();
     bases.sort();
     bases.dedup();
     if !repo.all_reachable_from(&bases, &new_tip)? {

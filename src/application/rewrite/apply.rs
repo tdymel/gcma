@@ -9,7 +9,7 @@ use crate::application::ports::{RefUpdate, Repository};
 use crate::application::preconditions::{check_preconditions, refuse_pushed};
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::{Commit, NewCommit, short};
-use crate::domain::history::plan::{Parent, Plan};
+use crate::domain::history::plan::Plan;
 use crate::domain::settings::Config;
 
 #[derive(Debug)]
@@ -112,24 +112,10 @@ fn check_repository(repo: &dyn Repository, plan: &Plan, rewrite_pushed: bool) ->
             plan.tip_oid
         )));
     }
-    let touched: Vec<String> = plan
-        .entries
-        .iter()
-        .map(|e| e.old_oid.clone())
-        .chain(plan.dropped.iter().cloned())
-        .collect();
+    let touched: Vec<String> = plan.touched_oids().cloned().collect();
     let upstream = repo.upstream_oid(&plan.branch_ref)?;
     refuse_pushed(repo, &touched, upstream.as_deref(), rewrite_pushed)?;
-    let bases: Vec<String> = plan
-        .entries
-        .iter()
-        .flat_map(|e| e.parents.iter())
-        .chain(&plan.new_tip)
-        .filter_map(|p| match p {
-            Parent::Base(b) => Some(b.clone()),
-            Parent::In(_) => None,
-        })
-        .collect();
+    let bases: Vec<String> = plan.base_oids().cloned().collect();
     if !repo.objects_exist(&bases)? {
         return Err(Error::Precondition(
             "a parent commit referenced by the plan no longer exists".into(),
