@@ -81,6 +81,14 @@ impl Parent {
             Parent::Base(b) => b.clone(),
         }
     }
+
+    /// The commit that keeps its OID, when this is not a rewritten one.
+    pub fn base(&self) -> Option<&String> {
+        match self {
+            Parent::Base(b) => Some(b),
+            Parent::In(_) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,6 +161,20 @@ impl Plan {
         }
     }
 
+    /// The commits that keep their OID and are referenced as parents (or as the new tip).
+    pub fn base_oids(&self) -> impl Iterator<Item = &String> {
+        self.entries
+            .iter()
+            .flat_map(|e| e.parents.iter())
+            .chain(&self.new_tip)
+            .filter_map(Parent::base)
+    }
+
+    /// Every old commit the rewrite changes or drops.
+    pub fn touched_oids(&self) -> impl Iterator<Item = &String> {
+        self.entries.iter().map(|e| &e.old_oid).chain(&self.dropped)
+    }
+
     /// Rejects plans that cannot be applied: only back references between entries are legal.
     pub fn validate(&self) -> Result<()> {
         if !self.branch_ref.starts_with(HEADS_PREFIX)
@@ -167,16 +189,7 @@ impl Plan {
             .chain(&self.dropped)
             .chain(self.entries.iter().map(|e| &e.old_oid))
             .chain(self.entries.iter().filter_map(|e| e.tree.as_ref()))
-            .chain(
-                self.entries
-                    .iter()
-                    .flat_map(|e| e.parents.iter())
-                    .chain(&self.new_tip)
-                    .filter_map(|p| match p {
-                        Parent::Base(b) => Some(b),
-                        Parent::In(_) => None,
-                    }),
-            );
+            .chain(self.base_oids());
         for o in oids {
             if !is_oid(o) {
                 return Err(Error::Usage(format!(
@@ -191,7 +204,7 @@ impl Plan {
             }
         }
         let mut listed = std::collections::HashSet::new();
-        for o in self.entries.iter().map(|e| &e.old_oid).chain(&self.dropped) {
+        for o in self.touched_oids() {
             if !listed.insert(o) {
                 return Err(Error::Usage(format!(
                     "plan lists commit {o} more than once"
@@ -230,5 +243,67 @@ impl Plan {
         self.branch_ref
             .strip_prefix(HEADS_PREFIX)
             .unwrap_or(&self.branch_ref)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const C: &str = "cccccccccccccccccccccccccccccccccccccccc";
+    const D: &str = "dddddddddddddddddddddddddddddddddddddddd";
+
+    fn ident() -> PIdent {
+        PIdent {
+            name: "N".into(),
+            email: "n@example.com".into(),
+            time: 1,
+            tz: 0,
+        }
+    }
+
+    fn entry(old: &str, parents: Vec<Parent>) -> Entry {
+        Entry {
+            old_oid: old.into(),
+            parents,
+            author: ident(),
+            committer: ident(),
+            message: b"m".to_vec(),
+            tree: None,
+            gitignore: false,
+        }
+    }
+
+    fn plan(entries: Vec<Entry>) -> Plan {
+        Plan::new("refs/heads/main".into(), C.into(), Signing::Strip, entries)
+    }
+
+    #[test]
+    fn base_oids_lists_every_base_parent_and_the_new_tip() {
+        let mut p = plan(vec![
+            entry(A, vec![Parent::Base(B.into())]),
+            entry(C, vec![Parent::In(0), Parent::Base(D.into())]),
+        ]);
+        p.new_tip = Some(Parent::Base(A.into()));
+        let bases: Vec<&str> = p.base_oids().map(String::as_str).collect();
+        assert_eq!(bases, [B, D, A]);
+    }
+
+    #[test]
+    fn base_oids_skips_rewritten_parents() {
+        let mut p = plan(vec![entry(A, vec![]), entry(C, vec![Parent::In(0)])]);
+        p.new_tip = Some(Parent::In(1));
+        assert_eq!(p.base_oids().count(), 0);
+    }
+
+    #[test]
+    fn touched_oids_are_the_entries_then_the_dropped_commits() {
+        let mut p = plan(vec![entry(A, vec![]), entry(C, vec![Parent::In(0)])]);
+        p.dropped = vec![B.into(), D.into()];
+        let touched: Vec<&str> = p.touched_oids().map(String::as_str).collect();
+        assert_eq!(touched, [A, C, B, D]);
+        assert_eq!(plan(Vec::new()).touched_oids().count(), 0);
     }
 }
