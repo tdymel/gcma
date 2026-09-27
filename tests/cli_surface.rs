@@ -1,5 +1,5 @@
-//! The command line as a user meets it: help, usage errors, `init`, the backup commands and
-//! what happens when the output pipe closes.
+//! The command line as a user meets it: help, usage errors, `init`, the backup commands (list,
+//! restore, prune) and what happens when the output pipe closes.
 
 mod common;
 
@@ -219,6 +219,39 @@ fn restoring_by_an_unambiguous_prefix_works_and_an_ambiguous_one_is_refused() {
         !o.status.success(),
         "the empty prefix must not match everything silently"
     );
+}
+
+#[test]
+fn restore_refuses_when_the_branch_moved_unless_forced() {
+    let r = Repo::new();
+    r.linear(3, 1_600_000_000);
+    r.config(IDENTITY_CFG);
+    let old_tip = r.git(&["rev-parse", "HEAD"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
+    let id = r.backup_id();
+    // New work after the rewrite (made as the new identity so it conforms).
+    r.commit_as(
+        "later.txt",
+        "later",
+        1_700_000_000,
+        "Jane Doe",
+        "jane@work.com",
+    );
+    let moved = r.git(&["rev-parse", "HEAD"]);
+    let o = r.gcma(&["restore", &id]);
+    assert_eq!(Repo::code(&o), 4, "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(
+        r.git(&["rev-parse", "HEAD"]),
+        moved,
+        "refused restore must not move the branch"
+    );
+    r.gcma_ok(&["restore", &id, "--force"]);
+    assert_eq!(r.git(&["rev-parse", "HEAD"]), old_tip);
+    // The discarded tip keeps a ref, so nothing is lost even after gc.
+    let holders = r.git(&["for-each-ref", "--contains", &moved, "refs/gcma/discarded/"]);
+    assert!(holders.contains(&moved), "{holders}");
+    let o = r.gcma(&["restore", "--prune"]);
+    assert_eq!(Repo::code(&o), 2);
 }
 
 #[test]

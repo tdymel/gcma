@@ -1,4 +1,5 @@
-//! Names, emails and messages that are not UTF-8 must neither abort a run nor change.
+//! Names, emails and messages that are not UTF-8 must neither abort a run nor change, and the raw
+//! headers of a commit (an `encoding` header) survive a rewrite.
 
 mod common;
 
@@ -94,6 +95,45 @@ fn an_email_rule_applies_to_an_author_whose_name_is_not_utf8() {
         r.gcma(&["plan", "--check", "--from", "root"])
             .status
             .success()
+    );
+    r.fsck();
+}
+
+#[test]
+fn raw_headers_and_non_utf8_messages_survive() {
+    let r = Repo::new();
+    r.git(&["config", "i18n.commitEncoding", "ISO-8859-1"]);
+    r.write("x.txt", "x\n");
+    r.git(&["add", "x.txt"]);
+    // A latin-1 message: "caf\xe9".
+    let msg_file = r.path().join("msg.bin");
+    std::fs::write(&msg_file, b"caf\xe9 au lait\n\nbody \xe9\n").unwrap();
+    r.git(&["commit", "-q", "-F", msg_file.to_str().unwrap()]);
+    r.config(IDENTITY_CFG);
+    let old = r.git(&["rev-parse", "HEAD"]);
+    let old_raw = r.cat(&old);
+    assert!(
+        old_raw.windows(18).any(|w| w == b"encoding ISO-8859-"),
+        "fixture has an encoding header"
+    );
+
+    r.gcma_ok(&["apply", "--from", "root"]);
+    let new = r.git(&["rev-parse", "HEAD"]);
+    let new_raw = r.cat(&new);
+    assert!(
+        new_raw.windows(18).any(|w| w == b"encoding ISO-8859-"),
+        "encoding header kept"
+    );
+    let body_of = |raw: &[u8]| {
+        raw.windows(2)
+            .position(|w| w == b"\n\n")
+            .map(|p| raw[p + 2..].to_vec())
+            .unwrap()
+    };
+    assert_eq!(
+        body_of(&old_raw),
+        body_of(&new_raw),
+        "message bytes are identical"
     );
     r.fsck();
 }
