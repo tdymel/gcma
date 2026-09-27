@@ -194,13 +194,12 @@ pub struct HookCfg {
 
 /// Which implementation performs the hot object operations (batch reads, existence checks and
 /// commit writes). Everything else (refs, config, signing, hooks, ...) always uses the git CLI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Backend {
     /// Spawn `git` for every operation (one process per written commit).
     Git,
     /// In-process object access through gitoxide (needs the `gix` cargo feature).
-    #[default]
     Gix,
 }
 
@@ -214,14 +213,5 @@ impl std::str::FromStr for Backend {
                 "unknown backend {other:?} (expected `git` or `gix`)"
             ))),
         }
-    }
-}
-
-impl std::fmt::Display for Backend {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Backend::Git => "git",
-            Backend::Gix => "gix",
-        })
     }
 }
