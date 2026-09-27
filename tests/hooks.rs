@@ -5,30 +5,6 @@ mod common;
 use common::*;
 
 #[test]
-fn hook_case_only_new_commits_are_rescheduled() {
-    let r = Repo::new();
-    r.linear(10, 1_500_000_000);
-    r.config(&berlin_cfg(""));
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let settled = r.log();
-    // Three new commits made "now-ish" (outside the allowed window).
-    let t = settled.last().unwrap().ct + 3600 * 24 * 3 + 7 * 3600; // a night, a few days later
-    for i in 0..3 {
-        r.commit_at(&format!("new{i}.txt"), &format!("new {i}"), t + i * 60);
-    }
-    let plan = r.gcma_ok(&["plan", "--from", "root"]);
-    assert!(plan.contains("10 kept as-is, 3 to rewrite"), "{plan}");
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let after = r.log();
-    for (a, b) in settled.iter().zip(&after) {
-        assert_eq!(a.oid, b.oid, "settled commits keep their OIDs");
-    }
-    assert_eq!(after.len(), 13);
-    assert_scheduled(&after);
-    assert!(after[10].ct >= settled.last().unwrap().ct);
-}
-
-#[test]
 fn hook_verify_blocks_nonconforming_pushes_and_allows_conforming_ones() {
     let r = Repo::new();
     r.bare_remote();

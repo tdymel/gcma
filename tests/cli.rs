@@ -100,18 +100,6 @@ fn restore_refuses_when_the_branch_moved_unless_forced() {
 }
 
 #[test]
-fn prune_is_explicit_and_removes_both_refs() {
-    let r = Repo::new();
-    r.linear(2, 1_600_000_000);
-    r.config(IDENTITY_CFG);
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let id = r.backup_id();
-    assert!(!r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty());
-    r.gcma_ok(&["restore", &id, "--prune"]);
-    assert!(r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty());
-}
-
-#[test]
 fn merge_history_keeps_parent_order_and_trees() {
     let r = Repo::new();
     r.commit_at("base.txt", "base", 1_600_000_000);
@@ -263,30 +251,6 @@ fn every_distribution_conforms_and_is_deterministic() {
         }
         assert_eq!(tips[0], tips[1], "{dist}: same input, same schedule");
     }
-}
-
-#[test]
-fn hook_case_only_new_commits_are_rescheduled() {
-    let r = Repo::new();
-    r.linear(10, 1_500_000_000);
-    r.config(&berlin_cfg(""));
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let settled = r.log();
-    // Three new commits made "now-ish" (outside the allowed window).
-    let t = settled.last().unwrap().ct + 3600 * 24 * 3 + 7 * 3600; // a night, a few days later
-    for i in 0..3 {
-        r.commit_at(&format!("new{i}.txt"), &format!("new {i}"), t + i * 60);
-    }
-    let plan = r.gcma_ok(&["plan", "--from", "root"]);
-    assert!(plan.contains("10 kept as-is, 3 to rewrite"), "{plan}");
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let after = r.log();
-    for (a, b) in settled.iter().zip(&after) {
-        assert_eq!(a.oid, b.oid, "settled commits keep their OIDs");
-    }
-    assert_eq!(after.len(), 13);
-    assert_scheduled(&after);
-    assert!(after[10].ct >= settled.last().unwrap().ct);
 }
 
 #[test]

@@ -200,6 +200,7 @@ fn pruning_a_backup_forgets_it_and_listing_shows_none() {
     assert!(o.status.success(), "{}", stderr(&o));
     assert!(stdout(&o).contains("pruned backup"), "{}", stdout(&o));
     assert_eq!(r.gcma_ok(&["restore"]).trim(), "No backups.");
+    assert!(r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty());
     let o = r.gcma(&["restore", &id]);
     assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
 }
