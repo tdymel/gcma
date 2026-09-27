@@ -195,8 +195,7 @@ fn pruning_a_backup_forgets_it_and_listing_shows_none() {
     r.linear(2, 1_600_000_000);
     r.config(IDENTITY_CFG);
     r.gcma_ok(&["apply", "--from", "root"]);
-    let listing = r.gcma_ok(&["restore"]);
-    let id = listing.split_whitespace().next().unwrap().to_string();
+    let id = r.backup_id();
     let o = r.gcma(&["restore", &id, "--prune"]);
     assert!(o.status.success(), "{}", stderr(&o));
     assert!(stdout(&o).contains("pruned backup"), "{}", stdout(&o));
@@ -211,12 +210,7 @@ fn restoring_by_an_unambiguous_prefix_works_and_an_ambiguous_one_is_refused() {
     r.linear(2, 1_600_000_000);
     r.config(IDENTITY_CFG);
     r.gcma_ok(&["apply", "--from", "root"]);
-    let id = r
-        .gcma_ok(&["restore"])
-        .split_whitespace()
-        .next()
-        .unwrap()
-        .to_string();
+    let id = r.backup_id();
     let o = r.gcma(&["restore", &id[..4]]);
     assert!(o.status.success(), "a prefix is enough: {}", stderr(&o));
     let o = r.gcma(&["restore", ""]);

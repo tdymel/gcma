@@ -16,8 +16,7 @@ fn a_backup_of_another_branch_is_refused_and_leaves_both_branches_alone() {
     r.linear(3, T0);
     r.config(IDENTITY_CFG);
     r.gcma_ok(&["apply", "--from", "root"]);
-    let listing = r.gcma_ok(&["restore"]);
-    let id = listing.split_whitespace().next().unwrap().to_string();
+    let id = r.backup_id();
     r.git(&["checkout", "-q", "-b", "other"]);
     let (main, other) = (
         r.git(&["rev-parse", "main"]),
@@ -141,12 +140,7 @@ fn unrelated_roots_are_all_rewritten_and_stay_roots() {
         r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do")
     );
-    let id = r
-        .gcma_ok(&["restore"])
-        .split_whitespace()
-        .next()
-        .unwrap()
-        .to_string();
+    let id = r.backup_id();
     r.gcma_ok(&["restore", &id]);
     assert_same_content(&old, &r.log());
 }

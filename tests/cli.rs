@@ -59,8 +59,7 @@ fn second_apply_is_a_noop_and_restore_returns_the_original_tip() {
             .success()
     );
 
-    let list = r.gcma_ok(&["restore"]);
-    let id = list.split_whitespace().next().unwrap().to_string();
+    let id = r.backup_id();
     // The branch is still at the recorded new tip: restore works without --force.
     r.gcma_ok(&["restore", &id]);
     assert_eq!(r.git(&["rev-parse", "HEAD"]), old_tip);
@@ -74,12 +73,7 @@ fn restore_refuses_when_the_branch_moved_unless_forced() {
     r.config(IDENTITY_CFG);
     let old_tip = r.git(&["rev-parse", "HEAD"]);
     r.gcma_ok(&["apply", "--from", "root"]);
-    let id = r
-        .gcma_ok(&["restore"])
-        .split_whitespace()
-        .next()
-        .unwrap()
-        .to_string();
+    let id = r.backup_id();
     // New work after the rewrite (made as the new identity so it conforms).
     r.commit_as(
         "later.txt",
@@ -111,12 +105,7 @@ fn prune_is_explicit_and_removes_both_refs() {
     r.linear(2, 1_600_000_000);
     r.config(IDENTITY_CFG);
     r.gcma_ok(&["apply", "--from", "root"]);
-    let id = r
-        .gcma_ok(&["restore"])
-        .split_whitespace()
-        .next()
-        .unwrap()
-        .to_string();
+    let id = r.backup_id();
     assert!(!r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty());
     r.gcma_ok(&["restore", &id, "--prune"]);
     assert!(r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty());
