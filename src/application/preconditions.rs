@@ -1,4 +1,5 @@
-//! Conditions under which history must not be rewritten at all.
+//! Conditions under which history must not be rewritten: `check_preconditions` states the ones
+//! nothing overrides, `refuse_pushed` the one the caller can allow.
 
 use crate::application::ports::{History, WorkTree};
 use crate::domain::error::{Error, Result};
@@ -22,8 +23,9 @@ pub fn check_preconditions(tree: &dyn WorkTree, strict: bool) -> Result<()> {
     Ok(())
 }
 
-/// Commits that are already on the upstream may only be rewritten when the caller allows it.
-/// `touched` is everything the rewrite changes or drops.
+/// Commits that are already on the upstream may only be rewritten when the caller allows it
+/// (`allowed`, the CLI's `--rewrite-pushed`; the error message names that flag). `touched` is
+/// everything the rewrite changes or drops.
 pub fn refuse_pushed(
     history: &dyn History,
     touched: &[String],
