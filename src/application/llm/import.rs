@@ -53,10 +53,19 @@ pub fn import(plan: &mut Plan, reply: Vec<ReplyLine>, cfg: &Config) -> Result<Im
                 continue;
             }
         };
-        let checked = match plan.entries.get(row.index) {
-            None => Err(format!("unknown index (valid: 0..{})", plan.entries.len())),
-            Some(_) if !seen.insert(row.index) => Err("duplicate index".to_string()),
-            Some(entry) => validate_row(&row, &entry.message, cfg),
+        let Some(entry) = plan.entries.get(row.index) else {
+            // No such entry, so there is no row to retry either.
+            errors.push(format!(
+                "row i={}: unknown index (valid: 0..{})",
+                row.index,
+                plan.entries.len()
+            ));
+            continue;
+        };
+        let checked = if seen.insert(row.index) {
+            validate_row(&row, &entry.message, cfg)
+        } else {
+            Err("duplicate index".to_string())
         };
         match checked {
             Ok(msg) if msg == plan.entries[row.index].message => unchanged += 1,
@@ -89,6 +98,14 @@ pub fn import(plan: &mut Plan, reply: Vec<ReplyLine>, cfg: &Config) -> Result<Im
 /// The full message a reply row stands for (rules that append trailers applied), or why the row
 /// is refused. `old` is the message the entry has now.
 fn validate_row(row: &Reply, old: &[u8], cfg: &Config) -> std::result::Result<Vec<u8>, String> {
+    let msg = compose_message(row)?;
+    check_trailers(old, &msg, cfg)?;
+    // The reply cannot know about trailers the rules append; they are put back here.
+    Ok(cfg.rewrite_message(&msg))
+}
+
+/// The title, a blank line and the body of the row, as commit message bytes.
+fn compose_message(row: &Reply) -> std::result::Result<Vec<u8>, String> {
     let title = row.title.trim();
     if title.is_empty() {
         return Err("empty title".into());
@@ -108,6 +125,12 @@ fn validate_row(row: &Reply, old: &[u8], cfg: &Config) -> std::result::Result<Ve
     if msg.iter().any(|&b| b < 0x20 && !matches!(b, b'\n' | b'\t')) {
         return Err("the message contains control characters".into());
     }
+    Ok(msg)
+}
+
+/// A reply keeps the protected trailers of `old`, may not add any, and carries none that
+/// `messages.strip_trailers` removes.
+fn check_trailers(old: &[u8], msg: &[u8], cfg: &Config) -> std::result::Result<(), String> {
     if let Some(missing) = protected_trailers(old, &cfg.messages.strip_trailers)
         .into_iter()
         .find(|t| !msg.split(|&c| c == b'\n').any(|l| l == t.as_slice()))
@@ -117,11 +140,11 @@ fn validate_row(row: &Reply, old: &[u8], cfg: &Config) -> std::result::Result<Ve
             String::from_utf8_lossy(&missing)
         ));
     }
-    if messages::strip_trailers(&msg, &cfg.messages.strip_trailers) != msg {
+    if messages::strip_trailers(msg, &cfg.messages.strip_trailers) != msg {
         return Err("the message contains a trailer that `messages.strip_trailers` removes".into());
     }
     let had = messages::trailers(old);
-    if let Some(forged) = protected_trailers(&msg, &[])
+    if let Some(forged) = protected_trailers(msg, &[])
         .into_iter()
         .find(|t| !had.contains(t))
     {
@@ -130,8 +153,7 @@ fn validate_row(row: &Reply, old: &[u8], cfg: &Config) -> std::result::Result<Ve
             String::from_utf8_lossy(&forged)
         ));
     }
-    // The reply cannot know about trailers the rules append; they are put back here.
-    Ok(cfg.rewrite_message(&msg))
+    Ok(())
 }
 
 #[cfg(test)]
@@ -218,8 +240,25 @@ mod tests {
         ];
         let e = import(&mut p, reply, &Config::default()).unwrap_err();
         assert!(matches!(e, Error::LlmInvalid(_)));
-        assert!(e.to_string().contains("retry rows: [1, 9]"), "{e}");
+        assert!(e.to_string().contains("retry rows: [1]"), "{e}");
         assert_eq!(msg(&p, 0), "a\n", "nothing applied");
+    }
+
+    #[test]
+    fn unknown_indices_are_reported_but_not_offered_for_retry() {
+        let mut p = plan_with(&["a\n"]);
+        let e = import(
+            &mut p,
+            vec![row(0, "ok", None), row(9, "x", None)],
+            &Config::default(),
+        )
+        .unwrap_err();
+        let text = e.to_string();
+        assert!(
+            text.contains("row i=9: unknown index (valid: 0..1)"),
+            "{text}"
+        );
+        assert!(text.contains("retry rows: []"), "{text}");
     }
 
     #[test]
