@@ -12,19 +12,6 @@ static MERGES: AtomicUsize = AtomicUsize::new(0);
 static OCTOPUS: AtomicUsize = AtomicUsize::new(0);
 static PARTIAL: AtomicUsize = AtomicUsize::new(0);
 
-struct Rand(u64);
-impl Rand {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-    fn below(&mut self, n: u64) -> u64 {
-        self.next() % n
-    }
-}
-
 /// Two thirds of the commits carry sign-off and co-author trailers.
 fn body(n: usize, subject: &str) -> String {
     if n % 3 == 1 {

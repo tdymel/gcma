@@ -6,19 +6,6 @@ mod common;
 
 use common::*;
 
-struct Rand(u64);
-impl Rand {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-    fn below(&mut self, n: u64) -> u64 {
-        self.next() % n
-    }
-}
-
 fn build(r: &Repo, rng: &mut Rand, ops: usize) {
     r.commit_files(&[("root.txt", "root\n")], "root", 1_500_000_000);
     let mut branches = vec!["main".to_string()];
