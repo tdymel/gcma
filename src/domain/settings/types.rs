@@ -35,7 +35,7 @@ pub(super) fn default_hours() -> Hours {
 pub struct Hours(pub Vec<String>);
 
 #[derive(Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, expecting = "a range like \"09:00-18:00\" or a list of them")]
 enum HoursRepr {
     One(String),
     Many(Vec<String>),
