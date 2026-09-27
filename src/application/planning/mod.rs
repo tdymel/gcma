@@ -2,6 +2,7 @@
 
 mod build;
 mod entries;
+mod guards;
 mod pathplan;
 mod range;
 mod timing;

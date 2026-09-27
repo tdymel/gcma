@@ -3,8 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use super::entries::{build_entries, dropped_parents};
+use super::guards::{refuse_unsignable, rewrite_warnings};
 use super::pathplan::{self, PathOutcome};
-use super::range::resolve;
+use super::range::{RangeInfo, resolve};
 use super::timing::{Schedule, load_external_parents, window_for};
 use super::types::{Built, PlanOptions};
 use crate::application::pathrules::TreeRewriter;
@@ -16,118 +17,174 @@ use crate::domain::history::conform::{self, Ctx};
 use crate::domain::history::linearize::linearize;
 use crate::domain::history::parents::resolve_parents;
 use crate::domain::history::plan::{Parent, PathRules, Plan};
-use crate::domain::settings::{Config, Signing};
+use crate::domain::paths::PathFilter;
+use crate::domain::scheduling::Window;
+use crate::domain::settings::Config;
+
+/// What planning reads once and every later step needs.
+struct Loaded<'a> {
+    /// The commits of the range, plus (with a schedule or path rules) their outside parents.
+    commits: HashMap<String, Commit>,
+    /// Schedule mode: the window and the resolved end of it.
+    window: Option<(Window, i64)>,
+    rewriter: Option<TreeRewriter<'a>>,
+    /// Range commits whose tree contains an excluded path.
+    excluded: HashSet<String>,
+    /// Committer time of every loaded commit.
+    times: HashMap<String, i64>,
+}
+
+impl Loaded<'_> {
+    fn window(&self) -> Option<&Window> {
+        self.window.as_ref().map(|(w, _)| w)
+    }
+}
 
 pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Result<Built> {
     check_preconditions(repo, opts.strict)?;
     let range = resolve(repo, opts)?;
-    let order = &range.order;
-    let empty = || Built {
+    if range.order.is_empty() {
+        return Ok(nothing_to_do(cfg, &range));
+    }
+    let filter = cfg.path_filter()?;
+    let loaded = load(repo, cfg, opts.now, &range, filter.as_ref())?;
+    let suffix = choose_suffix(repo, cfg, opts, &range, &loaded)?;
+    if suffix.is_empty() {
+        return Ok(nothing_to_do(cfg, &range));
+    }
+    let (plan, warnings) = assemble(repo, cfg, &range, &loaded, filter.as_ref(), &suffix)?;
+    Ok(Built {
+        plan,
+        range_len: range.order.len(),
+        frozen: range.order.len() - suffix.len(),
+        warnings,
+    })
+}
+
+/// The result when every commit of the range is left alone.
+fn nothing_to_do(cfg: &Config, range: &RangeInfo) -> Built {
+    Built {
         plan: Plan::new(
             range.branch_ref.clone(),
             range.tip.clone(),
             cfg.signing,
             Vec::new(),
         ),
-        range_len: order.len(),
-        frozen: order.len(),
+        range_len: range.order.len(),
+        frozen: range.order.len(),
         warnings: Vec::new(),
-    };
-    if order.is_empty() {
-        return Ok(empty());
     }
+}
 
-    let range_set: HashSet<&String> = order.iter().collect();
+/// Reads the commits of the range, the schedule window, and which commits touch excluded paths.
+fn load<'a>(
+    repo: &'a dyn Repository,
+    cfg: &Config,
+    now: i64,
+    range: &RangeInfo,
+    filter: Option<&'a PathFilter>,
+) -> Result<Loaded<'a>> {
+    let order = &range.order;
     let mut commits: HashMap<String, Commit> = repo
         .read_commits(order)?
         .into_iter()
         .map(|c| (c.oid.clone(), c))
         .collect();
-
-    // Schedule mode: the window, and the committer times of parents outside the range.
-    let now = opts.now;
     let window = window_for(cfg, now)?;
-    let filter = cfg.path_filter()?;
-    let rewriter = filter.as_ref().map(|f| TreeRewriter::new(repo, f));
+    let rewriter = filter.map(|f| TreeRewriter::new(repo, f));
+    // The committer times of parents outside the range matter to the schedule and to path rules.
     if window.is_some() || rewriter.is_some() {
+        let range_set: HashSet<&String> = order.iter().collect();
         load_external_parents(repo, &mut commits, &range_set)?;
     }
-    let excluded: HashSet<String> = match &rewriter {
-        Some(rw) => {
-            let mut set = HashSet::new();
-            for oid in order {
-                if rw.has_excluded(&commits[oid].tree)? {
-                    set.insert(oid.clone());
-                }
+    let mut excluded = HashSet::new();
+    if let Some(rw) = &rewriter {
+        for oid in order {
+            if rw.has_excluded(&commits[oid].tree)? {
+                excluded.insert(oid.clone());
             }
-            set
         }
-        None => HashSet::new(),
-    };
-    let times: HashMap<String, i64> = commits
+    }
+    let times = commits
         .iter()
         .map(|(o, c)| (o.clone(), c.committer.time))
         .collect();
+    Ok(Loaded {
+        commits,
+        window,
+        rewriter,
+        excluded,
+        times,
+    })
+}
+
+/// The commits of the range that are rewritten (parents first): everything that is not frozen as
+/// conforming. Pushed commits among them need an explicit flag.
+fn choose_suffix(
+    repo: &dyn Repository,
+    cfg: &Config,
+    opts: &PlanOptions,
+    range: &RangeInfo,
+    loaded: &Loaded,
+) -> Result<Vec<String>> {
     let ctx = Ctx {
         cfg,
-        window: window.as_ref().map(|(w, _)| w),
-        times: &times,
-        excluded: rewriter.as_ref().map(|_| &excluded),
+        window: loaded.window(),
+        times: &loaded.times,
+        excluded: loaded.rewriter.as_ref().map(|_| &loaded.excluded),
     };
-
     let frozen = if opts.all {
         HashSet::new()
     } else {
-        conform::frozen_set(order, &commits, &ctx)
+        conform::frozen_set(&range.order, &loaded.commits, &ctx)
     };
-    let suffix: Vec<String> = order
+    let suffix: Vec<String> = range
+        .order
         .iter()
         .filter(|o| !frozen.contains(*o))
         .cloned()
         .collect();
-    if suffix.is_empty() {
-        return Ok(empty());
+    if !suffix.is_empty() {
+        refuse_pushed(
+            repo,
+            &suffix,
+            range.upstream.as_deref(),
+            opts.rewrite_pushed,
+        )?;
     }
-    refuse_pushed(
-        repo,
-        &suffix,
-        range.upstream.as_deref(),
-        opts.rewrite_pushed,
-    )?;
+    Ok(suffix)
+}
 
-    let linear = linearize(&suffix, &commits);
-    let outcome = match &rewriter {
-        Some(rw) => pathplan::apply_rules(rw, cfg, &linear, &commits, &excluded, &range.tip)?,
+/// The plan for the (non-empty) suffix, and the warnings about rewriting it.
+fn assemble(
+    repo: &dyn Repository,
+    cfg: &Config,
+    range: &RangeInfo,
+    loaded: &Loaded,
+    filter: Option<&PathFilter>,
+    suffix: &[String],
+) -> Result<(Plan, Vec<String>)> {
+    let commits = &loaded.commits;
+    let linear = linearize(suffix, commits);
+    let outcome = match &loaded.rewriter {
+        Some(rw) => pathplan::apply_rules(rw, cfg, &linear, commits, &loaded.excluded, &range.tip)?,
         None => PathOutcome::untouched(&linear),
     };
-    let new_tip = new_tip_when_dropped(&range.tip, &outcome, &commits)?;
-    let new_times = match &window {
+    let new_tip = new_tip_when_dropped(&range.tip, &outcome, commits)?;
+    let new_times = match &loaded.window {
         Some((w, to)) => Schedule {
             cfg,
             window: w,
             to: *to,
             base: range.base.as_deref(),
-            commits: &commits,
-            times: &times,
+            commits,
+            times: &loaded.times,
         }
         .instants(&linear, outcome.kept.len())?,
         None => Vec::new(),
     };
-    let entries = build_entries(
-        cfg,
-        window.as_ref().map(|(w, _)| w),
-        &new_times,
-        &outcome,
-        &commits,
-    )?;
-    let touched: Vec<String> = outcome
-        .kept
-        .iter()
-        .chain(&outcome.dropped)
-        .cloned()
-        .collect();
-    refuse_unsignable(cfg, &outcome.kept, &commits)?;
-    let warnings = rewrite_warnings(repo, cfg, &touched, &commits)?;
+    let entries = build_entries(cfg, loaded.window(), &new_times, &outcome, commits)?;
+    refuse_unsignable(cfg, &outcome.kept, commits)?;
 
     let mut plan = Plan::new(
         range.branch_ref.clone(),
@@ -135,19 +192,16 @@ pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Re
         cfg.signing,
         entries,
     );
-    if let Some(f) = &filter {
+    if let Some(f) = filter {
         plan.paths = Some(PathRules {
             exclude: f.patterns().to_vec(),
         });
         plan.dropped = outcome.dropped;
         plan.new_tip = new_tip;
     }
-    Ok(Built {
-        plan,
-        range_len: order.len(),
-        frozen: frozen.len(),
-        warnings,
-    })
+    let touched: Vec<String> = plan.touched_oids().cloned().collect();
+    let warnings = rewrite_warnings(repo, cfg, &touched, commits)?;
+    Ok((plan, warnings))
 }
 
 /// When the old tip itself is dropped, the branch moves to what its parent became.
@@ -176,59 +230,4 @@ fn new_tip_when_dropped(
                     .into(),
             )
         })
-}
-
-/// `git commit-tree -S` recodes a message that is not valid UTF-8, so such a commit cannot be
-/// re-signed byte for byte; better to say so now than to fail verification at apply time.
-fn refuse_unsignable(
-    cfg: &Config,
-    linear: &[String],
-    commits: &HashMap<String, Commit>,
-) -> Result<()> {
-    if cfg.signing != Signing::Resign {
-        return Ok(());
-    }
-    let binary = linear
-        .iter()
-        .filter(|o| std::str::from_utf8(&commits[*o].message).is_err())
-        .count();
-    if binary > 0 {
-        return Err(Error::Precondition(format!(
-            "{binary} commit(s) have messages that are not valid UTF-8, which git recodes when it signs, \
-             so `signing: resign` cannot keep them as they are; use `signing: strip` for this branch"
-        )));
-    }
-    Ok(())
-}
-
-/// Non-fatal consequences of rewriting these commits.
-fn rewrite_warnings(
-    repo: &dyn Repository,
-    cfg: &Config,
-    linear: &[String],
-    commits: &HashMap<String, Commit>,
-) -> Result<Vec<String>> {
-    let mut warnings = Vec::new();
-    let labels = repo.labels_pointing_at(&linear.iter().cloned().collect())?;
-    if !labels.is_empty() {
-        warnings.push(format!(
-            "tags/notes point at commits that will be rewritten and will keep pointing at the old ones: {}",
-            labels.join(", ")
-        ));
-    }
-    if cfg.signing == Signing::Resign {
-        let lossy = linear
-            .iter()
-            .filter(|o| {
-                commits[*o]
-                    .extra
-                    .iter()
-                    .any(|h| !h.is_invalidated_by_rewrite())
-            })
-            .count();
-        if lossy > 0 {
-            warnings.push(format!("{lossy} commit(s) carry extra headers (e.g. encoding) that `signing: resign` cannot preserve"));
-        }
-    }
-    Ok(warnings)
 }

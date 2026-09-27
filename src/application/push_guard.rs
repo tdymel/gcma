@@ -24,14 +24,15 @@ pub fn run_pre_push(
     now: i64,
 ) -> Result<()> {
     let remotes = repo.remotes()?;
+    let Some(branch_ref) = repo.current_branch_ref()? else {
+        return Ok(()); // detached HEAD: no push is judged
+    };
+    // Read once: nothing moves the branch between the pushed refs, as a rewrite ends the loop.
+    let tip = repo.ref_value(&branch_ref)?;
     for p in pushed {
         if is_zero_oid(&p.local_sha) {
             continue; // a delete push
         }
-        let Some(branch_ref) = repo.current_branch_ref()? else {
-            continue; // detached HEAD
-        };
-        let tip = repo.ref_value(&branch_ref)?;
         if !is_branch_push(repo, p, &branch_ref, tip.as_deref()) {
             continue;
         }
@@ -60,7 +61,7 @@ pub fn run_pre_push(
             continue;
         }
         let n = built.plan.entries.len() + built.plan.dropped.len();
-        return Err(blocked(repo, &branch_ref, n)?);
+        return blocked(repo, &branch_ref, n);
     }
     Ok(())
 }
@@ -113,13 +114,14 @@ fn unpushed_range(
     })
 }
 
-fn blocked(repo: &dyn Repository, branch_ref: &str, n: usize) -> Result<Error> {
+/// The push is refused: always an `Err` (or the failure to read the upstream).
+fn blocked(repo: &dyn Repository, branch_ref: &str, n: usize) -> Result<()> {
     let hint = if repo.upstream_oid(branch_ref)?.is_none() {
         " (the branch has no upstream: add `--from <rev>`)"
     } else {
         ""
     };
-    Ok(Error::Nonconforming(format!(
+    Err(Error::Nonconforming(format!(
         "{n} commit(s) about to be pushed do not follow the gcma rules; \
          run `gcma apply`{hint} (it rewrites the unpushed part of the branch) and push again"
     )))
