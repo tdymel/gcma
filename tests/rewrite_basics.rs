@@ -1,8 +1,10 @@
+//! The basics of a rewrite: identities change and everything else stays, merges keep their parent
+//! order and trees, commits that already conform keep their ids, a second run is a no-op, and
+//! `plan --check` reports what is left to do.
+
 mod common;
 
 use common::*;
-
-// ---------- identity rewriting (milestone 1) ----------
 
 #[test]
 fn identity_rewrite_preserves_everything_else() {
@@ -128,3 +130,28 @@ fn frozen_commits_keep_their_oids_and_only_the_rest_changes() {
 }
 
 // ---------- scheduling (milestone 3) ----------
+
+#[test]
+fn plan_check_exits_6_and_changes_nothing() {
+    let r = Repo::new();
+    r.linear(3, 1_600_000_000);
+    r.config(IDENTITY_CFG);
+    let tip = r.git(&["rev-parse", "HEAD"]);
+    let o = r.gcma(&["plan", "--check", "--from", "root"]);
+    assert_eq!(Repo::code(&o), 6, "{}", stderr(&o));
+    assert!(stderr(&o).contains("3 commit(s) do not follow"));
+    assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
+    assert!(r.git(&["for-each-ref", "refs/gcma/"]).is_empty());
+}
+
+#[test]
+fn all_flag_with_nothing_to_change_is_a_clean_noop() {
+    let r = Repo::new();
+    r.linear(3, 1_600_000_000);
+    r.config("version: 1\n");
+    let tip = r.git(&["rev-parse", "HEAD"]);
+    let o = r.gcma_ok(&["apply", "--from", "root", "--all"]);
+    assert!(o.contains("Nothing to do"), "{o}");
+    assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
+    assert!(r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty());
+}
