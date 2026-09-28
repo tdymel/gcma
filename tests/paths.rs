@@ -1,10 +1,9 @@
-//! Path rules: excluded paths leave history, the files stay in the working copy and get ignored.
+//! Path rules: excluded paths leave history, the files stay in the working copy and get ignored,
+//! and gcma's edits to `.gitignore` are reported (and never written through a symbolic link).
 
 mod common;
 
 use common::*;
-
-const CFG: &str = "version: 1\npaths:\n  exclude: [\"secrets/\"]\n";
 
 /// a, key only, b + key2, c.
 fn history_with_secrets(r: &Repo) {
@@ -25,19 +24,11 @@ fn tracked(r: &Repo, rev: &str) -> Vec<String> {
         .collect()
 }
 
-fn status_without_config(r: &Repo) -> String {
-    r.git(&["status", "--porcelain"])
-        .lines()
-        .filter(|l| !l.contains("gcma.yml"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 #[test]
 fn excluded_paths_leave_history_but_not_the_project() {
     let r = Repo::new();
     history_with_secrets(&r);
-    r.config(CFG);
+    r.config(SECRETS_CFG);
     let old_tip = r.git(&["rev-parse", "HEAD"]);
 
     let plan = r.gcma_ok(&["plan", "--from", "root"]);
@@ -95,7 +86,7 @@ fn excluded_paths_leave_history_but_not_the_project() {
         std::fs::read_to_string(r.path().join("secrets/key.pem")).unwrap(),
         "k1\n"
     );
-    assert_eq!(status_without_config(&r), "", "{}", r.git(&["status"]));
+    assert_eq!(r.status_without_config(), "", "{}", r.git(&["status"]));
     assert!(
         std::fs::read_to_string(r.path().join(".gitignore"))
             .unwrap()
@@ -126,7 +117,7 @@ fn a_tip_that_only_touches_excluded_paths_stays_as_the_gitignore_carrier() {
     let r = Repo::new();
     r.commit_files(&[("a.txt", "a\n")], "add a", 1_600_000_000);
     r.commit_files(&[("secrets/key.pem", "k\n")], "add key", 1_600_100_000);
-    r.config(CFG);
+    r.config(SECRETS_CFG);
     r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
     // The files are still in the project, so something on the branch must ignore them.
@@ -134,7 +125,7 @@ fn a_tip_that_only_touches_excluded_paths_stays_as_the_gitignore_carrier() {
     assert_eq!(rows.len(), 2);
     assert_eq!(tracked(&r, "HEAD"), [".gitignore", "a.txt"]);
     assert_eq!(tracked(&r, &rows[0].oid), ["a.txt"]);
-    assert_eq!(status_without_config(&r), "");
+    assert_eq!(r.status_without_config(), "");
 }
 
 #[test]
@@ -162,13 +153,13 @@ fn a_dropped_tip_hands_the_branch_to_a_kept_ancestor_that_carries_the_entry() {
         1_600_100_000,
     );
     r.commit_files(&[("secrets/k2", "2\n")], "add key2", 1_600_200_000);
-    r.config(CFG);
+    r.config(SECRETS_CFG);
     r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
     let rows = r.log();
     assert_eq!(rows.len(), 2, "the tip is dropped, nothing extra is kept");
     assert_eq!(tracked(&r, "HEAD"), [".gitignore", "a.txt", "b.txt"]);
-    assert_eq!(status_without_config(&r), "");
+    assert_eq!(r.status_without_config(), "");
 }
 
 #[test]
@@ -234,7 +225,7 @@ fn dropping_a_side_branch_commit_rewires_the_merge() {
     r.git(&["checkout", "-q", "main"]);
     r.commit_files(&[("y.txt", "y\n")], "main: y", 1_600_300_000);
     r.git(&["merge", "-q", "--no-ff", "-m", "merge feat", "feat"]);
-    r.config(CFG);
+    r.config(SECRETS_CFG);
     let old = r.log();
     r.gcma_ok(&["apply", "--from", "root"]);
     r.fsck();
@@ -272,7 +263,7 @@ fn rules_combine_with_schedule_and_identity() {
 fn an_edited_plan_cannot_change_trees() {
     let r = Repo::new();
     history_with_secrets(&r);
-    r.config(CFG);
+    r.config(SECRETS_CFG);
     let plan_path = r.path().join("plan.json");
     r.gcma_ok(&[
         "plan",
@@ -307,11 +298,58 @@ fn modified_gitignore_in_the_working_copy_is_left_alone() {
         "add b",
         1_600_100_000,
     );
-    r.config(CFG);
+    r.config(SECRETS_CFG);
     r.write(".gitignore", "target\nmine\n"); // unstaged local edit
     r.gcma_ok(&["apply", "--from", "root"]);
     assert_eq!(
         std::fs::read_to_string(r.path().join(".gitignore")).unwrap(),
         "target\nmine\n"
     );
+}
+
+#[test]
+fn local_gitignore_edits_are_kept_and_reported() {
+    let r = Repo::new();
+    r.commit_files(
+        &[(".gitignore", "target\n"), ("a.txt", "a\n")],
+        "init",
+        1_600_000_000,
+    );
+    r.commit_files(
+        &[("secrets/k", "k\n"), ("b.txt", "b\n")],
+        "add b",
+        1_600_100_000,
+    );
+    r.config(SECRETS_CFG);
+    r.write(".gitignore", "target\nmine\n");
+    let o = r.gcma(&["apply", "--from", "root"]);
+    assert!(o.status.success());
+    assert!(
+        stderr(&o).contains(".gitignore has local changes"),
+        "{}",
+        stderr(&o)
+    );
+    assert!(
+        stderr(&o).contains("rotate"),
+        "the secrets warning is printed: {}",
+        stderr(&o)
+    );
+}
+
+#[test]
+fn a_symlinked_gitignore_is_never_written_through() {
+    let r = Repo::new();
+    r.commit_files(&[("a.txt", "a\n")], "init", 1_600_000_000);
+    r.commit_files(
+        &[("secrets/k", "k\n"), ("b.txt", "b\n")],
+        "add b",
+        1_600_100_000,
+    );
+    r.config(SECRETS_CFG);
+    let outside = r.home.path().join("outside");
+    std::os::unix::fs::symlink(&outside, r.path().join(".gitignore")).unwrap();
+    let o = r.gcma(&["apply", "--from", "root"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(!outside.exists(), "the link target must not be created");
+    assert!(stderr(&o).contains("symbolic link"), "{}", stderr(&o));
 }

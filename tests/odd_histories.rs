@@ -1,6 +1,6 @@
 //! Histories and repositories that are not the plain linear case: unrelated roots, names that are
 //! not UTF-8, offsets that disagree with the schedule, other branches' backups, and the warnings
-//! `apply` prints.
+//! `plan` and `apply` print (tags and headers that a rewrite cannot carry).
 
 mod common;
 
@@ -10,21 +10,13 @@ use std::os::unix::ffi::OsStrExt;
 use chrono::TimeZone;
 use common::*;
 
-const IDENTITY_CFG: &str = "version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n";
-const T0: i64 = 1_600_000_000;
-
-fn stderr(o: &std::process::Output) -> String {
-    String::from_utf8_lossy(&o.stderr).to_string()
-}
-
 #[test]
 fn a_backup_of_another_branch_is_refused_and_leaves_both_branches_alone() {
     let r = Repo::new();
     r.linear(3, T0);
     r.config(IDENTITY_CFG);
     r.gcma_ok(&["apply", "--from", "root"]);
-    let listing = r.gcma_ok(&["restore"]);
-    let id = listing.split_whitespace().next().unwrap().to_string();
+    let id = r.backup_id();
     r.git(&["checkout", "-q", "-b", "other"]);
     let (main, other) = (
         r.git(&["rev-parse", "main"]),
@@ -63,6 +55,20 @@ fn apply_warns_about_tags_that_will_keep_pointing_at_the_old_commits() {
         r.git(&["rev-parse", "v1"]),
         old_middle,
         "the tag stays where it was"
+    );
+}
+
+#[test]
+fn tags_pointing_into_the_rewrite_are_warned_about() {
+    let r = Repo::new();
+    r.linear(3, 1_600_000_000);
+    r.git(&["tag", "v1", "HEAD~1"]);
+    r.git(&["tag", "-a", "-m", "annotated", "v2", "HEAD"]);
+    r.config(IDENTITY_CFG);
+    let out = r.gcma_ok(&["plan", "--from", "root"]);
+    assert!(
+        out.contains("refs/tags/v1") && out.contains("refs/tags/v2"),
+        "{out}"
     );
 }
 
@@ -148,12 +154,7 @@ fn unrelated_roots_are_all_rewritten_and_stay_roots() {
         r.gcma_ok(&["apply", "--from", "root"])
             .contains("Nothing to do")
     );
-    let id = r
-        .gcma_ok(&["restore"])
-        .split_whitespace()
-        .next()
-        .unwrap()
-        .to_string();
+    let id = r.backup_id();
     r.gcma_ok(&["restore", &id]);
     assert_same_content(&old, &r.log());
 }

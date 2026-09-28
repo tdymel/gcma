@@ -141,8 +141,7 @@ fn run_backend(backend: &'static str, src: &Repo, n: usize) -> Timing {
         new_trees, old_trees,
         "every commit must keep its tree, in order"
     );
-    let id = r.gcma_ok(&["restore"]);
-    let id = id.split_whitespace().next().unwrap().to_string();
+    let id = r.backup_id();
     let t = Instant::now();
     r.gcma_ok(&["restore", &id]);
     let restore = t.elapsed();

@@ -1,34 +1,10 @@
-//! The pre-push hook: what it blocks, rewrites and leaves alone, and how it installs.
+//! The pre-push hook: what it blocks, rewrites and leaves alone, how it installs, and how it
+//! behaves next to path rules, a broken config, a custom hooks path and the different ways a push
+//! can be spelled.
 
 mod common;
 
 use common::*;
-
-const IDENTITY_CFG: &str = "version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n";
-
-#[test]
-fn hook_case_only_new_commits_are_rescheduled() {
-    let r = Repo::new();
-    r.linear(10, 1_500_000_000);
-    r.config(&berlin_cfg(""));
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let settled = r.log();
-    // Three new commits made "now-ish" (outside the allowed window).
-    let t = settled.last().unwrap().ct + 3600 * 24 * 3 + 7 * 3600; // a night, a few days later
-    for i in 0..3 {
-        r.commit_at(&format!("new{i}.txt"), &format!("new {i}"), t + i * 60);
-    }
-    let plan = r.gcma_ok(&["plan", "--from", "root"]);
-    assert!(plan.contains("10 kept as-is, 3 to rewrite"), "{plan}");
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let after = r.log();
-    for (a, b) in settled.iter().zip(&after) {
-        assert_eq!(a.oid, b.oid, "settled commits keep their OIDs");
-    }
-    assert_eq!(after.len(), 13);
-    assert_scheduled(&after);
-    assert!(after[10].ct >= settled.last().unwrap().ct);
-}
 
 #[test]
 fn hook_verify_blocks_nonconforming_pushes_and_allows_conforming_ones() {
@@ -211,4 +187,173 @@ fn uninstalling_without_a_hook_says_so_and_succeeds() {
         r.gcma_ok(&["hook", "uninstall"])
             .contains("no hook installed")
     );
+}
+
+// ---------- the hook next to path rules, config errors and other push shapes ----------
+
+fn hook_repo(cfg: &str) -> (Repo, std::path::PathBuf) {
+    let r = Repo::new();
+    let remote = r.bare_remote();
+    r.config(cfg);
+    r.gcma_ok(&["hook", "install"]);
+    (r, remote)
+}
+
+#[test]
+fn the_hook_in_verify_mode_blocks_secrets_until_the_history_is_cleaned() {
+    let (r, remote) = hook_repo(SECRETS_CFG);
+    r.commit_files(
+        &[("src/a.rs", "a\n"), ("secrets/key.pem", "k\n")],
+        "feature",
+        1_600_000_000,
+    );
+    let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
+    assert!(!o.status.success());
+    assert!(
+        stderr(&o).contains("do not follow the gcma rules"),
+        "{}",
+        stderr(&o)
+    );
+    assert!(
+        r.git(&["ls-remote", "origin"]).is_empty(),
+        "nothing reached the remote"
+    );
+
+    r.gcma_ok(&["apply", "--from", "root"]);
+    let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(!remote_files(&remote).contains("secrets/"));
+    assert!(remote_files(&remote).contains("src/a.rs"));
+}
+
+#[test]
+fn the_hook_in_rewrite_mode_removes_secrets_aborts_and_the_retry_succeeds() {
+    let (r, remote) = hook_repo(&format!("{SECRETS_CFG}hook:\n  mode: rewrite\n"));
+    r.commit_files(
+        &[("src/a.rs", "a\n"), ("secrets/key.pem", "k\n")],
+        "feature",
+        1_600_000_000,
+    );
+    let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
+    assert!(!o.status.success());
+    assert!(
+        stderr(&o).contains("run `git push` again"),
+        "{}",
+        stderr(&o)
+    );
+    assert!(
+        !r.git(&["ls-tree", "-r", "--name-only", "HEAD"])
+            .contains("secrets/")
+    );
+    assert!(r.path().join("secrets/key.pem").exists());
+    assert!(r.git(&["ls-remote", "origin"]).is_empty());
+
+    let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert_eq!(remote_tip(&remote, "main"), r.git(&["rev-parse", "HEAD"]));
+    assert!(!remote_files(&remote).contains("secrets/"));
+    r.fsck();
+}
+
+#[test]
+fn a_broken_config_blocks_the_push_and_no_verify_bypasses_the_hook() {
+    let (r, remote) = hook_repo("version: 1\n");
+    r.config("version: 1\nschedule: {days: [funday]}\nfrom: 2026-01-01\n");
+    r.commit_at("a.txt", "a", 1_600_000_000);
+    let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
+    assert!(!o.status.success());
+    assert!(
+        stderr(&o).contains("funday"),
+        "the config error is shown: {}",
+        stderr(&o)
+    );
+    assert!(r.git(&["ls-remote", "origin"]).is_empty());
+
+    let o = r.git_out(&["push", "-q", "--no-verify", "-u", "origin", "main"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert_eq!(remote_tip(&remote, "main"), r.git(&["rev-parse", "HEAD"]));
+}
+
+#[test]
+fn without_any_rules_the_hook_lets_everything_through() {
+    let (r, remote) = hook_repo("version: 1\n");
+    r.commit_at("a.txt", "a", 1_600_000_000);
+    let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert_eq!(remote_tip(&remote, "main"), r.git(&["rev-parse", "HEAD"]));
+}
+
+#[test]
+fn without_a_config_file_the_hook_lets_everything_through() {
+    let r = Repo::new();
+    let remote = r.bare_remote();
+    r.gcma_ok(&["hook", "install"]);
+    r.commit_at("a.txt", "a", 1_600_000_000);
+    let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert_eq!(remote_tip(&remote, "main"), r.git(&["rev-parse", "HEAD"]));
+}
+
+#[test]
+fn the_hook_honours_a_custom_hooks_path() {
+    let r = Repo::new();
+    r.bare_remote();
+    r.config(IDENTITY_CFG);
+    let hooks = r.path().join(".githooks");
+    std::fs::create_dir_all(&hooks).unwrap();
+    r.git(&["config", "core.hooksPath", ".githooks"]);
+    r.gcma_ok(&["hook", "install"]);
+    r.commit_at("bad.txt", "bad", 1_600_000_000);
+    let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
+    assert!(
+        !o.status.success(),
+        "the hook must run from core.hooksPath ({}): {}",
+        hooks.display(),
+        stderr(&o)
+    );
+}
+
+#[test]
+fn the_hook_survives_a_push_of_a_new_branch_from_a_clean_history() {
+    let (r, _) = hook_repo(IDENTITY_CFG);
+    r.commit_as("a.txt", "a", 1_600_000_000, "Jane Doe", "jane@work.com");
+    r.git(&["checkout", "-q", "-b", "feature"]);
+    r.commit_as("b.txt", "b", 1_600_100_000, "Jane Doe", "jane@work.com");
+    let o = r.git_out(&["push", "-q", "-u", "origin", "feature"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+}
+
+#[test]
+fn the_hook_judges_a_nonconforming_ancestor_pushed_as_a_revision() {
+    let r = Repo::new();
+    r.bare_remote();
+    r.config(IDENTITY_CFG);
+    r.commit_at("bad.txt", "bad", 1_600_000_000);
+    r.commit_as("ok.txt", "ok", 1_600_100_000, "Jane Doe", "jane@work.com");
+    r.gcma_ok(&["hook", "install"]);
+    let o = r.git_out(&["push", "-q", "origin", "HEAD~1:refs/heads/main"]);
+    assert!(
+        !o.status.success(),
+        "the old identity must not slip through"
+    );
+    assert!(
+        stderr(&o).contains("do not follow the gcma rules"),
+        "{}",
+        stderr(&o)
+    );
+    assert!(r.git_out(&["ls-remote", "origin"]).stdout.is_empty());
+}
+
+#[test]
+fn the_hook_blocks_commits_that_would_only_be_dropped() {
+    let r = Repo::new();
+    r.bare_remote();
+    r.config("version: 1\npaths:\n  exclude: [\"secrets/\"]\n  gitignore: false\n");
+    r.commit_files(&[("a.txt", "a\n")], "add a", 1_600_000_000);
+    r.gcma_ok(&["hook", "install"]);
+    r.git(&["push", "-q", "-u", "origin", "main"]);
+    r.commit_files(&[("secrets/k", "k\n")], "add key", 1_600_100_000);
+    let o = r.git_out(&["push", "-q", "origin", "main"]);
+    assert!(!o.status.success(), "the secret commit must not be pushed");
+    assert!(stderr(&o).contains("1 commit(s)"), "{}", stderr(&o));
 }

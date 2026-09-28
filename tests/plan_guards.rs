@@ -6,14 +6,6 @@ mod common;
 
 use common::*;
 
-const IDENTITY_CFG: &str = "version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n";
-const SECRETS_CFG: &str = "version: 1\npaths:\n  exclude: [\"secrets/\"]\n";
-const T0: i64 = 1_600_000_000;
-
-fn stderr(o: &std::process::Output) -> String {
-    String::from_utf8_lossy(&o.stderr).to_string()
-}
-
 fn untouched(r: &Repo, tip: &str) {
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip, "the branch moved");
     assert!(

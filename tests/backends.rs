@@ -4,8 +4,6 @@ mod common;
 
 use common::*;
 
-const IDENTITY_CFG: &str = "version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n";
-
 #[test]
 fn backend_selection_flag_env_and_config() {
     let r = Repo::new();

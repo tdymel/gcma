@@ -1,23 +1,13 @@
 //! Every situation `apply` must refuse: the exit code is 3, the message says why, and not a single
-//! ref, backup or file changes.
+//! ref, backup or file changes. Also what stops a run before it starts: a missing repository or
+//! config file, config errors and a range that cannot be resolved (exit 2).
 
 mod common;
 
 use common::*;
 
-const IDENTITY_CFG: &str = "version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n";
-
-fn stderr(o: &std::process::Output) -> String {
-    String::from_utf8_lossy(&o.stderr).to_string()
-}
-
-/// All refs and their targets: the thing that must not change when a run is refused.
-fn refs(r: &Repo) -> String {
-    r.git(&["for-each-ref", "--format=%(refname) %(objectname)"])
-}
-
 fn refused(r: &Repo, args: &[&str], why: &str) {
-    let before = refs(r);
+    let before = r.refs();
     let head = r.git(&["rev-parse", "HEAD"]);
     let o = r.gcma(args);
     assert_eq!(Repo::code(&o), 3, "{args:?}: {}", stderr(&o));
@@ -26,7 +16,7 @@ fn refused(r: &Repo, args: &[&str], why: &str) {
         "expected {why:?} in: {}",
         stderr(&o)
     );
-    assert_eq!(refs(r), before, "no ref may change");
+    assert_eq!(r.refs(), before, "no ref may change");
     assert_eq!(r.git(&["rev-parse", "HEAD"]), head);
     assert!(
         !r.git(&["for-each-ref", "refs/gcma/"]).contains("backup"),
@@ -180,10 +170,10 @@ fn a_rebase_in_progress_is_refused() {
     let o = r.git_out(&["rebase", "main"]);
     assert!(!o.status.success(), "the fixture must conflict");
     // Detached HEAD and a running rebase: either reason is a refusal.
-    let before = refs(&r);
+    let before = r.refs();
     let o = r.gcma(&["apply", "--from", "root"]);
     assert_eq!(Repo::code(&o), 3, "{}", stderr(&o));
-    assert_eq!(refs(&r), before);
+    assert_eq!(r.refs(), before);
 }
 
 #[test]
@@ -229,6 +219,48 @@ fn without_a_config_file_gcma_is_inert_and_says_so_but_a_named_missing_file_is_a
     let o = r.gcma(&["--config", "does-not-exist.yml", "plan", "--from", "root"]);
     assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
     assert!(stderr(&o).contains("does-not-exist.yml"), "{}", stderr(&o));
+}
+
+#[test]
+fn config_errors_exit_2() {
+    let r = Repo::new();
+    r.linear(1, 1_600_000_000);
+    for bad in [
+        "version: 1\nlast: 6mo\n",
+        "version: 3\n",
+        "version: 1\nschedule: {}\n",
+        "version: 1\nidentity:\n  - match: {email: a@x}\n    set: {name: B, email: b@x}\n  - match: {email: b@x}\n    set: {name: C, email: c@x}\n",
+        "version: 1\ntimezone: Mars/Base\n",
+    ] {
+        r.config(bad);
+        let o = r.gcma(&["plan", "--from", "root"]);
+        assert_eq!(
+            Repo::code(&o),
+            2,
+            "{bad}: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+    }
+}
+
+#[test]
+fn identity_values_that_would_corrupt_a_commit_are_rejected() {
+    let r = Repo::new();
+    r.linear(1, 1_600_000_000);
+    for bad in ["\"Jane\\ncommitter x\"", "\"Jane <x>\""] {
+        r.config(&format!(
+            "version: 1\nidentity:\n  - match: {{email: me@home.org}}\n    set: {{name: {bad}, email: j@w.com}}\n"
+        ));
+        assert_eq!(Repo::code(&r.gcma(&["plan", "--from", "root"])), 2, "{bad}");
+    }
+}
+
+#[test]
+fn a_config_whose_to_precedes_from_is_a_usage_error() {
+    let r = Repo::new();
+    r.linear(1, 1_600_000_000);
+    r.config("version: 1\nfrom: 2026-01-01\nto: 2025-01-01\nschedule: {}\n");
+    assert_eq!(Repo::code(&r.gcma(&["plan", "--from", "root"])), 2);
 }
 
 #[test]

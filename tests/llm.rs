@@ -5,13 +5,6 @@ mod common;
 use common::*;
 use std::io::Write;
 
-fn out(o: &std::process::Output) -> String {
-    String::from_utf8_lossy(&o.stdout).to_string()
-}
-fn err(o: &std::process::Output) -> String {
-    String::from_utf8_lossy(&o.stderr).to_string()
-}
-
 fn setup(cfg: &str) -> (Repo, String) {
     let r = Repo::new();
     r.commit_msg(
@@ -29,8 +22,8 @@ fn setup(cfg: &str) -> (Repo, String) {
 
 fn rows(r: &Repo, plan: &str) -> Vec<serde_json::Value> {
     let o = r.gcma(&["export", "--plan", plan]);
-    assert!(o.status.success(), "{}", err(&o));
-    out(&o)
+    assert!(o.status.success(), "{}", stderr(&o));
+    stdout(&o)
         .lines()
         .map(|l| serde_json::from_str(l).unwrap())
         .collect()
@@ -71,11 +64,11 @@ fn a_reply_from_stdin_is_applied_and_the_protected_trailer_is_kept() {
         .write_all(reply.as_bytes())
         .unwrap();
     let o = child.wait_with_output().unwrap();
-    assert!(o.status.success(), "{}", err(&o));
+    assert!(o.status.success(), "{}", stderr(&o));
     assert!(
-        out(&o).contains("imported 2 message(s) (0 unchanged)"),
+        stdout(&o).contains("imported 2 message(s) (0 unchanged)"),
         "{}",
-        out(&o)
+        stdout(&o)
     );
     r.gcma_ok(&["apply", "--plan", &plan]);
     let subjects: Vec<String> = r.log().into_iter().map(|x| x.subject).collect();
@@ -172,13 +165,17 @@ fn a_bad_reply_changes_nothing_exits_7_and_lists_the_rows_to_retry() {
     ] {
         std::fs::write(&reply, text).unwrap();
         let o = r.gcma(&["import", "--plan", &plan, reply.to_str().unwrap()]);
-        assert_eq!(Repo::code(&o), 7, "{text:?}: {}", err(&o));
+        assert_eq!(Repo::code(&o), 7, "{text:?}: {}", stderr(&o));
         assert!(
-            err(&o).contains(needle),
+            stderr(&o).contains(needle),
             "{text:?}: expected {needle:?} in {}",
-            err(&o)
+            stderr(&o)
         );
-        assert!(err(&o).contains("nothing was imported"), "{}", err(&o));
+        assert!(
+            stderr(&o).contains("nothing was imported"),
+            "{}",
+            stderr(&o)
+        );
         assert_eq!(
             std::fs::read(&plan).unwrap(),
             before,
@@ -191,10 +188,10 @@ fn a_bad_reply_changes_nothing_exits_7_and_lists_the_rows_to_retry() {
 fn a_missing_reply_or_plan_file_is_a_usage_error() {
     let (r, plan) = setup("version: 1\n");
     let o = r.gcma(&["import", "--plan", &plan, "no-such-reply.jsonl"]);
-    assert_eq!(Repo::code(&o), 2, "{}", err(&o));
-    assert!(err(&o).contains("no-such-reply.jsonl"));
+    assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
+    assert!(stderr(&o).contains("no-such-reply.jsonl"));
     let o = r.gcma(&["import", "--plan", "no-such-plan.json", "-"]);
-    assert_eq!(Repo::code(&o), 2, "{}", err(&o));
+    assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
 }
 
 #[test]
@@ -203,8 +200,12 @@ fn an_empty_reply_imports_nothing() {
     let reply = r.path().join("reply.jsonl");
     std::fs::write(&reply, "\n\n").unwrap();
     let o = r.gcma(&["import", "--plan", &plan, reply.to_str().unwrap()]);
-    assert!(o.status.success(), "{}", err(&o));
-    assert!(out(&o).contains("imported 0 message(s)"), "{}", out(&o));
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(
+        stdout(&o).contains("imported 0 message(s)"),
+        "{}",
+        stdout(&o)
+    );
 }
 
 #[test]
@@ -216,9 +217,9 @@ fn control_characters_in_the_prelude_cannot_reach_the_terminal() {
     json["entries"][2]["author"]["name"] = serde_json::json!("Evil\u{1b}[2J");
     std::fs::write(&plan, serde_json::to_vec(&json).unwrap()).unwrap();
     let o = r.gcma(&["export", "--plan", &plan]);
-    assert!(o.status.success(), "{}", err(&o));
+    assert!(o.status.success(), "{}", stderr(&o));
     assert!(
-        !err(&o).contains('\u{1b}'),
+        !stderr(&o).contains('\u{1b}'),
         "escape sequences must be neutralised on stderr"
     );
 }
