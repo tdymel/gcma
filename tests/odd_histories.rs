@@ -165,8 +165,20 @@ fn path_rules_handle_file_names_that_are_not_utf8() {
     // `secrets/<0xff>.pem` and `caf<0xe9>.key` cannot be written as Rust strings.
     let odd = |rel: &[u8]| r.path().join(OsStr::from_bytes(rel));
     std::fs::create_dir_all(r.path().join("secrets")).unwrap();
-    std::fs::write(odd(b"secrets/\xff.pem"), "pem\n").unwrap();
-    std::fs::write(odd(b"caf\xe9.key"), "key\n").unwrap();
+    // Some file systems (APFS on macOS) refuse names that are not valid UTF-8 (EILSEQ).
+    for (name, content) in [
+        (&b"secrets/\xff.pem"[..], "pem\n"),
+        (&b"caf\xe9.key"[..], "key\n"),
+    ] {
+        match std::fs::write(odd(name), content) {
+            Ok(()) => {}
+            Err(e) if matches!(e.raw_os_error(), Some(84 | 92)) => {
+                eprintln!("skipping: this file system rejects non-UTF-8 names ({e})");
+                return;
+            }
+            Err(e) => panic!("cannot create the test file: {e}"),
+        }
+    }
     r.git(&["add", "-A", "--", "secrets"]);
     r.git(&["add", "--", "."]);
     r.git(&["commit", "-q", "-m", "only secrets"]);
