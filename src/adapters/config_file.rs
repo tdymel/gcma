@@ -54,6 +54,20 @@ mod tests {
     }
 
     #[test]
+    fn bad_hours_say_what_is_expected() {
+        let e = parse("version: 1\nfrom: 2026-01-01\nschedule:\n  hours: 5\n").unwrap_err();
+        assert!(
+            e.to_string()
+                .contains("a range like \"09:00-18:00\" or a list of them"),
+            "{e}"
+        );
+        assert!(
+            parse("version: 1\nfrom: 2026-01-01\nschedule:\n  hours: [\"09:00-12:00\", \"13:00-18:00\"]\n")
+                .is_ok()
+        );
+    }
+
+    #[test]
     fn schedule_requires_from() {
         assert!(parse("version: 1\nschedule: {}\n").is_err());
         assert!(parse("version: 1\nfrom: 2026-01-01\nschedule: {}\n").is_ok());
