@@ -1,6 +1,7 @@
 //! The pre-push hook: what it blocks, rewrites and leaves alone, how it installs, and how it
 //! behaves next to path rules, a broken config, a custom hooks path and the different ways a push
-//! can be spelled.
+//! can be spelled. Also the case the hook meets on every push: a settled history that gains new
+//! commits, of which only the new ones are rescheduled.
 
 mod common;
 
@@ -352,4 +353,28 @@ fn the_hook_blocks_commits_that_would_only_be_dropped() {
     let o = r.git_out(&["push", "-q", "origin", "main"]);
     assert!(!o.status.success(), "the secret commit must not be pushed");
     assert!(stderr(&o).contains("1 commit(s)"), "{}", stderr(&o));
+}
+
+#[test]
+fn hook_case_only_new_commits_are_rescheduled() {
+    let r = Repo::new();
+    r.linear(10, 1_500_000_000);
+    r.config(&berlin_cfg(""));
+    r.gcma_ok(&["apply", "--from", "root"]);
+    let settled = r.log();
+    // Three new commits made "now-ish" (outside the allowed window).
+    let t = settled.last().unwrap().ct + 3600 * 24 * 3 + 7 * 3600; // a night, a few days later
+    for i in 0..3 {
+        r.commit_at(&format!("new{i}.txt"), &format!("new {i}"), t + i * 60);
+    }
+    let plan = r.gcma_ok(&["plan", "--from", "root"]);
+    assert!(plan.contains("10 kept as-is, 3 to rewrite"), "{plan}");
+    r.gcma_ok(&["apply", "--from", "root"]);
+    let after = r.log();
+    for (a, b) in settled.iter().zip(&after) {
+        assert_eq!(a.oid, b.oid, "settled commits keep their OIDs");
+    }
+    assert_eq!(after.len(), 13);
+    assert_scheduled(&after);
+    assert!(after[10].ct >= settled.last().unwrap().ct);
 }

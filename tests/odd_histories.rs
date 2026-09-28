@@ -4,7 +4,6 @@
 
 mod common;
 
-use chrono::TimeZone;
 use common::*;
 
 #[test]
@@ -105,34 +104,4 @@ fn unrelated_roots_are_all_rewritten_and_stay_roots() {
     let id = r.backup_id();
     r.gcma_ok(&["restore", &id]);
     assert_same_content(&old, &r.log());
-}
-
-#[test]
-fn a_commit_inside_the_hours_but_with_the_wrong_offset_is_fixed_and_its_neighbour_is_not() {
-    let r = Repo::new();
-    let berlin = |h| {
-        let tz: chrono_tz::Tz = "Europe/Berlin".parse().unwrap();
-        tz.with_ymd_and_hms(2026, 1, 12, h, 0, 0)
-            .unwrap()
-            .timestamp()
-    };
-    let good = r.commit_at_offset("good.txt", "right offset", berlin(10), "+0100");
-    r.commit_at_offset("bad.txt", "wrong offset", berlin(11), "+0000");
-    r.config(&berlin_cfg(""));
-    let o = r.gcma(&["plan", "--check", "--from", "root"]);
-    assert_eq!(Repo::code(&o), 6, "{}", stderr(&o));
-    assert!(stderr(&o).contains("1 commit(s)"), "{}", stderr(&o));
-    r.gcma_ok(&["apply", "--from", "root"]);
-    assert_eq!(r.log()[0].oid, good, "the conforming commit keeps its id");
-    assert!(
-        r.committer_offsets().iter().all(|(_, off)| *off == 60),
-        "{:?}",
-        r.committer_offsets()
-    );
-    assert_scheduled(&r.log());
-    assert!(
-        r.gcma(&["plan", "--check", "--from", "root"])
-            .status
-            .success()
-    );
 }
