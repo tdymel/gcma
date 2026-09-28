@@ -102,21 +102,31 @@ fn resign_refuses_messages_that_git_would_recode_before_anything_is_written() {
     r.commit_msg("latin.txt", b"caf\xe9\n", T0); // not valid UTF-8
     r.config("version: 1\nsigning: resign\n");
     let tip = r.git(&["rev-parse", "HEAD"]);
-    for cmd in ["plan", "apply"] {
-        let o = r.gcma(&[cmd, "--from", "root"]);
-        assert_eq!(Repo::code(&o), 3, "{cmd}: {}", stderr(&o));
-        assert!(
-            stderr(&o).contains("not valid UTF-8"),
-            "{cmd}: {}",
-            stderr(&o)
-        );
-    }
+    // The dry run only warns: an imported reply can still give the commit a new message.
+    let o = r.gcma(&["plan", "--from", "root"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    // Applying would have to keep the bytes, which signing cannot do.
+    let o = r.gcma(&["apply", "--from", "root"]);
+    assert_eq!(Repo::code(&o), 3, "{}", stderr(&o));
+    assert!(stderr(&o).contains("not valid UTF-8"), "{}", stderr(&o));
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
     assert!(r.git(&["for-each-ref", "refs/gcma/"]).is_empty());
-    // Stripping signatures keeps the bytes, so that config still works.
-    r.config("version: 1\nsigning: strip\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n");
-    r.gcma_ok(&["apply", "--from", "root"]);
-    assert_eq!(r.message_bytes("HEAD"), b"caf\xe9\n");
+    // Replacing the message through export/import makes the commit signable.
+    let plan = r.path().join("plan.json");
+    let plan_arg = plan.to_str().unwrap();
+    r.gcma_ok(&["plan", "--from", "root", "--out", plan_arg]);
+    let reply = r.path().join("reply.jsonl");
+    std::fs::write(&reply, "{\"i\":0,\"t\":\"Fixed message\"}\n").unwrap();
+    r.gcma_ok(&["import", "--plan", plan_arg, reply.to_str().unwrap()]);
+    r.gcma_ok(&["apply", "--plan", plan_arg]);
+    assert_eq!(r.message_bytes("HEAD"), b"Fixed message\n");
+    assert!(r.git_out(&["verify-commit", "HEAD"]).status.success());
+    // Stripping signatures keeps the bytes, so that config works without a reply.
+    let s = Repo::new();
+    s.commit_msg("latin.txt", b"caf\xe9\n", T0);
+    s.config("version: 1\nsigning: strip\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n");
+    s.gcma_ok(&["apply", "--from", "root"]);
+    assert_eq!(s.message_bytes("HEAD"), b"caf\xe9\n");
 }
 
 #[test]

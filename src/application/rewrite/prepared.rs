@@ -10,6 +10,7 @@ use crate::domain::history::commit::Commit;
 use crate::domain::history::parents::resolve_parents;
 use crate::domain::history::plan::{Parent, Plan};
 use crate::domain::paths::PathFilter;
+use crate::domain::settings::Signing;
 
 /// What the plan was checked against: the old commits, the tree each new commit must have, and
 /// where the branch ends up.
@@ -29,6 +30,7 @@ pub(super) fn prepare(repo: &dyn Repository, plan: &Plan) -> Result<Prepared> {
     let tip = plan.tip_target().ok_or_else(|| {
         Error::Usage("the plan neither rewrites the tip nor says where the branch ends up".into())
     })?;
+    refuse_unsignable(plan)?;
     let old_oids: Vec<String> = plan.entries.iter().map(|e| e.old_oid.clone()).collect();
     let old = repo.read_commits(&old_oids)?;
     let dropped = repo.read_commits(&plan.dropped)?;
@@ -55,6 +57,26 @@ pub(super) fn prepare(repo: &dyn Repository, plan: &Plan) -> Result<Prepared> {
         filter,
         tip,
     })
+}
+
+/// `git commit-tree -S` recodes a message that is not valid UTF-8, so such a commit cannot be
+/// re-signed byte for byte; better to say so now than to fail verification after writing.
+fn refuse_unsignable(plan: &Plan) -> Result<()> {
+    if plan.signing != Signing::Resign {
+        return Ok(());
+    }
+    let binary = plan
+        .entries
+        .iter()
+        .filter(|e| std::str::from_utf8(&e.message).is_err())
+        .count();
+    if binary > 0 {
+        return Err(Error::Precondition(format!(
+            "{binary} commit(s) would keep a message that is not valid UTF-8, which git recodes when it signs, \
+             so `signing: resign` cannot keep them as they are; give them a new message (export/import) or use `signing: strip`"
+        )));
+    }
+    Ok(())
 }
 
 /// Every parent list must be what dropping the `dropped` commits makes of the old one.

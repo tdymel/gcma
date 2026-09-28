@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::entries::{build_entries, dropped_parents};
-use super::guards::{refuse_unsignable, rewrite_warnings};
+use super::guards::rewrite_warnings;
 use super::pathplan::{self, PathOutcome};
 use super::range::{RangeInfo, resolve};
 use super::timing::{Schedule, load_external_parents, window_for};
@@ -184,7 +184,6 @@ fn assemble(
         None => Vec::new(),
     };
     let entries = build_entries(cfg, loaded.window(), &new_times, &outcome, commits)?;
-    refuse_unsignable(cfg, &outcome.kept, commits)?;
 
     let mut plan = Plan::new(
         range.branch_ref.clone(),
