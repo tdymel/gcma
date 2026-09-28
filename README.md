@@ -22,7 +22,7 @@ gcma apply [--from <rev|root>]  # verify, back up, rewrite
 gcma restore [<id>] [--force|--prune]   # list, undo, or forget a backup
 -C <dir>, --config <file>, --backend git|gix    # global options
 gcma export / import            # compact JSONL for LLM-written messages (see below)
-gcma hook install|uninstall     # pre-push hook
+gcma hook install [--force] | uninstall   # pre-push hook
 ```
 
 By default the range is `upstream..HEAD` (unpushed commits). Without an upstream pass `--from <rev>` (exclusive) or
@@ -145,7 +145,8 @@ GCMA_BACKEND=git gcma apply     # environment
 backend: git
 ```
 
-Precedence: `--backend`, `GCMA_BACKEND`, config `backend:`, then the build default. A binary built with
+Precedence: `--backend`, `GCMA_BACKEND`, config `backend:`, then the build default (`restore`, `hook install`/`uninstall`
+and `import` never read the config, so they skip the config step). A binary built with
 `--no-default-features` has no gix and defaults to `git`; asking it for `gix` is an error. Only batch object reads and
 commit writes move between backends; refs, signing and hooks always use git. Measure on your machine with
 `cargo test --release --test perf -- --ignored --nocapture` (`GCMA_PERF_COMMITS=50000` for more).
