@@ -1,7 +1,10 @@
-//! Names, emails and messages that are not UTF-8 must neither abort a run nor change, and the raw
-//! headers of a commit (an `encoding` header) survive a rewrite.
+//! Names, emails, messages and file names that are not UTF-8 must neither abort a run nor change,
+//! and the raw headers of a commit (an `encoding` header) survive a rewrite.
 
 mod common;
+
+use std::ffi::OsStr;
+use std::os::unix::ffi::OsStrExt;
 
 use common::*;
 
@@ -130,4 +133,60 @@ fn raw_headers_and_non_utf8_messages_survive() {
         "message bytes are identical"
     );
     r.fsck();
+}
+
+#[test]
+fn path_rules_handle_file_names_that_are_not_utf8() {
+    let r = Repo::new();
+    r.commit_files(&[("a.txt", "a\n")], "add a", T0);
+    // `secrets/<0xff>.pem` and `caf<0xe9>.key` cannot be written as Rust strings.
+    let odd = |rel: &[u8]| r.path().join(OsStr::from_bytes(rel));
+    std::fs::create_dir_all(r.path().join("secrets")).unwrap();
+    // Some file systems (APFS on macOS) refuse names that are not valid UTF-8 (EILSEQ).
+    for (name, content) in [
+        (&b"secrets/\xff.pem"[..], "pem\n"),
+        (&b"caf\xe9.key"[..], "key\n"),
+    ] {
+        match std::fs::write(odd(name), content) {
+            Ok(()) => {}
+            Err(e) if matches!(e.raw_os_error(), Some(84 | 92)) => {
+                eprintln!("skipping: this file system rejects non-UTF-8 names ({e})");
+                return;
+            }
+            Err(e) => panic!("cannot create the test file: {e}"),
+        }
+    }
+    r.git(&["add", "-A", "--", "secrets"]);
+    r.git(&["add", "--", "."]);
+    r.git(&["commit", "-q", "-m", "only secrets"]);
+    r.commit_files(&[("b.txt", "b\n")], "add b", T0 + 2000);
+    r.config("version: 1\npaths:\n  exclude: [\"secrets/\", \"*.key\"]\n  gitignore: false\n");
+    let ls = |rev: &str| {
+        let o = r.git_out(&["ls-tree", "-r", "-z", "--name-only", rev]);
+        o.stdout
+            .split(|b| *b == 0)
+            .filter(|n| !n.is_empty())
+            .map(<[u8]>::to_vec)
+            .collect::<Vec<_>>()
+    };
+    assert!(
+        ls("HEAD").iter().any(|n| n.ends_with(b".key")),
+        "setup: the odd file is tracked"
+    );
+    r.gcma_ok(&["apply", "--from", "root"]);
+    r.fsck();
+    assert_eq!(ls("HEAD"), [b"a.txt".to_vec(), b"b.txt".to_vec()]);
+    assert_eq!(
+        r.log().len(),
+        2,
+        "the commit that only held excluded files is gone"
+    );
+    assert!(
+        odd(b"caf\xe9.key").exists(),
+        "the working copy keeps its files"
+    );
+    assert!(
+        r.gcma_ok(&["apply", "--from", "root"])
+            .contains("Nothing to do")
+    );
 }

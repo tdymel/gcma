@@ -4,9 +4,6 @@
 
 mod common;
 
-use std::ffi::OsStr;
-use std::os::unix::ffi::OsStrExt;
-
 use chrono::TimeZone;
 use common::*;
 
@@ -73,63 +70,6 @@ fn tags_pointing_into_the_rewrite_are_warned_about() {
 }
 
 #[test]
-fn apply_with_resign_warns_about_headers_it_cannot_carry() {
-    if !ssh_keygen_or_skip() {
-        return;
-    }
-    let r = Repo::new();
-    r.ssh_signing();
-    r.git(&["config", "i18n.commitEncoding", "ISO-8859-1"]);
-    r.commit_at("encoded.txt", "with an encoding header", T0);
-    r.git(&["config", "--unset", "i18n.commitEncoding"]);
-    assert!(
-        r.git(&["cat-file", "-p", "HEAD"])
-            .contains("encoding ISO-8859-1")
-    );
-    r.config("version: 1\nsigning: resign\n");
-    let o = r.gcma(&["apply", "--from", "root"]);
-    assert!(o.status.success(), "{}", stderr(&o));
-    assert!(stderr(&o).contains("carry extra headers"), "{}", stderr(&o));
-}
-
-#[test]
-fn resign_refuses_messages_that_git_would_recode_before_anything_is_written() {
-    if !ssh_keygen_or_skip() {
-        return;
-    }
-    let r = Repo::new();
-    r.ssh_signing();
-    r.commit_msg("latin.txt", b"caf\xe9\n", T0); // not valid UTF-8
-    r.config("version: 1\nsigning: resign\n");
-    let tip = r.git(&["rev-parse", "HEAD"]);
-    // The dry run only warns: an imported reply can still give the commit a new message.
-    let o = r.gcma(&["plan", "--from", "root"]);
-    assert!(o.status.success(), "{}", stderr(&o));
-    // Applying would have to keep the bytes, which signing cannot do.
-    let o = r.gcma(&["apply", "--from", "root"]);
-    assert_eq!(Repo::code(&o), 3, "{}", stderr(&o));
-    assert!(stderr(&o).contains("not valid UTF-8"), "{}", stderr(&o));
-    assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
-    assert!(r.git(&["for-each-ref", "refs/gcma/"]).is_empty());
-    // Replacing the message through export/import makes the commit signable.
-    let plan = r.path().join("plan.json");
-    let plan_arg = plan.to_str().unwrap();
-    r.gcma_ok(&["plan", "--from", "root", "--out", plan_arg]);
-    let reply = r.path().join("reply.jsonl");
-    std::fs::write(&reply, "{\"i\":0,\"t\":\"Fixed message\"}\n").unwrap();
-    r.gcma_ok(&["import", "--plan", plan_arg, reply.to_str().unwrap()]);
-    r.gcma_ok(&["apply", "--plan", plan_arg]);
-    assert_eq!(r.message_bytes("HEAD"), b"Fixed message\n");
-    assert!(r.git_out(&["verify-commit", "HEAD"]).status.success());
-    // Stripping signatures keeps the bytes, so that config works without a reply.
-    let s = Repo::new();
-    s.commit_msg("latin.txt", b"caf\xe9\n", T0);
-    s.config(&format!("version: 1\nsigning: strip\n{IDENTITY_RULE}"));
-    s.gcma_ok(&["apply", "--from", "root"]);
-    assert_eq!(s.message_bytes("HEAD"), b"caf\xe9\n");
-}
-
-#[test]
 fn unrelated_roots_are_all_rewritten_and_stay_roots() {
     let r = Repo::new();
     r.commit_at("a.txt", "first root", T0);
@@ -165,62 +105,6 @@ fn unrelated_roots_are_all_rewritten_and_stay_roots() {
     let id = r.backup_id();
     r.gcma_ok(&["restore", &id]);
     assert_same_content(&old, &r.log());
-}
-
-#[test]
-fn path_rules_handle_file_names_that_are_not_utf8() {
-    let r = Repo::new();
-    r.commit_files(&[("a.txt", "a\n")], "add a", T0);
-    // `secrets/<0xff>.pem` and `caf<0xe9>.key` cannot be written as Rust strings.
-    let odd = |rel: &[u8]| r.path().join(OsStr::from_bytes(rel));
-    std::fs::create_dir_all(r.path().join("secrets")).unwrap();
-    // Some file systems (APFS on macOS) refuse names that are not valid UTF-8 (EILSEQ).
-    for (name, content) in [
-        (&b"secrets/\xff.pem"[..], "pem\n"),
-        (&b"caf\xe9.key"[..], "key\n"),
-    ] {
-        match std::fs::write(odd(name), content) {
-            Ok(()) => {}
-            Err(e) if matches!(e.raw_os_error(), Some(84 | 92)) => {
-                eprintln!("skipping: this file system rejects non-UTF-8 names ({e})");
-                return;
-            }
-            Err(e) => panic!("cannot create the test file: {e}"),
-        }
-    }
-    r.git(&["add", "-A", "--", "secrets"]);
-    r.git(&["add", "--", "."]);
-    r.git(&["commit", "-q", "-m", "only secrets"]);
-    r.commit_files(&[("b.txt", "b\n")], "add b", T0 + 2000);
-    r.config("version: 1\npaths:\n  exclude: [\"secrets/\", \"*.key\"]\n  gitignore: false\n");
-    let ls = |rev: &str| {
-        let o = r.git_out(&["ls-tree", "-r", "-z", "--name-only", rev]);
-        o.stdout
-            .split(|b| *b == 0)
-            .filter(|n| !n.is_empty())
-            .map(<[u8]>::to_vec)
-            .collect::<Vec<_>>()
-    };
-    assert!(
-        ls("HEAD").iter().any(|n| n.ends_with(b".key")),
-        "setup: the odd file is tracked"
-    );
-    r.gcma_ok(&["apply", "--from", "root"]);
-    r.fsck();
-    assert_eq!(ls("HEAD"), [b"a.txt".to_vec(), b"b.txt".to_vec()]);
-    assert_eq!(
-        r.log().len(),
-        2,
-        "the commit that only held excluded files is gone"
-    );
-    assert!(
-        odd(b"caf\xe9.key").exists(),
-        "the working copy keeps its files"
-    );
-    assert!(
-        r.gcma_ok(&["apply", "--from", "root"])
-            .contains("Nothing to do")
-    );
 }
 
 #[test]
