@@ -146,7 +146,7 @@ impl Case {
 
 /// Builds the random history of `seed` and notes what it looks like.
 fn start_case(seed: u64) -> (Repo, Case) {
-    let mut rng = Rand(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+    let mut rng = Rand::new(seed);
     let r = Repo::for_seed(seed);
     build_random_repo(&r, &mut rng, 14 + (seed as usize % 12));
     let old = r.log();

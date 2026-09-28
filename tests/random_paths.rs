@@ -175,7 +175,7 @@ fn check_every_tree(seed: u64, r: &Repo, old: &[Row], old_tip: &str, tip_subject
 }
 
 fn run_case(seed: u64) {
-    let mut rng = Rand(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+    let mut rng = Rand::new(seed);
     let r = Repo::for_seed(seed);
     build(&r, &mut rng, 14 + (seed as usize % 12));
     let old_rows = r.log();

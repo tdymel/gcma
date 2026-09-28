@@ -9,6 +9,9 @@
 
 use std::process::Output;
 
+use rand::{RngExt, SeedableRng};
+use rand_chacha::ChaCha8Rng;
+
 mod assert;
 mod repo;
 mod signing;
@@ -36,18 +39,16 @@ pub fn stderr(o: &Output) -> String {
     String::from_utf8_lossy(&o.stderr).to_string()
 }
 
-/// A xorshift generator: the same seed always builds the same history.
-pub struct Rand(pub u64);
+/// A seeded generator: the same seed always builds the same history.
+pub struct Rand(ChaCha8Rng);
 
 impl Rand {
-    pub fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
+    pub fn new(seed: u64) -> Rand {
+        Rand(ChaCha8Rng::seed_from_u64(seed))
     }
 
+    /// A number in `0..n`.
     pub fn below(&mut self, n: u64) -> u64 {
-        self.next() % n
+        self.0.random_range(0..n)
     }
 }
