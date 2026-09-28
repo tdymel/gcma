@@ -43,17 +43,26 @@ fn backend_selection_flag_env_and_config() {
     );
     // The flag beats the environment, which beats the config.
     r.config(&format!("{IDENTITY_CFG}backend: gix\n"));
-    if !cfg!(feature = "gix") {
-        assert_eq!(Repo::code(&plain()), 2);
-        r.gcma_ok(&["--backend", "git", "plan", "--from", "root"]);
-        let o = r
-            .cmd(bin())
+    let with_env = |value: &str| {
+        r.cmd(bin())
             .args(["plan", "--from", "root"])
-            .env("GCMA_BACKEND", "git")
+            .env("GCMA_BACKEND", value)
             .output()
-            .unwrap();
-        assert_eq!(Repo::code(&o), 0);
-    }
+            .unwrap()
+    };
+    // The config asks for gix: that works exactly when gix was compiled in.
+    assert_eq!(Repo::code(&plain()), expected);
+    // The environment beats the config, the flag beats the environment.
+    assert_eq!(Repo::code(&with_env("git")), 0);
+    r.config(&format!("{IDENTITY_CFG}backend: git\n"));
+    assert_eq!(Repo::code(&with_env("gix")), expected);
+    let o = r
+        .cmd(bin())
+        .args(["--backend", "git", "plan", "--from", "root"])
+        .env("GCMA_BACKEND", "gix")
+        .output()
+        .unwrap();
+    assert_eq!(Repo::code(&o), 0, "{}", String::from_utf8_lossy(&o.stderr));
 }
 
 #[cfg(feature = "gix")]
