@@ -1,6 +1,6 @@
 //! Histories and repositories that are not the plain linear case: unrelated roots, names that are
 //! not UTF-8, offsets that disagree with the schedule, other branches' backups, and the warnings
-//! `apply` prints.
+//! `plan` and `apply` print (tags and headers that a rewrite cannot carry).
 
 mod common;
 
@@ -55,6 +55,20 @@ fn apply_warns_about_tags_that_will_keep_pointing_at_the_old_commits() {
         r.git(&["rev-parse", "v1"]),
         old_middle,
         "the tag stays where it was"
+    );
+}
+
+#[test]
+fn tags_pointing_into_the_rewrite_are_warned_about() {
+    let r = Repo::new();
+    r.linear(3, 1_600_000_000);
+    r.git(&["tag", "v1", "HEAD~1"]);
+    r.git(&["tag", "-a", "-m", "annotated", "v2", "HEAD"]);
+    r.config(IDENTITY_CFG);
+    let out = r.gcma_ok(&["plan", "--from", "root"]);
+    assert!(
+        out.contains("refs/tags/v1") && out.contains("refs/tags/v2"),
+        "{out}"
     );
 }
 

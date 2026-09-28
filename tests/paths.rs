@@ -1,4 +1,5 @@
-//! Path rules: excluded paths leave history, the files stay in the working copy and get ignored.
+//! Path rules: excluded paths leave history, the files stay in the working copy and get ignored,
+//! and gcma's edits to `.gitignore` are reported (and never written through a symbolic link).
 
 mod common;
 
@@ -304,4 +305,51 @@ fn modified_gitignore_in_the_working_copy_is_left_alone() {
         std::fs::read_to_string(r.path().join(".gitignore")).unwrap(),
         "target\nmine\n"
     );
+}
+
+#[test]
+fn local_gitignore_edits_are_kept_and_reported() {
+    let r = Repo::new();
+    r.commit_files(
+        &[(".gitignore", "target\n"), ("a.txt", "a\n")],
+        "init",
+        1_600_000_000,
+    );
+    r.commit_files(
+        &[("secrets/k", "k\n"), ("b.txt", "b\n")],
+        "add b",
+        1_600_100_000,
+    );
+    r.config(SECRETS_CFG);
+    r.write(".gitignore", "target\nmine\n");
+    let o = r.gcma(&["apply", "--from", "root"]);
+    assert!(o.status.success());
+    assert!(
+        stderr(&o).contains(".gitignore has local changes"),
+        "{}",
+        stderr(&o)
+    );
+    assert!(
+        stderr(&o).contains("rotate"),
+        "the secrets warning is printed: {}",
+        stderr(&o)
+    );
+}
+
+#[test]
+fn a_symlinked_gitignore_is_never_written_through() {
+    let r = Repo::new();
+    r.commit_files(&[("a.txt", "a\n")], "init", 1_600_000_000);
+    r.commit_files(
+        &[("secrets/k", "k\n"), ("b.txt", "b\n")],
+        "add b",
+        1_600_100_000,
+    );
+    r.config(SECRETS_CFG);
+    let outside = r.home.path().join("outside");
+    std::os::unix::fs::symlink(&outside, r.path().join(".gitignore")).unwrap();
+    let o = r.gcma(&["apply", "--from", "root"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(!outside.exists(), "the link target must not be created");
+    assert!(stderr(&o).contains("symbolic link"), "{}", stderr(&o));
 }

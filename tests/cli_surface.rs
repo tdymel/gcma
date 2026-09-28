@@ -150,6 +150,25 @@ fn init_writes_once_refuses_to_overwrite_and_force_replaces() {
 }
 
 #[test]
+fn init_keeps_the_config_out_of_commits_and_starts_inert() {
+    let r = Repo::new();
+    r.linear(2, 1_600_000_000);
+    r.gcma_ok(&["init"]);
+    assert!(
+        r.git(&["status", "--porcelain"]).is_empty(),
+        "the config is excluded"
+    );
+    let o = r.gcma(&["plan", "--from", "root"]);
+    assert!(o.status.success());
+    assert!(
+        stderr(&o).contains("no rules are configured"),
+        "{}",
+        stderr(&o)
+    );
+    assert!(String::from_utf8_lossy(&o.stdout).contains("Nothing to do"));
+}
+
+#[test]
 fn two_rewrites_in_one_second_keep_two_distinct_backups() {
     let r = Repo::new();
     r.linear(3, 1_600_000_000);
@@ -252,6 +271,38 @@ fn restore_refuses_when_the_branch_moved_unless_forced() {
     assert!(holders.contains(&moved), "{holders}");
     let o = r.gcma(&["restore", "--prune"]);
     assert_eq!(Repo::code(&o), 2);
+}
+
+#[test]
+fn restore_after_path_rules_leaves_index_and_gitignore_as_before() {
+    let r = Repo::new();
+    r.commit_files(&[("a.txt", "a\n")], "add a", 1_600_000_000);
+    r.commit_files(
+        &[("secrets/k", "k\n"), ("b.txt", "b\n")],
+        "add b",
+        1_600_100_000,
+    );
+    r.config(SECRETS_CFG);
+    let tip = r.git(&["rev-parse", "HEAD"]);
+    r.gcma_ok(&["apply", "--from", "root"]);
+    assert!(r.path().join(".gitignore").exists());
+    let id = r.git(&["for-each-ref", "--format=%(refname)", "refs/gcma/backup/"]);
+    let id = id
+        .lines()
+        .next()
+        .unwrap()
+        .rsplit('/')
+        .nth(1)
+        .unwrap()
+        .to_string();
+    r.gcma_ok(&["restore", &id]);
+    assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
+    assert_eq!(r.status_without_config(), "", "{}", r.git(&["status"]));
+    assert!(
+        !r.path().join(".gitignore").exists(),
+        "gcma's own .gitignore is gone again"
+    );
+    assert!(r.path().join("secrets/k").exists());
 }
 
 #[test]
