@@ -79,11 +79,11 @@ pub fn import(plan: &mut Plan, reply: Vec<ReplyLine>, cfg: &Config) -> Result<Im
     if !errors.is_empty() {
         retry.sort_unstable();
         retry.dedup();
-        return Err(Error::LlmInvalid(format!(
-            "{}\nnothing was imported; retry rows: {:?}",
-            errors.join("\n"),
-            retry
-        )));
+        let mut text = format!("{}\nnothing was imported", errors.join("\n"));
+        if !retry.is_empty() {
+            text.push_str(&format!("; retry rows: {retry:?}"));
+        }
+        return Err(Error::LlmInvalid(text));
     }
     let changed = updates.len();
     for (i, m) in updates {
@@ -258,7 +258,7 @@ mod tests {
             text.contains("row i=9: unknown index (valid: 0..1)"),
             "{text}"
         );
-        assert!(text.contains("retry rows: []"), "{text}");
+        assert!(!text.contains("retry rows"), "{text}");
     }
 
     #[test]
