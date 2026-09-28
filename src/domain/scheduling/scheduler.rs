@@ -48,7 +48,7 @@ pub fn schedule<R: RngExt>(
     }
     let space = Space::new(window.clipped(floor));
     if space.total == 0 {
-        return Err(Error::Precondition(format!(
+        return Err(Error::NoCapacity(format!(
             "no allowed time left between the floor and `to` (capacity 0) for {n} commit(s); \
              widen the window, change `to`, or wait"
         )));
@@ -184,7 +184,7 @@ mod tests {
         let w = Window::build(tz, &weekdays(), &[(9 * 60, 18 * 60)], from, to);
         assert_eq!(w.capacity(floor), 0);
         let e = schedule(1, &w, floor, Distribution::Uniform, &mut rng_from_seed(1)).unwrap_err();
-        assert!(matches!(e, crate::domain::error::Error::Precondition(_)));
+        assert!(matches!(e, crate::domain::error::Error::NoCapacity(_)));
         assert!(
             schedule(0, &w, floor, Distribution::Uniform, &mut rng_from_seed(1))
                 .unwrap()
