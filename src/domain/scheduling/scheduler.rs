@@ -34,6 +34,60 @@ impl Space {
     }
 }
 
+/// `n` instants, each uniform over the allowed seconds.
+fn uniform<R: RngExt>(n: usize, space: &Space, rng: &mut R) -> Vec<i64> {
+    (0..n)
+        .map(|_| space.at(rng.random_range(0..space.total)))
+        .collect()
+}
+
+/// `n` instants: a day-interval is picked in proportion to its length times its weekday weight,
+/// then a second inside it uniformly.
+fn weekday_weighted<R: RngExt>(n: usize, space: &Space, rng: &mut R) -> Vec<i64> {
+    let weights: Vec<f64> = space
+        .ivs
+        .iter()
+        .map(|i| i.len() as f64 * WEEKDAY_WEIGHTS[weekday_index(i.weekday)])
+        .collect();
+    let total: f64 = weights.iter().sum();
+    let mut times = Vec::with_capacity(n);
+    for _ in 0..n {
+        let mut x = rng.random::<f64>() * total;
+        let mut idx = weights.len() - 1;
+        for (k, w) in weights.iter().enumerate() {
+            if x < *w {
+                idx = k;
+                break;
+            }
+            x -= w;
+        }
+        let iv = &space.ivs[idx];
+        times.push(iv.start + rng.random_range(0..iv.len()) as i64);
+    }
+    times
+}
+
+/// `n` instants in sessions of ~1-8 commits (mean ~4) spread over up to 90 minutes of allowed
+/// time. The session always fits inside the window, so nothing is clamped onto its last second.
+fn bursty<R: RngExt>(n: usize, space: &Space, rng: &mut R) -> Vec<i64> {
+    let span: u64 = (90 * 60).min(space.total);
+    let mut times = Vec::with_capacity(n);
+    let mut left = n;
+    while left > 0 {
+        let mut size = 1;
+        while size < 8 && rng.random::<f64>() < 0.75 {
+            size += 1;
+        }
+        let size = size.min(left);
+        left -= size;
+        let start = rng.random_range(0..space.total - span + 1);
+        for _ in 0..size {
+            times.push(space.at(start + rng.random_range(0..span)));
+        }
+    }
+    times
+}
+
 /// Produces `n` sorted instants, every one inside the window and >= `floor`.
 /// Equal timestamps are allowed. Deterministic for a given seed.
 pub fn schedule<R: RngExt>(
@@ -53,53 +107,11 @@ pub fn schedule<R: RngExt>(
              widen the window, change `to`, or wait"
         )));
     }
-    let mut times: Vec<i64> = Vec::with_capacity(n);
-    match dist {
-        Distribution::Uniform => {
-            for _ in 0..n {
-                times.push(space.at(rng.random_range(0..space.total)));
-            }
-        }
-        Distribution::WeekdayWeighted => {
-            let weights: Vec<f64> = space
-                .ivs
-                .iter()
-                .map(|i| i.len() as f64 * WEEKDAY_WEIGHTS[weekday_index(i.weekday)])
-                .collect();
-            let total: f64 = weights.iter().sum();
-            for _ in 0..n {
-                let mut x = rng.random::<f64>() * total;
-                let mut idx = weights.len() - 1;
-                for (k, w) in weights.iter().enumerate() {
-                    if x < *w {
-                        idx = k;
-                        break;
-                    }
-                    x -= w;
-                }
-                let iv = &space.ivs[idx];
-                times.push(iv.start + rng.random_range(0..iv.len()) as i64);
-            }
-        }
-        Distribution::Bursty => {
-            // Sessions of ~1-8 commits (mean ~4) spread over up to 90 minutes of allowed time.
-            // The session always fits inside the window, so nothing is clamped onto its last second.
-            let span: u64 = (90 * 60).min(space.total);
-            let mut left = n;
-            while left > 0 {
-                let mut size = 1;
-                while size < 8 && rng.random::<f64>() < 0.75 {
-                    size += 1;
-                }
-                let size = size.min(left);
-                left -= size;
-                let start = rng.random_range(0..space.total - span + 1);
-                for _ in 0..size {
-                    times.push(space.at(start + rng.random_range(0..span)));
-                }
-            }
-        }
-    }
+    let mut times = match dist {
+        Distribution::Uniform => uniform(n, &space, rng),
+        Distribution::WeekdayWeighted => weekday_weighted(n, &space, rng),
+        Distribution::Bursty => bursty(n, &space, rng),
+    };
     times.sort_unstable();
     Ok(times)
 }

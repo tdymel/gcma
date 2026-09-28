@@ -185,6 +185,22 @@ impl Plan {
                 self.branch_ref
             )));
         }
+        self.validate_ids()?;
+        self.validate_parents()?;
+        if self.paths.is_none()
+            && (!self.dropped.is_empty()
+                || self.new_tip.is_some()
+                || self.entries.iter().any(|e| e.tree.is_some() || e.gitignore))
+        {
+            return Err(Error::Usage(
+                "plan changes trees or drops commits but has no path rules".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Object ids are well formed, identities can be written, no commit is listed twice.
+    fn validate_ids(&self) -> Result<()> {
         let oids = std::iter::once(&self.tip_oid)
             .chain(&self.dropped)
             .chain(self.entries.iter().map(|e| &e.old_oid))
@@ -211,6 +227,11 @@ impl Plan {
                 )));
             }
         }
+        Ok(())
+    }
+
+    /// Parent references only point back, and `new_tip` points at an entry.
+    fn validate_parents(&self) -> Result<()> {
         for (i, e) in self.entries.iter().enumerate() {
             for par in &e.parents {
                 if let Parent::In(j) = par
@@ -226,15 +247,6 @@ impl Plan {
             && *j >= self.entries.len()
         {
             return Err(Error::Usage("plan new_tip points past the entries".into()));
-        }
-        if self.paths.is_none()
-            && (!self.dropped.is_empty()
-                || self.new_tip.is_some()
-                || self.entries.iter().any(|e| e.tree.is_some() || e.gitignore))
-        {
-            return Err(Error::Usage(
-                "plan changes trees or drops commits but has no path rules".into(),
-            ));
         }
         Ok(())
     }
