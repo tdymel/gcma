@@ -43,22 +43,22 @@ pub fn remove_regular(path: &Path) -> Result<()> {
 }
 
 /// Appends `line` to the text file at `path` unless a line equals it already, creating the file
-/// and its directory as needed and keeping the final newline. `true` when the file changed.
+/// and its directory as needed and keeping the final newline. Bytes that are not UTF-8 are kept
+/// as they are. `true` when the file changed.
 pub fn ensure_line_once(path: &Path, line: &str) -> Result<bool> {
-    let current = read_regular(path)?.unwrap_or_default();
-    let mut text = String::from_utf8_lossy(&current).into_owned();
-    if text.lines().any(|l| l == line) {
+    let mut data = read_regular(path)?.unwrap_or_default();
+    if data.split(|&b| b == b'\n').any(|l| l == line.as_bytes()) {
         return Ok(false);
     }
-    if !text.is_empty() && !text.ends_with('\n') {
-        text.push('\n');
+    if !data.is_empty() && !data.ends_with(b"\n") {
+        data.push(b'\n');
     }
-    text.push_str(line);
-    text.push('\n');
+    data.extend_from_slice(line.as_bytes());
+    data.push(b'\n');
     if let Some(dir) = path.parent() {
         fs_err::create_dir_all(dir)?;
     }
-    write_regular(path, text.as_bytes())?;
+    write_regular(path, &data)?;
     Ok(true)
 }
 
@@ -75,5 +75,14 @@ mod tests {
         std::fs::write(&p, "x\n/a").unwrap();
         assert!(ensure_line_once(&p, "/b").unwrap());
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "x\n/a\n/b\n");
+    }
+
+    #[test]
+    fn ensure_line_once_keeps_bytes_that_are_not_utf8() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("exclude");
+        std::fs::write(&p, b"caf\xe9.tmp\n").unwrap();
+        assert!(ensure_line_once(&p, "/a").unwrap());
+        assert_eq!(std::fs::read(&p).unwrap(), b"caf\xe9.tmp\n/a\n");
     }
 }
