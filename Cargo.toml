@@ -35,4 +35,5 @@ gix = ["dep:gix"]
 
 [dev-dependencies]
 archunit = "0.0.2"
+delegate = "0.13.5"
 tempfile = "3"
