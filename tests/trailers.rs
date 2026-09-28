@@ -8,7 +8,7 @@ use common::*;
 
 fn run(strip: &[&str], add: &[&str], message: &str) -> String {
     let r = Repo::new();
-    r.commit_msg("a.txt", message.as_bytes(), 1_600_000_000);
+    r.commit_msg("a.txt", message.as_bytes(), T0);
     let mut cfg = String::from("version: 1\nmessages:\n");
     if !strip.is_empty() {
         cfg.push_str(&format!("  strip_trailers: [{}]\n", strip.join(", ")));
@@ -21,7 +21,7 @@ fn run(strip: &[&str], add: &[&str], message: &str) -> String {
     }
     r.config(&cfg);
     let o = r.gcma(&["apply", "--from", "root"]);
-    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(o.status.success(), "{}", stderr(&o));
     let first = r.message_bytes("HEAD");
     assert!(
         r.gcma_ok(&["apply", "--from", "root"])
@@ -136,7 +136,7 @@ fn swapping_one_trailer_for_another_in_a_single_run() {
 #[test]
 fn merge_commits_get_the_same_treatment_and_keep_their_parents() {
     let r = Repo::new();
-    r.commit_msg("base.txt", b"base\n", 1_600_000_000);
+    r.commit_msg("base.txt", b"base\n", T0);
     r.git(&["checkout", "-q", "-b", "side"]);
     r.commit_msg("s.txt", b"side\n\nSigned-off-by: A <a@x>\n", 1_600_100_000);
     r.git(&["checkout", "-q", "main"]);
@@ -176,7 +176,7 @@ fn messages_that_are_not_utf8_survive_trailer_rules_byte_for_byte() {
     r.commit_msg(
         "a.txt",
         b"caf\xe9\n\nbody \xe9\n\nSigned-off-by: J\xf6rg <j@x>\n",
-        1_600_000_000,
+        T0,
     );
     r.config("version: 1\nmessages:\n  strip_trailers: [Signed-off-by]\n  add_trailers: [\"Assisted-By: A <a@x>\"]\n");
     r.gcma_ok(&["apply", "--from", "root"]);
@@ -189,7 +189,7 @@ fn messages_that_are_not_utf8_survive_trailer_rules_byte_for_byte() {
 #[test]
 fn an_empty_message_is_left_alone_by_every_rule() {
     let r = Repo::new();
-    r.commit_msg("a.txt", b"", 1_600_000_000);
+    r.commit_msg("a.txt", b"", T0);
     for cfg in [
         "version: 1\nmessages:\n  strip_trailers: [Signed-off-by]\n",
         "version: 1\nmessages:\n  add_trailers: [\"Assisted-By: A <a@x>\"]\n",
@@ -211,7 +211,7 @@ fn trailer_stripping_is_applied_and_idempotent() {
     r.commit_at(
         "a.txt",
         "first\n\nbody\n\nSigned-off-by: Old Me <me@home.org>",
-        1_600_000_000,
+        T0,
     );
     r.commit_at("b.txt", "second", 1_600_100_000);
     r.config("version: 1\nmessages:\n  strip_trailers: [Signed-off-by]\n");
@@ -228,11 +228,7 @@ fn trailer_stripping_is_applied_and_idempotent() {
 #[test]
 fn trailers_can_be_swapped_and_the_result_is_stable() {
     let r = Repo::new();
-    r.commit_at(
-        "a.txt",
-        "first\n\nbody\n\nCo-Authored-By: Bot <bot@x>",
-        1_600_000_000,
-    );
+    r.commit_at("a.txt", "first\n\nbody\n\nCo-Authored-By: Bot <bot@x>", T0);
     r.commit_at("b.txt", "second", 1_600_100_000);
     r.config(
         "version: 1\nmessages:\n  strip_trailers: [Co-Authored-By]\n  add_trailers: [\"Assisted-By: Bot <bot@x>\"]\n",
@@ -259,7 +255,7 @@ fn trailers_can_be_swapped_and_the_result_is_stable() {
 #[test]
 fn a_trailer_both_stripped_and_added_is_a_config_error() {
     let r = Repo::new();
-    r.linear(1, 1_600_000_000);
+    r.linear(1, T0);
     r.config("version: 1\nmessages:\n  strip_trailers: [Assisted-By]\n  add_trailers: [\"assisted-by: x\"]\n");
     assert_eq!(Repo::code(&r.gcma(&["plan", "--from", "root"])), 2);
     r.config("version: 1\nmessages:\n  add_trailers: [\"not a trailer\"]\n");

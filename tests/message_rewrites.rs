@@ -8,10 +8,10 @@ use common::*;
 
 fn run_with(messages_cfg: &str, message: &str) -> String {
     let r = Repo::new();
-    r.commit_msg("a.txt", message.as_bytes(), 1_600_000_000);
+    r.commit_msg("a.txt", message.as_bytes(), T0);
     r.config(&format!("version: 1\nmessages:\n{messages_cfg}"));
     let o = r.gcma(&["apply", "--from", "root"]);
-    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(o.status.success(), "{}", stderr(&o));
     let first = r.message_bytes("HEAD");
     assert!(
         r.gcma_ok(&["apply", "--from", "root"])
@@ -154,34 +154,21 @@ fn rewrite_rules_that_are_not_valid_are_config_errors() {
         ("  rewrite_trailers: nonsense\n", "invalid type"),
     ] {
         let r = Repo::new();
-        r.linear(2, 1_600_000_000);
+        r.linear(2, T0);
         r.config(&format!("version: 1\nmessages:\n{messages}"));
         let o = r.gcma(&["plan", "--from", "root"]);
-        assert_eq!(
-            Repo::code(&o),
-            2,
-            "{messages}: {}",
-            String::from_utf8_lossy(&o.stderr)
-        );
-        assert!(
-            String::from_utf8_lossy(&o.stderr).contains(why),
-            "{why} in {}",
-            String::from_utf8_lossy(&o.stderr)
-        );
+        assert_eq!(Repo::code(&o), 2, "{messages}: {}", stderr(&o));
+        assert!(stderr(&o).contains(why), "{why} in {}", stderr(&o));
     }
 }
 
 #[test]
 fn title_only_and_rewrites_count_as_rules_so_the_config_is_not_inert() {
     let r = Repo::new();
-    r.commit_msg("a.txt", b"s\n\nbody\n", 1_600_000_000);
+    r.commit_msg("a.txt", b"s\n\nbody\n", T0);
     r.config("version: 1\nmessages:\n  title_only: true\n");
     let o = r.gcma(&["plan", "--from", "root"]);
     assert!(o.status.success());
-    assert!(!String::from_utf8_lossy(&o.stderr).contains("no rules are configured"));
-    assert!(
-        String::from_utf8_lossy(&o.stdout).contains("1 to rewrite"),
-        "{}",
-        String::from_utf8_lossy(&o.stdout)
-    );
+    assert!(!stderr(&o).contains("no rules are configured"));
+    assert!(stdout(&o).contains("1 to rewrite"), "{}", stdout(&o));
 }

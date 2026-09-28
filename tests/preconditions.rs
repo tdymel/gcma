@@ -26,7 +26,7 @@ fn refused(r: &Repo, args: &[&str], why: &str) {
 
 fn setup() -> Repo {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     r.config(IDENTITY_CFG);
     r
 }
@@ -208,7 +208,7 @@ fn a_repository_without_commits_is_a_clear_error() {
 #[test]
 fn without_a_config_file_gcma_is_inert_and_says_so_but_a_named_missing_file_is_an_error() {
     let r = Repo::new();
-    r.linear(2, 1_600_000_000);
+    r.linear(2, T0);
     let o = r.gcma(&["plan", "--from", "root"]);
     assert!(o.status.success(), "{}", stderr(&o));
     assert!(
@@ -224,7 +224,7 @@ fn without_a_config_file_gcma_is_inert_and_says_so_but_a_named_missing_file_is_a
 #[test]
 fn config_errors_exit_2() {
     let r = Repo::new();
-    r.linear(1, 1_600_000_000);
+    r.linear(1, T0);
     for bad in [
         "version: 1\nlast: 6mo\n",
         "version: 3\n",
@@ -234,19 +234,14 @@ fn config_errors_exit_2() {
     ] {
         r.config(bad);
         let o = r.gcma(&["plan", "--from", "root"]);
-        assert_eq!(
-            Repo::code(&o),
-            2,
-            "{bad}: {}",
-            String::from_utf8_lossy(&o.stderr)
-        );
+        assert_eq!(Repo::code(&o), 2, "{bad}: {}", stderr(&o));
     }
 }
 
 #[test]
 fn identity_values_that_would_corrupt_a_commit_are_rejected() {
     let r = Repo::new();
-    r.linear(1, 1_600_000_000);
+    r.linear(1, T0);
     for bad in ["\"Jane\\ncommitter x\"", "\"Jane <x>\""] {
         r.config(&format!(
             "version: 1\nidentity:\n  - match: {{email: me@home.org}}\n    set: {{name: {bad}, email: j@w.com}}\n"
@@ -258,7 +253,7 @@ fn identity_values_that_would_corrupt_a_commit_are_rejected() {
 #[test]
 fn a_config_whose_to_precedes_from_is_a_usage_error() {
     let r = Repo::new();
-    r.linear(1, 1_600_000_000);
+    r.linear(1, T0);
     r.config("version: 1\nfrom: 2026-01-01\nto: 2025-01-01\nschedule: {}\n");
     assert_eq!(Repo::code(&r.gcma(&["plan", "--from", "root"])), 2);
 }
@@ -266,10 +261,10 @@ fn a_config_whose_to_precedes_from_is_a_usage_error() {
 #[test]
 fn no_upstream_requires_from() {
     let r = Repo::new();
-    r.linear(2, 1_600_000_000);
+    r.linear(2, T0);
     r.config(IDENTITY_CFG);
     let o = r.gcma(&["plan"]);
-    assert_eq!(Repo::code(&o), 2, "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
     let o = r.gcma(&["plan", "--from", "HEAD~5"]);
     assert_eq!(Repo::code(&o), 2);
 }
@@ -277,7 +272,7 @@ fn no_upstream_requires_from() {
 #[test]
 fn from_rev_is_exclusive() {
     let r = Repo::new();
-    let c = r.linear(4, 1_600_000_000);
+    let c = r.linear(4, T0);
     r.config(IDENTITY_CFG);
     r.gcma_ok(&["apply", "--from", &c[1]]);
     let rows = r.log();

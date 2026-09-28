@@ -193,14 +193,14 @@ fn run_case(seed: u64) {
     r.config(&if schedule {
         berlin_cfg("paths:\n  exclude: [\"secrets/\"]\n")
     } else {
-        "version: 1\npaths:\n  exclude: [\"secrets/\"]\n".to_string()
+        SECRETS_CFG.to_string()
     });
     let o = r.gcma(&["apply", "--from", "root"]);
     assert!(
         o.status.success(),
         "seed {seed}: {}{}",
-        String::from_utf8_lossy(&o.stdout),
-        String::from_utf8_lossy(&o.stderr)
+        stdout(&o),
+        stderr(&o)
     );
     r.fsck();
 
@@ -274,8 +274,7 @@ fn run_case(seed: u64) {
             .success(),
         "seed {seed}"
     );
-    let backup = r.git(&["for-each-ref", "--format=%(refname)", "refs/gcma/backup/"]);
-    if backup.is_empty() {
+    if r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty() {
         // Nothing to rewrite: the history never had a secret and no schedule applied.
         assert!(
             !schedule && old_files.iter().all(|p| !p.starts_with("secrets/")),
@@ -284,14 +283,7 @@ fn run_case(seed: u64) {
         assert_eq!(r.git(&["rev-parse", "HEAD"]), old_tip, "seed {seed}");
         return;
     }
-    let id = backup
-        .lines()
-        .next()
-        .unwrap()
-        .rsplit('/')
-        .nth(1)
-        .unwrap()
-        .to_string();
+    let id = r.backup_id_from_refs();
     assert_eq!(
         r.git(&[
             "rev-list",

@@ -175,10 +175,10 @@ fn start_case(seed: u64) -> (Repo, Case) {
 fn config_for(seed: u64, variant: u64) -> String {
     let dist = ["uniform", "weekday-weighted", "bursty"][(seed % 3) as usize];
     match variant {
-        0 => "version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n".to_string(),
+        0 => IDENTITY_CFG.to_string(),
         1 => berlin_cfg("").replace("bursty", dist),
         2 => format!(
-            "{}identity:\n  - match: {{email: me@home.org}}\n    set: {{name: Jane Doe, email: jane@work.com}}\nmessages:\n  strip_trailers: [Signed-off-by]\n",
+            "{}{IDENTITY_RULE}messages:\n  strip_trailers: [Signed-off-by]\n",
             berlin_cfg("").replace("bursty", dist)
         ),
         3 => "version: 1\nmessages:\n  strip_trailers: [Signed-off-by]\n".to_string(),
@@ -194,8 +194,8 @@ fn apply_and_check_shape(r: &Repo, case: &Case) -> Vec<Row> {
     assert!(
         o.status.success(),
         "seed {seed}: apply failed: {}{}",
-        String::from_utf8_lossy(&o.stdout),
-        String::from_utf8_lossy(&o.stderr)
+        stdout(&o),
+        stderr(&o)
     );
     let new = r.log();
     assert_eq!(new.len(), case.old.len(), "seed {seed}: commit count");
@@ -269,7 +269,7 @@ fn check_idempotent(r: &Repo, case: &Case) {
     let again = r.gcma(&["apply", "--from", "root"]);
     assert!(again.status.success());
     assert!(
-        String::from_utf8_lossy(&again.stdout).contains("Nothing to do"),
+        stdout(&again).contains("Nothing to do"),
         "seed {seed}: second apply must be a no-op"
     );
     assert!(

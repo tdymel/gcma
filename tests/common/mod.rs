@@ -23,8 +23,16 @@ pub use signing::*;
 /// Rewrites `me@home.org` (the default identity of `Repo`) to Jane Doe.
 pub const IDENTITY_CFG: &str = "version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n";
 
+/// The identity rule of `IDENTITY_CFG` without the version line, to put into a larger config.
+pub const IDENTITY_RULE: &str =
+    "identity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n";
+
 /// Takes everything under `secrets/` out of the history.
 pub const SECRETS_CFG: &str = "version: 1\npaths:\n  exclude: [\"secrets/\"]\n";
+
+/// `SECRETS_CFG` with the `.gitignore` entries for the excluded paths turned off.
+pub const SECRETS_NO_GITIGNORE_CFG: &str =
+    "version: 1\npaths:\n  exclude: [\"secrets/\"]\n  gitignore: false\n";
 
 /// A commit time (2020-09-13) for histories that need no particular schedule.
 pub const T0: i64 = 1_600_000_000;

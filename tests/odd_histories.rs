@@ -61,7 +61,7 @@ fn apply_warns_about_tags_that_will_keep_pointing_at_the_old_commits() {
 #[test]
 fn tags_pointing_into_the_rewrite_are_warned_about() {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     r.git(&["tag", "v1", "HEAD~1"]);
     r.git(&["tag", "-a", "-m", "annotated", "v2", "HEAD"]);
     r.config(IDENTITY_CFG);
@@ -124,7 +124,7 @@ fn resign_refuses_messages_that_git_would_recode_before_anything_is_written() {
     // Stripping signatures keeps the bytes, so that config works without a reply.
     let s = Repo::new();
     s.commit_msg("latin.txt", b"caf\xe9\n", T0);
-    s.config("version: 1\nsigning: strip\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n");
+    s.config(&format!("version: 1\nsigning: strip\n{IDENTITY_RULE}"));
     s.gcma_ok(&["apply", "--from", "root"]);
     assert_eq!(s.message_bytes("HEAD"), b"caf\xe9\n");
 }
@@ -149,9 +149,7 @@ fn unrelated_roots_are_all_rewritten_and_stay_roots() {
     r.commit_at("z.txt", "after the join", T0 + 3000);
     let roots = |rev: &str| r.git(&["rev-list", "--max-parents=0", rev]).lines().count();
     assert_eq!(roots("HEAD"), 2);
-    r.config(&berlin_cfg(
-        "identity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n",
-    ));
+    r.config(&berlin_cfg(IDENTITY_RULE));
     let old = r.log();
     r.gcma_ok(&["apply", "--from", "root"]);
     let new = r.log();

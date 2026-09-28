@@ -7,11 +7,7 @@ use std::io::Write;
 
 fn setup(cfg: &str) -> (Repo, String) {
     let r = Repo::new();
-    r.commit_msg(
-        "a.txt",
-        b"wip\n\nSigned-off-by: Dev <dev@x.org>\n",
-        1_600_000_000,
-    );
+    r.commit_msg("a.txt", b"wip\n\nSigned-off-by: Dev <dev@x.org>\n", T0);
     r.commit_msg("b.txt", b"fix stuff\n", 1_600_100_000);
     r.commit_as("c.txt", "more", 1_600_200_000, "Other Dev", "other@x.org");
     r.config(cfg);
@@ -227,11 +223,7 @@ fn control_characters_in_the_prelude_cannot_reach_the_terminal() {
 #[test]
 fn llm_export_import_apply_roundtrip() {
     let r = Repo::new();
-    r.commit_at(
-        "a.txt",
-        "wip\n\nSigned-off-by: Old Me <me@home.org>",
-        1_600_000_000,
-    );
+    r.commit_at("a.txt", "wip\n\nSigned-off-by: Old Me <me@home.org>", T0);
     r.commit_at("b.txt", "fix stuff", 1_600_100_000);
     r.commit_at("c.txt", "more", 1_600_200_000);
     r.config("version: 1\n");

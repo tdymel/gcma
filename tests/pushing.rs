@@ -7,7 +7,7 @@ use common::*;
 
 fn pushed_history() -> (Repo, std::path::PathBuf) {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     let remote = r.bare_remote();
     r.git(&["push", "-q", "-u", "origin", "main"]);
     r.commit_at("local.txt", "local only", 1_600_900_000);
@@ -55,7 +55,7 @@ fn nothing_to_rewrite_in_the_pushed_range_is_fine_without_the_flag() {
         r.commit_as(
             &format!("f{i}.txt"),
             &format!("c{i}"),
-            1_600_000_000 + i * 1000,
+            T0 + i * 1000,
             "Jane Doe",
             "jane@work.com",
         );
@@ -67,9 +67,9 @@ fn nothing_to_rewrite_in_the_pushed_range_is_fine_without_the_flag() {
         let o = r.gcma(&[cmd, "--from", "root"]);
         assert!(o.status.success(), "{cmd}: {}", stderr(&o));
         assert!(
-            String::from_utf8_lossy(&o.stdout).contains("Nothing to do"),
+            stdout(&o).contains("Nothing to do"),
             "{cmd}: {}",
-            String::from_utf8_lossy(&o.stdout)
+            stdout(&o)
         );
         assert!(
             !stderr(&o).contains("no rules"),
@@ -86,7 +86,7 @@ fn nothing_to_rewrite_in_the_pushed_range_is_fine_without_the_flag() {
 #[test]
 fn rewriting_pushed_secrets_then_force_pushing_removes_them_from_the_remote_branch() {
     let r = Repo::new();
-    r.commit_files(&[("src/lib.rs", "fn main() {}\n")], "init", 1_600_000_000);
+    r.commit_files(&[("src/lib.rs", "fn main() {}\n")], "init", T0);
     r.commit_files(
         &[("src/a.rs", "a\n"), ("secrets/key.pem", "k\n")],
         "feature",
@@ -121,7 +121,7 @@ fn rewriting_pushed_secrets_then_force_pushing_removes_them_from_the_remote_bran
 #[test]
 fn pushed_commits_need_the_flag() {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     r.bare_remote();
     r.git(&["push", "-q", "-u", "origin", "main"]);
     r.commit_at("local.txt", "local only", 1_600_900_000);
@@ -133,7 +133,7 @@ fn pushed_commits_need_the_flag() {
 
     // Forcing the whole branch hits pushed commits.
     let o = r.gcma(&["plan", "--from", "root"]);
-    assert_eq!(Repo::code(&o), 5, "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(Repo::code(&o), 5, "{}", stderr(&o));
     let o = r.gcma(&["apply", "--from", "root"]);
     assert_eq!(Repo::code(&o), 5);
     assert_eq!(r.log().iter().filter(|x| x.an == "Jane Doe").count(), 0);
@@ -145,7 +145,7 @@ fn pushed_commits_need_the_flag() {
 #[test]
 fn default_range_rewrites_only_unpushed_commits() {
     let r = Repo::new();
-    let pushed = r.linear(3, 1_600_000_000);
+    let pushed = r.linear(3, T0);
     r.bare_remote();
     r.git(&["push", "-q", "-u", "origin", "main"]);
     r.commit_at("l1.txt", "l1", 1_600_900_000);

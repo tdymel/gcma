@@ -11,7 +11,7 @@ fn resigned_commits_verify_keep_their_identities_and_follow_the_schedule() {
     }
     let r = Repo::new();
     r.ssh_signing();
-    r.commit_as("a.txt", "one", 1_600_000_000, "Alice", "alice@x.org");
+    r.commit_as("a.txt", "one", T0, "Alice", "alice@x.org");
     r.commit_as("b.txt", "two", 1_600_100_000, "Bob", "bob@x.org");
     r.commit_at("c.txt", "three", 1_600_200_000);
     let old = r.log();
@@ -27,7 +27,7 @@ fn resigned_commits_verify_keep_their_identities_and_follow_the_schedule() {
             v.status.success(),
             "{} does not verify: {}",
             n.oid,
-            String::from_utf8_lossy(&v.stderr)
+            stderr(&v)
         );
     }
     r.fsck();
@@ -47,7 +47,7 @@ fn signing_strip_and_resign() {
     let r = Repo::new();
     r.ssh_signing();
     r.git(&["config", "commit.gpgsign", "true"]);
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     r.git(&["config", "commit.gpgsign", "false"]);
     assert!(r.git(&["cat-file", "-p", "HEAD"]).contains("gpgsig"));
 

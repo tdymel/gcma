@@ -52,7 +52,7 @@ fn help_and_version_work_everywhere_and_list_every_command() {
 #[test]
 fn usage_mistakes_exit_2_and_say_what_was_wrong() {
     let r = Repo::new();
-    r.linear(2, 1_600_000_000);
+    r.linear(2, T0);
     r.config(IDENTITY_CFG);
     for (args, why) in [
         (vec!["--bogus"], "unexpected argument"),
@@ -82,7 +82,7 @@ fn usage_mistakes_exit_2_and_say_what_was_wrong() {
 #[test]
 fn the_dir_option_works_from_anywhere() {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     r.config(IDENTITY_CFG);
     let elsewhere = tempfile::tempdir().unwrap();
     let o = base_cmd(bin(), elsewhere.path(), r.home.path())
@@ -98,7 +98,7 @@ fn the_dir_option_works_from_anywhere() {
 #[test]
 fn a_config_can_live_anywhere_when_named() {
     let r = Repo::new();
-    r.linear(2, 1_600_000_000);
+    r.linear(2, T0);
     let cfg = r.home.path().join("elsewhere.yml");
     std::fs::write(&cfg, IDENTITY_CFG).unwrap();
     let cfg = cfg.to_str().unwrap();
@@ -114,7 +114,7 @@ fn a_config_can_live_anywhere_when_named() {
 #[test]
 fn init_writes_once_refuses_to_overwrite_and_force_replaces() {
     let r = Repo::new();
-    r.linear(1, 1_600_000_000);
+    r.linear(1, T0);
     let o = r.gcma(&["init"]);
     assert_eq!(Repo::code(&o), 0, "{}", stderr(&o));
     let first = std::fs::read_to_string(r.path().join("gcma.yml")).unwrap();
@@ -152,7 +152,7 @@ fn init_writes_once_refuses_to_overwrite_and_force_replaces() {
 #[test]
 fn init_keeps_the_config_out_of_commits_and_starts_inert() {
     let r = Repo::new();
-    r.linear(2, 1_600_000_000);
+    r.linear(2, T0);
     r.gcma_ok(&["init"]);
     assert!(
         r.git(&["status", "--porcelain"]).is_empty(),
@@ -165,13 +165,13 @@ fn init_keeps_the_config_out_of_commits_and_starts_inert() {
         "{}",
         stderr(&o)
     );
-    assert!(String::from_utf8_lossy(&o.stdout).contains("Nothing to do"));
+    assert!(stdout(&o).contains("Nothing to do"));
 }
 
 #[test]
 fn two_rewrites_in_one_second_keep_two_distinct_backups() {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     r.config(IDENTITY_CFG);
     r.gcma_ok(&["apply", "--from", "root"]);
     r.config("version: 1\nmessages:\n  add_trailers: [\"Assisted-By: A <a@x>\"]\n");
@@ -211,7 +211,7 @@ fn two_rewrites_in_one_second_keep_two_distinct_backups() {
 #[test]
 fn pruning_a_backup_forgets_it_and_listing_shows_none() {
     let r = Repo::new();
-    r.linear(2, 1_600_000_000);
+    r.linear(2, T0);
     r.config(IDENTITY_CFG);
     r.gcma_ok(&["apply", "--from", "root"]);
     let id = r.backup_id();
@@ -227,7 +227,7 @@ fn pruning_a_backup_forgets_it_and_listing_shows_none() {
 #[test]
 fn restoring_by_an_unambiguous_prefix_works_and_an_ambiguous_one_is_refused() {
     let r = Repo::new();
-    r.linear(2, 1_600_000_000);
+    r.linear(2, T0);
     r.config(IDENTITY_CFG);
     r.gcma_ok(&["apply", "--from", "root"]);
     let id = r.backup_id();
@@ -243,7 +243,7 @@ fn restoring_by_an_unambiguous_prefix_works_and_an_ambiguous_one_is_refused() {
 #[test]
 fn restore_refuses_when_the_branch_moved_unless_forced() {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     r.config(IDENTITY_CFG);
     let old_tip = r.git(&["rev-parse", "HEAD"]);
     r.gcma_ok(&["apply", "--from", "root"]);
@@ -258,7 +258,7 @@ fn restore_refuses_when_the_branch_moved_unless_forced() {
     );
     let moved = r.git(&["rev-parse", "HEAD"]);
     let o = r.gcma(&["restore", &id]);
-    assert_eq!(Repo::code(&o), 4, "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(Repo::code(&o), 4, "{}", stderr(&o));
     assert_eq!(
         r.git(&["rev-parse", "HEAD"]),
         moved,
@@ -276,7 +276,7 @@ fn restore_refuses_when_the_branch_moved_unless_forced() {
 #[test]
 fn restore_after_path_rules_leaves_index_and_gitignore_as_before() {
     let r = Repo::new();
-    r.commit_files(&[("a.txt", "a\n")], "add a", 1_600_000_000);
+    r.commit_files(&[("a.txt", "a\n")], "add a", T0);
     r.commit_files(
         &[("secrets/k", "k\n"), ("b.txt", "b\n")],
         "add b",
@@ -286,15 +286,7 @@ fn restore_after_path_rules_leaves_index_and_gitignore_as_before() {
     let tip = r.git(&["rev-parse", "HEAD"]);
     r.gcma_ok(&["apply", "--from", "root"]);
     assert!(r.path().join(".gitignore").exists());
-    let id = r.git(&["for-each-ref", "--format=%(refname)", "refs/gcma/backup/"]);
-    let id = id
-        .lines()
-        .next()
-        .unwrap()
-        .rsplit('/')
-        .nth(1)
-        .unwrap()
-        .to_string();
+    let id = r.backup_id_from_refs();
     r.gcma_ok(&["restore", &id]);
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
     assert_eq!(r.status_without_config(), "", "{}", r.git(&["status"]));
@@ -308,7 +300,7 @@ fn restore_after_path_rules_leaves_index_and_gitignore_as_before() {
 #[test]
 fn a_closed_output_pipe_is_not_a_crash() {
     let r = Repo::new();
-    r.linear(300, 1_600_000_000);
+    r.linear(300, T0);
     r.config(IDENTITY_CFG);
     let script = format!(
         "{} plan --from root | head -n 1 > /dev/null; echo ${{PIPESTATUS[0]}}",
@@ -324,7 +316,7 @@ fn a_closed_output_pipe_is_not_a_crash() {
 #[test]
 fn export_boundaries_are_clean() {
     let r = Repo::new();
-    r.linear(5, 1_600_000_000);
+    r.linear(5, T0);
     r.config(IDENTITY_CFG);
     let rows = |args: &[&str]| {
         let mut a = vec!["export", "--from", "root"];

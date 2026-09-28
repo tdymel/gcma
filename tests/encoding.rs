@@ -7,7 +7,7 @@ use common::*;
 
 fn latin1_history() -> Repo {
     let r = Repo::new();
-    r.commit_at("a.txt", "plain", 1_600_000_000);
+    r.commit_at("a.txt", "plain", T0);
     r.commit_as_bytes(
         "b.txt",
         "latin",
@@ -40,15 +40,9 @@ fn schedule_run_keeps_non_utf8_names_when_no_rule_matches() {
     };
     for backend in backends.iter().copied() {
         let r = latin1_history();
-        r.config(&berlin_cfg(
-            "identity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n",
-        ));
+        r.config(&berlin_cfg(IDENTITY_RULE));
         let o = r.gcma(&["--backend", backend, "apply", "--from", "root"]);
-        assert!(
-            o.status.success(),
-            "{backend}: {}",
-            String::from_utf8_lossy(&o.stderr)
-        );
+        assert!(o.status.success(), "{backend}: {}", stderr(&o));
         r.fsck();
         let rows = r.log();
         assert_eq!(rows[0].an, "Jane Doe", "{backend}");
@@ -74,7 +68,7 @@ fn plan_files_carry_non_utf8_names_through_export_and_apply() {
         "binary names are base64 in the plan: {json}"
     );
     let o = r.gcma(&["export", "--plan", plan.to_str().unwrap()]);
-    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(o.status.success(), "{}", stderr(&o));
     r.gcma_ok(&["apply", "--plan", plan.to_str().unwrap()]);
     assert_eq!(name_bytes(&r, "HEAD~1"), b"J\xf6rg M\xfcller");
     r.fsck();
@@ -83,8 +77,8 @@ fn plan_files_carry_non_utf8_names_through_export_and_apply() {
 #[test]
 fn an_email_rule_applies_to_an_author_whose_name_is_not_utf8() {
     let r = Repo::new();
-    r.commit_as_bytes("a.txt", "one", 1_600_000_000, b"J\xf6rg", b"me@home.org");
-    r.config("version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n");
+    r.commit_as_bytes("a.txt", "one", T0, b"J\xf6rg", b"me@home.org");
+    r.config(IDENTITY_CFG);
     r.gcma_ok(&["apply", "--from", "root"]);
     let log = r.log();
     assert_eq!(

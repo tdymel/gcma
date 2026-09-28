@@ -259,33 +259,28 @@ fn invalid_hours_are_usage_errors() {
         "5",
     ] {
         let r = Repo::new();
-        r.linear(2, 1_600_000_000);
+        r.linear(2, T0);
         r.config(&cfg("[mon]", hours, "uniform"));
         let o = r.gcma(&["plan", "--from", "root"]);
-        assert_eq!(
-            Repo::code(&o),
-            2,
-            "{hours}: {}",
-            String::from_utf8_lossy(&o.stderr)
-        );
+        assert_eq!(Repo::code(&o), 2, "{hours}: {}", stderr(&o));
     }
 }
 
 #[test]
 fn a_window_without_any_matching_day_is_refused_even_with_overnight_hours() {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     // The window starts on Tuesday 06:00, just when Monday's 18:00-06:00 range ends.
     r.config("version: 1\nfrom: \"2026-01-06T06:00:00+01:00\"\nto: \"2026-01-06T23:00:00+01:00\"\ntimezone: Europe/Berlin\nschedule:\n  days: [mon]\n  hours: \"18:00-06:00\"\n");
     let o = r.gcma(&["apply", "--from", "root"]);
-    assert_eq!(Repo::code(&o), 3, "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(Repo::code(&o), 3, "{}", stderr(&o));
     assert_eq!(r.log().len(), 3, "nothing was rewritten");
 }
 
 #[test]
 fn a_window_starting_after_midnight_still_gets_the_tail_of_the_previous_days_range() {
     let r = Repo::new();
-    r.linear(4, 1_600_000_000);
+    r.linear(4, T0);
     // Tuesday 2026-01-06 only, but Monday's range reaches into it until 06:00.
     r.config("version: 1\nfrom: 2026-01-06\nto: 2026-01-06\ntimezone: Europe/Berlin\nschedule:\n  days: [mon]\n  hours: \"18:00-06:00\"\n");
     r.gcma_ok(&["apply", "--from", "root"]);
@@ -401,7 +396,7 @@ fn zero_capacity_window_is_refused_with_exit_3() {
     // Only Mondays 09:00-10:00 in a window that contains no Monday.
     r.config("version: 1\nfrom: 2026-01-06\nto: 2026-01-09\nschedule:\n  days: [mon]\n  hours: \"09:00-10:00\"\n");
     let o = r.gcma(&["apply", "--from", "root"]);
-    assert_eq!(Repo::code(&o), 3, "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(Repo::code(&o), 3, "{}", stderr(&o));
     assert_eq!(r.log().len(), 3);
 }
 

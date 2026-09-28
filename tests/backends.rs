@@ -7,7 +7,7 @@ use common::*;
 #[test]
 fn backend_selection_flag_env_and_config() {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     r.config(IDENTITY_CFG);
     // Unknown values are usage errors, from the flag, the env var and the config alike.
     assert_eq!(
@@ -35,12 +35,7 @@ fn backend_selection_flag_env_and_config() {
     r.gcma_ok(&["--backend", "git", "plan", "--from", "root"]);
     let gix = r.gcma(&["--backend", "gix", "plan", "--from", "root"]);
     let expected = if cfg!(feature = "gix") { 0 } else { 2 };
-    assert_eq!(
-        Repo::code(&gix),
-        expected,
-        "{}",
-        String::from_utf8_lossy(&gix.stderr)
-    );
+    assert_eq!(Repo::code(&gix), expected, "{}", stderr(&gix));
     // The flag beats the environment, which beats the config.
     r.config(&format!("{IDENTITY_CFG}backend: gix\n"));
     let with_env = |value: &str| {
@@ -62,7 +57,7 @@ fn backend_selection_flag_env_and_config() {
         .env("GCMA_BACKEND", "gix")
         .output()
         .unwrap();
-    assert_eq!(Repo::code(&o), 0, "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(Repo::code(&o), 0, "{}", stderr(&o));
 }
 
 #[cfg(feature = "gix")]
@@ -70,7 +65,7 @@ fn backend_selection_flag_env_and_config() {
 fn gix_and_git_backends_write_byte_identical_commits() {
     let mk = || {
         let r = Repo::new();
-        r.linear(8, 1_600_000_000);
+        r.linear(8, T0);
         r.config(&format!(
             "{IDENTITY_CFG}from: 2025-01-01\nto: 2026-01-31\nschedule: {{days: [mon, tue, wed], hours: \"10:00-16:00\", seed: 5}}\n"
         ));
