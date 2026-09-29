@@ -56,7 +56,7 @@ impl From<&str> for Hours {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Distribution {
     #[default]
@@ -131,7 +131,7 @@ fn compile_rewrites<'de, D: serde::Deserializer<'de>>(
 }
 
 /// What happens to a commit that touched nothing but excluded paths.
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum OnlyExcluded {
     /// The commit is removed from history.
