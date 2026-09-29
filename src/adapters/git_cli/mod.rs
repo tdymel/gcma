@@ -4,6 +4,7 @@ mod history;
 mod objects;
 mod refs;
 mod runner;
+mod tags;
 mod trees;
 mod worktree;
 

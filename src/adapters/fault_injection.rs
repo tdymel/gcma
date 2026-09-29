@@ -10,7 +10,8 @@ use crate::adapters::config_file;
 use crate::adapters::git_cli::GitCli;
 use crate::application::planning::{PlanOptions, build_plan};
 use crate::application::ports::{
-    CommitStore, History, RefStore, RefUpdate, RevRange, TreeEntry, TreeStore, WorkTree,
+    CommitStore, History, NoteStore, RefStore, RefUpdate, RevRange, TagRef, TagStore, TreeEntry,
+    TreeStore, WorkTree,
 };
 use crate::application::rewrite::apply;
 use crate::domain::error::{Error, Result};
@@ -105,6 +106,25 @@ impl RefStore for Faulty {
         to self.inner {
             fn remotes(&self) -> Result<Vec<String>>;
             fn labels_pointing_at(&self, oids: &HashSet<String>) -> Result<Vec<String>>;
+        }
+    }
+}
+
+impl TagStore for Faulty {
+    delegate! {
+        to self.inner {
+            fn list_tags(&self) -> Result<Vec<TagRef>>;
+            fn read_tag_object(&self, oid: &str) -> Result<Vec<u8>>;
+            fn write_tag_object(&self, raw: &[u8]) -> Result<String>;
+        }
+    }
+}
+
+impl NoteStore for Faulty {
+    delegate! {
+        to self.inner {
+            fn list_notes(&self) -> Result<Vec<(String, String)>>;
+            fn copy_note(&self, notes_ref: &str, from: &str, to: &str) -> Result<()>;
         }
     }
 }
