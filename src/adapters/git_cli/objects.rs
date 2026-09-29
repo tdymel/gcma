@@ -37,7 +37,7 @@ impl GitCli {
             "GIT_COMMITTER_DATE",
             format!("{} {}", c.committer.time, format_tz(c.committer.tz)),
         );
-        let o = self.exec(cmd, Some(c.message))?;
+        let o = Self::exec(cmd, Some(c.message))?;
         if !o.ok {
             return Err(Error::Git(format!(
                 "commit-tree -S failed (is signing configured?): {}",
