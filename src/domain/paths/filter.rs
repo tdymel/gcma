@@ -1,5 +1,6 @@
 //! Matching of tree paths against gitignore-style patterns.
 
+// `ignore` is used only for its pure gitignore pattern matcher; nothing here touches the file system.
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
 use crate::domain::error::{Error, Result};
