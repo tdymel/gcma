@@ -22,7 +22,7 @@ gcma apply [--from <rev|root>]  # verify, back up, rewrite
 gcma restore [<id>] [--force|--prune]   # list, undo, or forget a backup
 -C <dir>, --config <file>, --backend git|gix    # global options
 gcma export / import            # compact JSONL for LLM-written messages (see below)
-gcma hook install|uninstall     # pre-push hook
+gcma hook install [--post-commit]|uninstall   # pre-push hook, optionally post-commit too
 ```
 
 By default the range is `upstream..HEAD` (unpushed commits). Without an upstream pass `--from <rev>` (exclusive) or
@@ -156,13 +156,30 @@ commit writes move between backends; refs, signing and hooks always use git. Mea
 In `rewrite` mode it rewrites them and aborts the push so you push again. Deletes and pushes of other branches are ignored; `git push origin HEAD` and a revision of the branch
 (`HEAD~1:main`) count as the checked-out branch. Skip it once with `git push --no-verify`. Remember that config errors block pushes too.
 
+### Post-commit hook (opt-in)
+
+`gcma hook install --post-commit` installs the `pre-push` hook and a `post-commit` one (`hook uninstall` removes both; a
+hook gcma did not write needs `--force`). After every commit it respreads the times of **all unpushed commits** over the
+schedule, so a day's work always looks spread over the hours instead of landing in one burst; the pushed history never
+changes, so no force push is needed. It is deterministic per seed and base commit, keeps the trees, and leaves the working copy and
+index alone (path rules aside, as with `apply`). It is the `apply --all` of the unpushed range, with one backup per commit:
+clean them up with `gcma restore <id> --prune`.
+
+- It acts only with `hook: { mode: rewrite }` and a `schedule`; in `verify` mode it does nothing (a commit cannot be
+  blocked), and `pre-push` stays the safety net. The unpushed range is `upstream..HEAD`; without an upstream it is every
+  commit on no remote-tracking ref, and with neither upstream nor remote it does nothing (use `gcma apply --from root`).
+- It never fails the commit and is silent unless something is wrong (`gcma: post-commit skipped: <reason>` on stderr). It
+  skips quietly on a detached HEAD, during a rebase, merge, cherry-pick or revert, with staged changes, and when the window has no
+  time left.
+- Tags on unpushed commits keep pointing at the old commits, as with `apply`.
+
 ## Architecture
 
 Domain-driven design with a hexagonal layout (`src/`):
 
 ```
 domain/        pure model and rules (no I/O): error, settings, scheduling, text, paths, history
-application/   use cases and the ports they need: planning, rewrite (apply/restore), llm, push_guard,
+application/   use cases and the ports they need: planning, rewrite (apply/restore), llm, push_guard, commit_hook,
                preconditions, pathrules, ports
 adapters/      git_cli, gix_store, repository (composition), config_file, plan_file, hook_installer,
                llm_jsonl, fsutil, convert, cli (the commands) and cli_support (grammar, session, output)
