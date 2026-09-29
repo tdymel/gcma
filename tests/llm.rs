@@ -17,6 +17,12 @@ fn setup(cfg: &str) -> (Repo, String) {
     (r, plan)
 }
 
+/// Same shape and trees, but the messages may differ.
+fn assert_same_shape(old: &[Row], new: &[Row]) {
+    assert_eq!(old.len(), new.len(), "commit count changed");
+    map_commits_by(old, new, false);
+}
+
 fn rows(r: &Repo, plan: &str) -> Vec<serde_json::Value> {
     let o = r.gcma(&["export", "--plan", plan]);
     assert!(o.status.success(), "{}", stderr(&o));

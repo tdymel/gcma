@@ -14,7 +14,7 @@ pub fn map_commits(old: &[Row], new: &[Row]) -> HashMap<String, String> {
 }
 
 /// `map_commits`, optionally ignoring the subjects (for runs that rewrite messages).
-fn map_commits_by(old: &[Row], new: &[Row], same_subject: bool) -> HashMap<String, String> {
+pub fn map_commits_by(old: &[Row], new: &[Row], same_subject: bool) -> HashMap<String, String> {
     let mut map: HashMap<String, String> = Default::default();
     let mut taken: HashSet<&str> = Default::default();
     for o in old {
@@ -38,12 +38,6 @@ fn map_commits_by(old: &[Row], new: &[Row], same_subject: bool) -> HashMap<Strin
 pub fn assert_same_content(old: &[Row], new: &[Row]) {
     assert_eq!(old.len(), new.len(), "commit count changed");
     map_commits(old, new);
-}
-
-/// Same shape and trees, but the messages may differ.
-pub fn assert_same_shape(old: &[Row], new: &[Row]) {
-    assert_eq!(old.len(), new.len(), "commit count changed");
-    map_commits_by(old, new, false);
 }
 
 /// A config that schedules weekdays 09:30-18:00 in Berlin between 2026-01-05 and 2026-03-01,
