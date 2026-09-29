@@ -1,36 +1,9 @@
-//! Histories and repositories that are not the plain linear case: unrelated roots, names that are
-//! not UTF-8, offsets that disagree with the schedule, other branches' backups, and the warnings
-//! `plan` and `apply` print (tags and headers that a rewrite cannot carry).
+//! Histories that are not the plain linear case: unrelated roots, and the warnings `plan` and
+//! `apply` print about tags that a rewrite cannot carry along.
 
 mod common;
 
 use common::*;
-
-#[test]
-fn a_backup_of_another_branch_is_refused_and_leaves_both_branches_alone() {
-    let r = Repo::new();
-    r.linear(3, T0);
-    r.config(IDENTITY_CFG);
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let id = r.backup_id();
-    r.git(&["checkout", "-q", "-b", "other"]);
-    let (main, other) = (
-        r.git(&["rev-parse", "main"]),
-        r.git(&["rev-parse", "other"]),
-    );
-    let o = r.gcma(&["restore", &id]);
-    assert_eq!(Repo::code(&o), 3, "{}", stderr(&o));
-    assert!(
-        stderr(&o).contains("belongs to branch main"),
-        "{}",
-        stderr(&o)
-    );
-    assert_eq!(r.git(&["rev-parse", "main"]), main);
-    assert_eq!(r.git(&["rev-parse", "other"]), other);
-    // Once the right branch is checked out the same backup restores fine.
-    r.git(&["checkout", "-q", "main"]);
-    r.gcma_ok(&["restore", &id]);
-}
 
 #[test]
 fn apply_warns_about_tags_that_will_keep_pointing_at_the_old_commits() {

@@ -1,4 +1,5 @@
-//! The export / import workflow: what an LLM sees, what it may answer, and what is refused.
+//! The export / import workflow: what an LLM sees (and the edges of the batches it is shown), what
+//! it may answer, and what is refused.
 
 mod common;
 
@@ -301,4 +302,40 @@ fn llm_export_import_apply_roundtrip() {
             .status
             .success()
     );
+}
+
+#[test]
+fn export_boundaries_are_clean() {
+    let r = Repo::new();
+    r.linear(5, T0);
+    r.config(IDENTITY_CFG);
+    let rows = |args: &[&str]| {
+        let mut a = vec!["export", "--from", "root"];
+        a.extend_from_slice(args);
+        let o = r.gcma(&a);
+        assert!(o.status.success(), "{args:?}: {}", stderr(&o));
+        stdout(&o).lines().count()
+    };
+    assert_eq!(rows(&[]), 5);
+    assert_eq!(rows(&["--batch", "2"]), 2);
+    assert_eq!(rows(&["--batch", "2", "--offset", "4"]), 1);
+    assert_eq!(rows(&["--batch", "2", "--offset", "5"]), 0);
+    assert_eq!(
+        rows(&["--offset", "99"]),
+        0,
+        "an offset past the end is an empty batch"
+    );
+    assert_eq!(rows(&["--batch", "0"]), 0);
+    assert_eq!(rows(&["--batch", "99999999999"]), 5);
+    // The prelude (instructions) goes to stderr, rows only to stdout.
+    let o = r.gcma(&["export", "--from", "root", "--batch", "1"]);
+    assert!(
+        stderr(&o).contains("Reply with JSONL ONLY"),
+        "{}",
+        stderr(&o)
+    );
+    assert!(stderr(&o).contains("Rows 0..1 of 5"), "{}", stderr(&o));
+    for l in stdout(&o).lines() {
+        assert!(l.starts_with('{'), "{l}");
+    }
 }
