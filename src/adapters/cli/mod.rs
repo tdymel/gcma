@@ -13,7 +13,7 @@ fn exit_code(e: &Error) -> i32 {
     match e {
         Error::Internal(_) | Error::Git(_) | Error::Io(_) => 1,
         Error::Usage(_) => 2,
-        Error::Precondition(_) => 3,
+        Error::Precondition(_) | Error::NoCapacity(_) => 3,
         Error::TipMoved(_) => 4,
         Error::Pushed(_) => 5,
         Error::Nonconforming(_) => 6,

@@ -69,7 +69,7 @@ impl Schedule<'_> {
             .unwrap_or(from)
             .max(from);
         if self.to <= floor {
-            return Err(Error::Precondition(format!(
+            return Err(Error::NoCapacity(format!(
                 "`to` ({}) is not after the floor ({floor}, the latest commit kept as-is); nothing can be scheduled",
                 self.to
             )));

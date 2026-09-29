@@ -9,6 +9,10 @@ pub enum Error {
     Usage(String),
     #[error("{0}")]
     Precondition(String),
+    /// The schedule has no allowed time left for the commits to place. A precondition too (exit 3),
+    /// told apart so a caller that must stay quiet (the post-commit hook) can skip it.
+    #[error("{0}")]
+    NoCapacity(String),
     #[error("{0}")]
     TipMoved(String),
     #[error("{0}")]
