@@ -9,7 +9,7 @@ use common::*;
 #[test]
 fn identity_rewrite_preserves_everything_else() {
     let r = Repo::new();
-    r.linear(6, 1_600_000_000);
+    r.linear(6, T0);
     r.config(IDENTITY_CFG);
     let old = r.log();
     let old_tip = old.last().unwrap().oid.clone();
@@ -45,7 +45,7 @@ fn identity_rewrite_preserves_everything_else() {
 #[test]
 fn second_apply_is_a_noop_and_restore_returns_the_original_tip() {
     let r = Repo::new();
-    r.linear(4, 1_600_000_000);
+    r.linear(4, T0);
     r.config(IDENTITY_CFG);
     let old_tip = r.git(&["rev-parse", "HEAD"]);
     r.gcma_ok(&["apply", "--from", "root"]);
@@ -71,7 +71,7 @@ fn second_apply_is_a_noop_and_restore_returns_the_original_tip() {
 #[test]
 fn merge_history_keeps_parent_order_and_trees() {
     let r = Repo::new();
-    r.commit_at("base.txt", "base", 1_600_000_000);
+    r.commit_at("base.txt", "base", T0);
     r.git(&["checkout", "-q", "-b", "side"]);
     r.commit_at("side1.txt", "side 1", 1_600_100_000);
     r.commit_at("side2.txt", "side 2", 1_600_200_000);
@@ -114,7 +114,7 @@ fn merge_history_keeps_parent_order_and_trees() {
 fn frozen_commits_keep_their_oids_and_only_the_rest_changes() {
     let r = Repo::new();
     // Three commits already by the target identity, then two by the old identity.
-    let a = r.commit_as("a.txt", "a", 1_600_000_000, "Jane Doe", "jane@work.com");
+    let a = r.commit_as("a.txt", "a", T0, "Jane Doe", "jane@work.com");
     let b = r.commit_as("b.txt", "b", 1_600_100_000, "Jane Doe", "jane@work.com");
     r.commit_at("c.txt", "c", 1_600_200_000);
     r.commit_at("d.txt", "d", 1_600_300_000);
@@ -134,7 +134,7 @@ fn frozen_commits_keep_their_oids_and_only_the_rest_changes() {
 #[test]
 fn plan_check_exits_6_and_changes_nothing() {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     r.config(IDENTITY_CFG);
     let tip = r.git(&["rev-parse", "HEAD"]);
     let o = r.gcma(&["plan", "--check", "--from", "root"]);
@@ -147,7 +147,7 @@ fn plan_check_exits_6_and_changes_nothing() {
 #[test]
 fn all_flag_with_nothing_to_change_is_a_clean_noop() {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     r.config("version: 1\n");
     let tip = r.git(&["rev-parse", "HEAD"]);
     let o = r.gcma_ok(&["apply", "--from", "root", "--all"]);

@@ -28,8 +28,8 @@ fn same_result(build: impl Fn(&Repo), cfg: &str, args: &[&str]) -> (Repo, Repo) 
         assert!(
             o.status.success(),
             "{backend}: {}{}",
-            String::from_utf8_lossy(&o.stdout),
-            String::from_utf8_lossy(&o.stderr)
+            stdout(&o),
+            stderr(&o)
         );
     };
     run(&a, "git");
@@ -90,13 +90,11 @@ fn merges(r: &Repo) {
         .env("GIT_COMMITTER_DATE", date)
         .output()
         .unwrap();
-    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(o.status.success(), "{}", stderr(&o));
     r.commit_at("after.txt", "after", 1_500_600_000);
 }
 
 const SCHEDULE: &str = "from: 2025-01-01\nto: 2025-06-30\ntimezone: Europe/Berlin\nschedule:\n  days: [mon, tue, wed, thu, fri]\n  hours: [\"09:30-12:00\", \"18:00-02:00\"]\n  seed: 3\n";
-const IDENTITY: &str =
-    "identity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n";
 
 #[test]
 fn identity_and_schedule_on_a_linear_history() {
@@ -105,7 +103,7 @@ fn identity_and_schedule_on_a_linear_history() {
             |r| {
                 r.linear(10, 1_500_000_000);
             },
-            &format!("version: 1\n{IDENTITY}{SCHEDULE}")
+            &format!("version: 1\n{IDENTITY_RULE}{SCHEDULE}")
                 .replace("seed: 3", &format!("seed: 3\n  distribution: {dist}")),
             &["apply", "--from", "root"],
         );
@@ -117,7 +115,7 @@ fn octopus_merges_with_schedule_and_trailers() {
     let (a, _) = same_result(
         merges,
         &format!(
-            "version: 1\n{IDENTITY}{SCHEDULE}messages:\n  strip_trailers: [Signed-off-by]\n  add_trailers: [\"Assisted-By: Claude <noreply@anthropic.com>\"]\n"
+            "version: 1\n{IDENTITY_RULE}{SCHEDULE}messages:\n  strip_trailers: [Signed-off-by]\n  add_trailers: [\"Assisted-By: Claude <noreply@anthropic.com>\"]\n"
         ),
         &["apply", "--from", "root"],
     );
@@ -137,7 +135,7 @@ fn trailer_rules_alone() {
                 r.commit_at(
                     &format!("f{i}.txt"),
                     &format!("commit {i}\n\nBody.\n\nSigned-off-by: Dev <dev@x.org>\nCo-authored-by: Pair <p@x.org>"),
-                    1_600_000_000 + i * 100_000,
+                    T0 + i * 100_000,
                 );
             }
         },
@@ -147,7 +145,7 @@ fn trailer_rules_alone() {
 }
 
 fn with_secrets(r: &Repo) {
-    r.commit_files(&[("src/lib.rs", "fn main() {}\n")], "init", 1_600_000_000);
+    r.commit_files(&[("src/lib.rs", "fn main() {}\n")], "init", T0);
     r.commit_files(&[("secrets/key.pem", "k\n")], "only a key", 1_600_100_000);
     r.commit_files(
         &[("src/a.rs", "a\n"), ("secrets/b.pem", "b\n")],
@@ -169,7 +167,7 @@ fn with_secrets(r: &Repo) {
         .env("GIT_COMMITTER_DATE", date)
         .output()
         .unwrap();
-    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(o.status.success(), "{}", stderr(&o));
     r.commit_files(
         &[("secrets/tail.pem", "t\n")],
         "tail only a key",
@@ -197,7 +195,7 @@ fn path_rules_with_schedule_identity_and_trailers_together() {
     same_result(
         with_secrets,
         &format!(
-            "version: 1\n{IDENTITY}{SCHEDULE}messages:\n  add_trailers: [\"Assisted-By: A <a@b.c>\"]\npaths:\n  exclude: [\"secrets/\"]\n"
+            "version: 1\n{IDENTITY_RULE}{SCHEDULE}messages:\n  add_trailers: [\"Assisted-By: A <a@b.c>\"]\npaths:\n  exclude: [\"secrets/\"]\n"
         ),
         &["apply", "--from", "root"],
     );
@@ -207,7 +205,7 @@ fn path_rules_with_schedule_identity_and_trailers_together() {
 fn the_all_flag_rewrites_conforming_commits_identically() {
     same_result(
         |r| {
-            r.linear(5, 1_600_000_000);
+            r.linear(5, T0);
         },
         "version: 1\n",
         &["apply", "--from", "root", "--all"],
@@ -217,7 +215,7 @@ fn the_all_flag_rewrites_conforming_commits_identically() {
 #[test]
 fn non_utf8_names_and_messages_are_carried_over_byte_for_byte() {
     let build = |r: &Repo| {
-        r.commit_at("a.txt", "plain", 1_600_000_000);
+        r.commit_at("a.txt", "plain", T0);
         r.commit_as_bytes(
             "b.txt",
             "latin1 name",
@@ -248,7 +246,7 @@ fn non_utf8_names_and_messages_are_carried_over_byte_for_byte() {
     };
     same_result(
         build,
-        &format!("version: 1\n{IDENTITY}{SCHEDULE}"),
+        &format!("version: 1\n{IDENTITY_RULE}{SCHEDULE}"),
         &["apply", "--from", "root"],
     );
 }
@@ -258,7 +256,7 @@ fn signature_and_extra_headers_are_handled_alike() {
     // A commit carrying a (fake) signature, a mergetag-like header and an encoding header.
     let build = |r: &Repo| {
         use std::io::Write;
-        r.commit_at("a.txt", "first", 1_600_000_000);
+        r.commit_at("a.txt", "first", T0);
         let tree = r.git(&["rev-parse", "HEAD^{tree}"]);
         let parent = r.git(&["rev-parse", "HEAD"]);
         let raw = format!(
@@ -290,7 +288,7 @@ fn signature_and_extra_headers_are_handled_alike() {
     };
     same_result(
         build,
-        &format!("version: 1\n{IDENTITY}signing: strip\n"),
+        &format!("version: 1\n{IDENTITY_RULE}signing: strip\n"),
         &["apply", "--from", "root"],
     );
 }
@@ -301,7 +299,7 @@ fn plans_and_dry_runs_are_identical_too() {
     for r in [&a, &b] {
         with_secrets(r);
         r.config(&format!(
-            "version: 1\n{IDENTITY}{SCHEDULE}paths:\n  exclude: [\"secrets/\"]\n"
+            "version: 1\n{IDENTITY_RULE}{SCHEDULE}paths:\n  exclude: [\"secrets/\"]\n"
         ));
     }
     let plan = |r: &Repo, backend: &str| {

@@ -106,7 +106,7 @@ fn a_branch_where_every_commit_only_touches_excluded_paths_is_refused() {
     let r = Repo::new();
     r.commit_files(&[("secrets/one", "1\n")], "one", T0);
     r.commit_files(&[("secrets/two", "2\n")], "two", T0 + 1000);
-    r.config("version: 1\npaths:\n  exclude: [\"secrets/\"]\n  gitignore: false\n");
+    r.config(SECRETS_NO_GITIGNORE_CFG);
     let tip = r.git(&["rev-parse", "HEAD"]);
     for cmd in ["plan", "apply"] {
         let o = r.gcma(&[cmd, "--from", "root"]);

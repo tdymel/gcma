@@ -4,33 +4,21 @@
 
 mod common;
 
-use common::Repo;
+use common::*;
 
-const IDENTITY_CFG: &str = "version: 1\nidentity:\n  - match: {email: me@home.org}\n    set: {name: Jane Doe, email: jane@work.com}\n";
 /// Parses as YAML but `last` is not a known field.
 const BROKEN_CFG: &str = "version: 1\nlast: 6mo\n";
-
-fn backup_id(r: &Repo) -> String {
-    let refs = r.git(&["for-each-ref", "--format=%(refname)", "refs/gcma/backup/"]);
-    refs.lines()
-        .next()
-        .unwrap()
-        .rsplit('/')
-        .nth(1)
-        .unwrap()
-        .to_string()
-}
 
 /// A repository with one applied rewrite (so there is a backup) and then a broken config.
 /// Returns the repository, the tip before the rewrite and the backup id.
 fn rewritten_then_broken() -> (Repo, String, String) {
     let r = Repo::new();
-    r.linear(2, 1_600_000_000);
+    r.linear(2, T0);
     let before = r.git(&["rev-parse", "HEAD"]);
     r.config(IDENTITY_CFG);
     r.gcma_ok(&["apply", "--from", "root"]);
     assert_ne!(r.git(&["rev-parse", "HEAD"]), before);
-    let id = backup_id(&r);
+    let id = r.backup_id_from_refs();
     r.config(BROKEN_CFG);
     (r, before, id)
 }
@@ -74,7 +62,7 @@ fn commands_that_need_the_rules_still_reject_a_broken_config() {
 #[test]
 fn import_rejects_a_broken_config() {
     let r = Repo::new();
-    r.linear(2, 1_600_000_000);
+    r.linear(2, T0);
     r.config(IDENTITY_CFG);
     let plan = r.path().join("plan.json");
     let plan = plan.to_str().unwrap();
@@ -82,5 +70,5 @@ fn import_rejects_a_broken_config() {
     r.config(BROKEN_CFG);
     r.write("reply.jsonl", "");
     let o = r.gcma(&["import", "--plan", plan, "reply.jsonl"]);
-    assert_eq!(Repo::code(&o), 2, "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
 }

@@ -367,6 +367,18 @@ impl Repo {
             .to_string()
     }
 
+    /// The id of the first backup, read from the refs instead of from `gcma restore`.
+    pub fn backup_id_from_refs(&self) -> String {
+        self.git(&["for-each-ref", "--format=%(refname)", "refs/gcma/backup/"])
+            .lines()
+            .next()
+            .unwrap()
+            .rsplit('/')
+            .nth(1)
+            .unwrap()
+            .to_string()
+    }
+
     /// Raw commit object bytes.
     pub fn cat(&self, oid: &str) -> Vec<u8> {
         self.cmd("git")

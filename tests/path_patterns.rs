@@ -25,18 +25,14 @@ fn case(patterns: &[&str], files: &[&str], expect: &[&str]) {
     let r = Repo::new();
     let mut all: Vec<(&str, &str)> = files.iter().map(|f| (*f, "x\n")).collect();
     all.push(("keep.txt", "k\n"));
-    r.commit_files(&all, "one", 1_600_000_000);
+    r.commit_files(&all, "one", T0);
     let list: Vec<String> = patterns.iter().map(|p| quote(p)).collect();
     r.config(&format!(
         "version: 1\npaths:\n  exclude: [{}]\n",
         list.join(", ")
     ));
     let o = r.gcma(&["apply", "--from", "root"]);
-    assert!(
-        o.status.success(),
-        "{patterns:?}: {}",
-        String::from_utf8_lossy(&o.stderr)
-    );
+    assert!(o.status.success(), "{patterns:?}: {}", stderr(&o));
     let mut want: Vec<String> = expect.iter().map(|s| s.to_string()).collect();
     want.push("keep.txt".into());
     want.sort();
@@ -177,7 +173,7 @@ fn a_negation_brings_a_file_back_unless_its_directory_is_excluded() {
 fn the_last_matching_pattern_wins() {
     // `*.txt` comes last and also removes keep.txt: nothing but the added .gitignore would remain.
     let r = Repo::new();
-    r.commit_files(&[("a.txt", "a\n"), ("b.md", "b\n")], "one", 1_600_000_000);
+    r.commit_files(&[("a.txt", "a\n"), ("b.md", "b\n")], "one", T0);
     r.config("version: 1\npaths:\n  exclude: [\"!a.txt\", \"*.txt\"]\n");
     r.gcma_ok(&["apply", "--from", "root"]);
     assert_eq!(
@@ -190,7 +186,7 @@ fn the_last_matching_pattern_wins() {
     r.commit_files(
         &[("a.txt", "a\n"), ("b.txt", "b\n"), ("c.md", "c\n")],
         "one",
-        1_600_000_000,
+        T0,
     );
     r.config("version: 1\npaths:\n  exclude: [\"*.txt\", \"!a.txt\"]\n");
     r.gcma_ok(&["apply", "--from", "root"]);
@@ -222,11 +218,7 @@ fn names_with_spaces_and_unicode_are_handled() {
 #[test]
 fn symlinks_and_submodule_paths_are_excluded_like_files_and_directories() {
     let r = Repo::new();
-    r.commit_files(
-        &[("keep.txt", "k\n"), ("real.txt", "r\n")],
-        "one",
-        1_600_000_000,
-    );
+    r.commit_files(&[("keep.txt", "k\n"), ("real.txt", "r\n")], "one", T0);
     std::os::unix::fs::symlink("real.txt", r.path().join("secret-link")).unwrap();
     r.git(&["add", "secret-link"]);
     let fake_commit = "1".repeat(40);
@@ -253,7 +245,7 @@ fn deeply_nested_files_vanish_with_their_empty_directories() {
             ("a/b/other.txt", "o\n"),
         ],
         "one",
-        1_600_000_000,
+        T0,
     );
     r.config("version: 1\npaths:\n  exclude: [\"secret.txt\"]\n");
     r.gcma_ok(&["apply", "--from", "root"]);
@@ -275,22 +267,13 @@ fn unusable_patterns_are_config_errors() {
         ("trailing ", "paths.exclude"),
     ] {
         let r = Repo::new();
-        r.linear(2, 1_600_000_000);
+        r.linear(2, T0);
         r.config(&format!(
             "version: 1\npaths:\n  exclude: [{}]\n",
             quote(pattern)
         ));
         let o = r.gcma(&["plan", "--from", "root"]);
-        assert_eq!(
-            Repo::code(&o),
-            2,
-            "{pattern:?}: {}",
-            String::from_utf8_lossy(&o.stderr)
-        );
-        assert!(
-            String::from_utf8_lossy(&o.stderr).contains(why),
-            "{pattern:?}: {}",
-            String::from_utf8_lossy(&o.stderr)
-        );
+        assert_eq!(Repo::code(&o), 2, "{pattern:?}: {}", stderr(&o));
+        assert!(stderr(&o).contains(why), "{pattern:?}: {}", stderr(&o));
     }
 }

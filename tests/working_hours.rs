@@ -1,8 +1,6 @@
-//! The schedule: commits are spread over the configured days and hours, deterministically and
-//! monotone along parents (every distribution, merges, a settled history that gains new commits,
-//! a window without capacity), working hours beyond the single daytime range (several ranges per
-//! day, ranges that run past midnight, commits outside every range), and daylight-saving changes
-//! (every commit stays inside the hours and gets the offset valid at that instant).
+//! Working hours beyond the single daytime range: several ranges per day, ranges that run past
+//! midnight, commits outside every range, malformed hours, and daylight-saving changes (every
+//! commit stays inside the hours and gets the offset valid at that instant).
 
 mod common;
 
@@ -83,7 +81,7 @@ fn local_weekday(t: i64) -> chrono::Weekday {
     tz.timestamp_opt(t, 0).unwrap().weekday()
 }
 
-// ---------- working hours ----------
+// ---------- hours syntax and ranges ----------
 
 #[test]
 fn two_ranges_in_one_day_evening_and_early_morning() {
@@ -259,33 +257,28 @@ fn invalid_hours_are_usage_errors() {
         "5",
     ] {
         let r = Repo::new();
-        r.linear(2, 1_600_000_000);
+        r.linear(2, T0);
         r.config(&cfg("[mon]", hours, "uniform"));
         let o = r.gcma(&["plan", "--from", "root"]);
-        assert_eq!(
-            Repo::code(&o),
-            2,
-            "{hours}: {}",
-            String::from_utf8_lossy(&o.stderr)
-        );
+        assert_eq!(Repo::code(&o), 2, "{hours}: {}", stderr(&o));
     }
 }
 
 #[test]
 fn a_window_without_any_matching_day_is_refused_even_with_overnight_hours() {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     // The window starts on Tuesday 06:00, just when Monday's 18:00-06:00 range ends.
     r.config("version: 1\nfrom: \"2026-01-06T06:00:00+01:00\"\nto: \"2026-01-06T23:00:00+01:00\"\ntimezone: Europe/Berlin\nschedule:\n  days: [mon]\n  hours: \"18:00-06:00\"\n");
     let o = r.gcma(&["apply", "--from", "root"]);
-    assert_eq!(Repo::code(&o), 3, "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(Repo::code(&o), 3, "{}", stderr(&o));
     assert_eq!(r.log().len(), 3, "nothing was rewritten");
 }
 
 #[test]
 fn a_window_starting_after_midnight_still_gets_the_tail_of_the_previous_days_range() {
     let r = Repo::new();
-    r.linear(4, 1_600_000_000);
+    r.linear(4, T0);
     // Tuesday 2026-01-06 only, but Monday's range reaches into it until 06:00.
     r.config("version: 1\nfrom: 2026-01-06\nto: 2026-01-06\ntimezone: Europe/Berlin\nschedule:\n  days: [mon]\n  hours: \"18:00-06:00\"\n");
     r.gcma_ok(&["apply", "--from", "root"]);
@@ -293,116 +286,6 @@ fn a_window_starting_after_midnight_still_gets_the_tail_of_the_previous_days_ran
         assert_eq!(local_weekday(x.ct), chrono::Weekday::Tue);
         assert!(local_hour(x.ct) < 6, "{}", x.ct);
     }
-}
-
-// ---------- the schedule as a whole ----------
-
-#[test]
-fn hook_case_only_new_commits_are_rescheduled() {
-    let r = Repo::new();
-    r.linear(10, 1_500_000_000);
-    r.config(&berlin_cfg(""));
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let settled = r.log();
-    // Three new commits made "now-ish" (outside the allowed window).
-    let t = settled.last().unwrap().ct + 3600 * 24 * 3 + 7 * 3600; // a night, a few days later
-    for i in 0..3 {
-        r.commit_at(&format!("new{i}.txt"), &format!("new {i}"), t + i * 60);
-    }
-    let plan = r.gcma_ok(&["plan", "--from", "root"]);
-    assert!(plan.contains("10 kept as-is, 3 to rewrite"), "{plan}");
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let after = r.log();
-    for (a, b) in settled.iter().zip(&after) {
-        assert_eq!(a.oid, b.oid, "settled commits keep their OIDs");
-    }
-    assert_eq!(after.len(), 13);
-    assert_scheduled(&after);
-    assert!(after[10].ct >= settled.last().unwrap().ct);
-}
-
-#[test]
-fn schedule_distributes_commits_into_working_hours() {
-    let r = Repo::new();
-    // Old commits at night / weekends, years earlier.
-    r.linear(25, 1_500_000_000);
-    r.config(&berlin_cfg(""));
-    let old = r.log();
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let new = r.log();
-    assert_same_content(&old, &new);
-    assert_scheduled(&new);
-    assert!(
-        new.iter()
-            .map(|x| x.subject.clone())
-            .eq(old.iter().map(|x| x.subject.clone())),
-        "messages untouched"
-    );
-    r.fsck();
-    // Idempotent: rerun is a no-op and `--check` passes.
-    assert!(
-        r.gcma_ok(&["apply", "--from", "root"])
-            .contains("Nothing to do")
-    );
-    assert!(
-        r.gcma(&["plan", "--check", "--from", "root"])
-            .status
-            .success()
-    );
-}
-
-#[test]
-fn every_distribution_conforms_and_is_deterministic() {
-    for dist in ["uniform", "weekday-weighted", "bursty"] {
-        let mut tips = Vec::new();
-        for _ in 0..2 {
-            let r = Repo::new();
-            r.linear(15, 1_500_000_000);
-            r.config(&berlin_cfg("").replace("bursty", dist));
-            r.gcma_ok(&["apply", "--from", "root"]);
-            assert_scheduled(&r.log());
-            tips.push(r.log().iter().map(|x| x.ct).collect::<Vec<_>>());
-            assert!(
-                r.gcma(&["plan", "--check", "--from", "root"])
-                    .status
-                    .success(),
-                "{dist}"
-            );
-        }
-        assert_eq!(tips[0], tips[1], "{dist}: same input, same schedule");
-    }
-}
-
-#[test]
-fn schedule_with_merge_is_monotone_and_complete() {
-    let r = Repo::new();
-    r.commit_at("base.txt", "base", 1_500_000_000);
-    r.git(&["checkout", "-q", "-b", "side"]);
-    r.commit_at("s1.txt", "s1", 1_500_100_000);
-    r.commit_at("s2.txt", "s2", 1_500_200_000);
-    r.git(&["checkout", "-q", "main"]);
-    r.commit_at("m1.txt", "m1", 1_500_300_000);
-    r.commit_at("m2.txt", "m2", 1_500_400_000);
-    r.git(&["merge", "-q", "--no-ff", "-m", "merge", "side"]);
-    r.commit_at("z.txt", "z", 1_500_500_000);
-    r.config(&berlin_cfg(""));
-    let old = r.log();
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let new = r.log();
-    assert_same_content(&old, &new);
-    assert_scheduled(&new);
-    r.fsck();
-}
-
-#[test]
-fn zero_capacity_window_is_refused_with_exit_3() {
-    let r = Repo::new();
-    r.linear(3, 1_500_000_000);
-    // Only Mondays 09:00-10:00 in a window that contains no Monday.
-    r.config("version: 1\nfrom: 2026-01-06\nto: 2026-01-09\nschedule:\n  days: [mon]\n  hours: \"09:00-10:00\"\n");
-    let o = r.gcma(&["apply", "--from", "root"]);
-    assert_eq!(Repo::code(&o), 3, "{}", String::from_utf8_lossy(&o.stderr));
-    assert_eq!(r.log().len(), 3);
 }
 
 // ---------- daylight-saving changes ----------

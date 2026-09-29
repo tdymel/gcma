@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 /// A history with a merge: a - b - (s1 | m1) - merge - z.
 fn merge_repo() -> Repo {
     let r = Repo::new();
-    r.commit_at("a.txt", "a", 1_600_000_000);
+    r.commit_at("a.txt", "a", T0);
     r.commit_at("b.txt", "b", 1_600_100_000);
     r.git(&["checkout", "-q", "-b", "side"]);
     r.commit_at("s1.txt", "s1", 1_600_200_000);
@@ -295,21 +295,21 @@ fn swapped_sibling_entries_are_refused_or_produce_a_valid_history() {
 #[test]
 fn tip_moved_after_planning_is_refused() {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     r.config(IDENTITY_CFG);
     let plan = r.path().join("plan.json");
     r.gcma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
     r.commit_at("extra.txt", "extra", 1_600_900_000);
     let tip = r.git(&["rev-parse", "HEAD"]);
     let o = r.gcma(&["apply", "--plan", plan.to_str().unwrap()]);
-    assert_eq!(Repo::code(&o), 4, "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(Repo::code(&o), 4, "{}", stderr(&o));
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
 }
 
 #[test]
 fn saved_plan_applies_later() {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     r.config(IDENTITY_CFG);
     let plan = r.path().join("plan.json");
     r.gcma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
@@ -320,7 +320,7 @@ fn saved_plan_applies_later() {
 #[test]
 fn tampered_plan_is_rejected_before_anything_is_written() {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     r.config(IDENTITY_CFG);
     let tip = r.git(&["rev-parse", "HEAD"]);
     let path = r.path().join("plan.json");
@@ -338,7 +338,7 @@ fn tampered_plan_is_rejected_before_anything_is_written() {
 #[test]
 fn a_plan_cannot_retarget_other_refs_or_bring_its_own_path_rules() {
     let r = Repo::new();
-    r.commit_files(&[("a.txt", "a\n")], "add a", 1_600_000_000);
+    r.commit_files(&[("a.txt", "a\n")], "add a", T0);
     r.commit_files(
         &[("secrets/k", "k\n"), ("b.txt", "b\n")],
         "add b",
@@ -372,7 +372,7 @@ fn a_plan_cannot_retarget_other_refs_or_bring_its_own_path_rules() {
 #[test]
 fn a_plan_for_another_branch_is_refused() {
     let r = Repo::new();
-    r.linear(2, 1_600_000_000);
+    r.linear(2, T0);
     r.config(IDENTITY_CFG);
     let plan_path = r.path().join("plan.json");
     let plan_arg = plan_path.to_str().unwrap().to_string();

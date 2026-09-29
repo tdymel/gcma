@@ -1,5 +1,5 @@
-//! The command line as a user meets it: help, usage errors, `init`, the backup commands (list,
-//! restore, prune) and what happens when the output pipe closes.
+//! The command line as a user meets it: help, usage errors, `-C` and `--config`, `init`, and what
+//! happens when the output pipe closes.
 
 mod common;
 
@@ -52,7 +52,7 @@ fn help_and_version_work_everywhere_and_list_every_command() {
 #[test]
 fn usage_mistakes_exit_2_and_say_what_was_wrong() {
     let r = Repo::new();
-    r.linear(2, 1_600_000_000);
+    r.linear(2, T0);
     r.config(IDENTITY_CFG);
     for (args, why) in [
         (vec!["--bogus"], "unexpected argument"),
@@ -82,7 +82,7 @@ fn usage_mistakes_exit_2_and_say_what_was_wrong() {
 #[test]
 fn the_dir_option_works_from_anywhere() {
     let r = Repo::new();
-    r.linear(3, 1_600_000_000);
+    r.linear(3, T0);
     r.config(IDENTITY_CFG);
     let elsewhere = tempfile::tempdir().unwrap();
     let o = base_cmd(bin(), elsewhere.path(), r.home.path())
@@ -98,7 +98,7 @@ fn the_dir_option_works_from_anywhere() {
 #[test]
 fn a_config_can_live_anywhere_when_named() {
     let r = Repo::new();
-    r.linear(2, 1_600_000_000);
+    r.linear(2, T0);
     let cfg = r.home.path().join("elsewhere.yml");
     std::fs::write(&cfg, IDENTITY_CFG).unwrap();
     let cfg = cfg.to_str().unwrap();
@@ -114,7 +114,7 @@ fn a_config_can_live_anywhere_when_named() {
 #[test]
 fn init_writes_once_refuses_to_overwrite_and_force_replaces() {
     let r = Repo::new();
-    r.linear(1, 1_600_000_000);
+    r.linear(1, T0);
     let o = r.gcma(&["init"]);
     assert_eq!(Repo::code(&o), 0, "{}", stderr(&o));
     let first = std::fs::read_to_string(r.path().join("gcma.yml")).unwrap();
@@ -152,7 +152,7 @@ fn init_writes_once_refuses_to_overwrite_and_force_replaces() {
 #[test]
 fn init_keeps_the_config_out_of_commits_and_starts_inert() {
     let r = Repo::new();
-    r.linear(2, 1_600_000_000);
+    r.linear(2, T0);
     r.gcma_ok(&["init"]);
     assert!(
         r.git(&["status", "--porcelain"]).is_empty(),
@@ -165,150 +165,13 @@ fn init_keeps_the_config_out_of_commits_and_starts_inert() {
         "{}",
         stderr(&o)
     );
-    assert!(String::from_utf8_lossy(&o.stdout).contains("Nothing to do"));
-}
-
-#[test]
-fn two_rewrites_in_one_second_keep_two_distinct_backups() {
-    let r = Repo::new();
-    r.linear(3, 1_600_000_000);
-    r.config(IDENTITY_CFG);
-    r.gcma_ok(&["apply", "--from", "root"]);
-    r.config("version: 1\nmessages:\n  add_trailers: [\"Assisted-By: A <a@x>\"]\n");
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let listing = r.gcma_ok(&["restore"]);
-    let ids: Vec<&str> = listing
-        .lines()
-        .map(|l| l.split_whitespace().next().unwrap())
-        .collect();
-    assert_eq!(ids.len(), 2, "{listing}");
-    assert_ne!(ids[0], ids[1]);
-    for l in listing.lines() {
-        assert!(
-            l.contains("branch main") && l.contains("old ") && l.contains("new "),
-            "{l}"
-        );
-    }
-    // Both backups hold their own old tip; the chain restores step by step.
-    let tip = r.git(&["rev-parse", "HEAD"]);
-    let newest = listing
-        .lines()
-        .find(|l| l.contains(&format!("new {tip}")))
-        .unwrap()
-        .split_whitespace()
-        .next()
-        .unwrap()
-        .to_string();
-    r.gcma_ok(&["restore", &newest]);
-    assert!(r.log().iter().all(|x| x.an == "Jane Doe"));
-    assert!(
-        !r.messages("HEAD")
-            .values()
-            .any(|m| m.contains("Assisted-By"))
-    );
-}
-
-#[test]
-fn pruning_a_backup_forgets_it_and_listing_shows_none() {
-    let r = Repo::new();
-    r.linear(2, 1_600_000_000);
-    r.config(IDENTITY_CFG);
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let id = r.backup_id();
-    let o = r.gcma(&["restore", &id, "--prune"]);
-    assert!(o.status.success(), "{}", stderr(&o));
-    assert!(stdout(&o).contains("pruned backup"), "{}", stdout(&o));
-    assert_eq!(r.gcma_ok(&["restore"]).trim(), "No backups.");
-    assert!(r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty());
-    let o = r.gcma(&["restore", &id]);
-    assert_eq!(Repo::code(&o), 2, "{}", stderr(&o));
-}
-
-#[test]
-fn restoring_by_an_unambiguous_prefix_works_and_an_ambiguous_one_is_refused() {
-    let r = Repo::new();
-    r.linear(2, 1_600_000_000);
-    r.config(IDENTITY_CFG);
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let id = r.backup_id();
-    let o = r.gcma(&["restore", &id[..4]]);
-    assert!(o.status.success(), "a prefix is enough: {}", stderr(&o));
-    let o = r.gcma(&["restore", ""]);
-    assert!(
-        !o.status.success(),
-        "the empty prefix must not match everything silently"
-    );
-}
-
-#[test]
-fn restore_refuses_when_the_branch_moved_unless_forced() {
-    let r = Repo::new();
-    r.linear(3, 1_600_000_000);
-    r.config(IDENTITY_CFG);
-    let old_tip = r.git(&["rev-parse", "HEAD"]);
-    r.gcma_ok(&["apply", "--from", "root"]);
-    let id = r.backup_id();
-    // New work after the rewrite (made as the new identity so it conforms).
-    r.commit_as(
-        "later.txt",
-        "later",
-        1_700_000_000,
-        "Jane Doe",
-        "jane@work.com",
-    );
-    let moved = r.git(&["rev-parse", "HEAD"]);
-    let o = r.gcma(&["restore", &id]);
-    assert_eq!(Repo::code(&o), 4, "{}", String::from_utf8_lossy(&o.stderr));
-    assert_eq!(
-        r.git(&["rev-parse", "HEAD"]),
-        moved,
-        "refused restore must not move the branch"
-    );
-    r.gcma_ok(&["restore", &id, "--force"]);
-    assert_eq!(r.git(&["rev-parse", "HEAD"]), old_tip);
-    // The discarded tip keeps a ref, so nothing is lost even after gc.
-    let holders = r.git(&["for-each-ref", "--contains", &moved, "refs/gcma/discarded/"]);
-    assert!(holders.contains(&moved), "{holders}");
-    let o = r.gcma(&["restore", "--prune"]);
-    assert_eq!(Repo::code(&o), 2);
-}
-
-#[test]
-fn restore_after_path_rules_leaves_index_and_gitignore_as_before() {
-    let r = Repo::new();
-    r.commit_files(&[("a.txt", "a\n")], "add a", 1_600_000_000);
-    r.commit_files(
-        &[("secrets/k", "k\n"), ("b.txt", "b\n")],
-        "add b",
-        1_600_100_000,
-    );
-    r.config(SECRETS_CFG);
-    let tip = r.git(&["rev-parse", "HEAD"]);
-    r.gcma_ok(&["apply", "--from", "root"]);
-    assert!(r.path().join(".gitignore").exists());
-    let id = r.git(&["for-each-ref", "--format=%(refname)", "refs/gcma/backup/"]);
-    let id = id
-        .lines()
-        .next()
-        .unwrap()
-        .rsplit('/')
-        .nth(1)
-        .unwrap()
-        .to_string();
-    r.gcma_ok(&["restore", &id]);
-    assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
-    assert_eq!(r.status_without_config(), "", "{}", r.git(&["status"]));
-    assert!(
-        !r.path().join(".gitignore").exists(),
-        "gcma's own .gitignore is gone again"
-    );
-    assert!(r.path().join("secrets/k").exists());
+    assert!(stdout(&o).contains("Nothing to do"));
 }
 
 #[test]
 fn a_closed_output_pipe_is_not_a_crash() {
     let r = Repo::new();
-    r.linear(300, 1_600_000_000);
+    r.linear(300, T0);
     r.config(IDENTITY_CFG);
     let script = format!(
         "{} plan --from root | head -n 1 > /dev/null; echo ${{PIPESTATUS[0]}}",
@@ -319,40 +182,4 @@ fn a_closed_output_pipe_is_not_a_crash() {
     assert!(!stderr(&o).contains("Broken pipe"), "{}", stderr(&o));
     let code: i32 = stdout(&o).trim().parse().unwrap();
     assert!(code == 0 || code == 141, "unexpected exit code {code}");
-}
-
-#[test]
-fn export_boundaries_are_clean() {
-    let r = Repo::new();
-    r.linear(5, 1_600_000_000);
-    r.config(IDENTITY_CFG);
-    let rows = |args: &[&str]| {
-        let mut a = vec!["export", "--from", "root"];
-        a.extend_from_slice(args);
-        let o = r.gcma(&a);
-        assert!(o.status.success(), "{args:?}: {}", stderr(&o));
-        stdout(&o).lines().count()
-    };
-    assert_eq!(rows(&[]), 5);
-    assert_eq!(rows(&["--batch", "2"]), 2);
-    assert_eq!(rows(&["--batch", "2", "--offset", "4"]), 1);
-    assert_eq!(rows(&["--batch", "2", "--offset", "5"]), 0);
-    assert_eq!(
-        rows(&["--offset", "99"]),
-        0,
-        "an offset past the end is an empty batch"
-    );
-    assert_eq!(rows(&["--batch", "0"]), 0);
-    assert_eq!(rows(&["--batch", "99999999999"]), 5);
-    // The prelude (instructions) goes to stderr, rows only to stdout.
-    let o = r.gcma(&["export", "--from", "root", "--batch", "1"]);
-    assert!(
-        stderr(&o).contains("Reply with JSONL ONLY"),
-        "{}",
-        stderr(&o)
-    );
-    assert!(stderr(&o).contains("Rows 0..1 of 5"), "{}", stderr(&o));
-    for l in stdout(&o).lines() {
-        assert!(l.starts_with('{'), "{l}");
-    }
 }

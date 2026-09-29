@@ -1,4 +1,5 @@
-//! The export / import workflow: what an LLM sees, what it may answer, and what is refused.
+//! The export / import workflow: what an LLM sees (and the edges of the batches it is shown), what
+//! it may answer, and what is refused.
 
 mod common;
 
@@ -7,17 +8,19 @@ use std::io::Write;
 
 fn setup(cfg: &str) -> (Repo, String) {
     let r = Repo::new();
-    r.commit_msg(
-        "a.txt",
-        b"wip\n\nSigned-off-by: Dev <dev@x.org>\n",
-        1_600_000_000,
-    );
+    r.commit_msg("a.txt", b"wip\n\nSigned-off-by: Dev <dev@x.org>\n", T0);
     r.commit_msg("b.txt", b"fix stuff\n", 1_600_100_000);
     r.commit_as("c.txt", "more", 1_600_200_000, "Other Dev", "other@x.org");
     r.config(cfg);
     let plan = r.path().join("plan.json").to_str().unwrap().to_string();
     r.gcma_ok(&["plan", "--from", "root", "--all", "--out", &plan]);
     (r, plan)
+}
+
+/// Same shape and trees, but the messages may differ.
+fn assert_same_shape(old: &[Row], new: &[Row]) {
+    assert_eq!(old.len(), new.len(), "commit count changed");
+    map_commits_by(old, new, false);
 }
 
 fn rows(r: &Repo, plan: &str) -> Vec<serde_json::Value> {
@@ -227,11 +230,7 @@ fn control_characters_in_the_prelude_cannot_reach_the_terminal() {
 #[test]
 fn llm_export_import_apply_roundtrip() {
     let r = Repo::new();
-    r.commit_at(
-        "a.txt",
-        "wip\n\nSigned-off-by: Old Me <me@home.org>",
-        1_600_000_000,
-    );
+    r.commit_at("a.txt", "wip\n\nSigned-off-by: Old Me <me@home.org>", T0);
     r.commit_at("b.txt", "fix stuff", 1_600_100_000);
     r.commit_at("c.txt", "more", 1_600_200_000);
     r.config("version: 1\n");
@@ -309,4 +308,40 @@ fn llm_export_import_apply_roundtrip() {
             .status
             .success()
     );
+}
+
+#[test]
+fn export_boundaries_are_clean() {
+    let r = Repo::new();
+    r.linear(5, T0);
+    r.config(IDENTITY_CFG);
+    let rows = |args: &[&str]| {
+        let mut a = vec!["export", "--from", "root"];
+        a.extend_from_slice(args);
+        let o = r.gcma(&a);
+        assert!(o.status.success(), "{args:?}: {}", stderr(&o));
+        stdout(&o).lines().count()
+    };
+    assert_eq!(rows(&[]), 5);
+    assert_eq!(rows(&["--batch", "2"]), 2);
+    assert_eq!(rows(&["--batch", "2", "--offset", "4"]), 1);
+    assert_eq!(rows(&["--batch", "2", "--offset", "5"]), 0);
+    assert_eq!(
+        rows(&["--offset", "99"]),
+        0,
+        "an offset past the end is an empty batch"
+    );
+    assert_eq!(rows(&["--batch", "0"]), 0);
+    assert_eq!(rows(&["--batch", "99999999999"]), 5);
+    // The prelude (instructions) goes to stderr, rows only to stdout.
+    let o = r.gcma(&["export", "--from", "root", "--batch", "1"]);
+    assert!(
+        stderr(&o).contains("Reply with JSONL ONLY"),
+        "{}",
+        stderr(&o)
+    );
+    assert!(stderr(&o).contains("Rows 0..1 of 5"), "{}", stderr(&o));
+    for l in stdout(&o).lines() {
+        assert!(l.starts_with('{'), "{l}");
+    }
 }
