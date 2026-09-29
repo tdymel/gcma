@@ -60,19 +60,28 @@ fn case(patterns: &[&str], files: &[&str], expect: &[&str]) {
     r.fsck();
 }
 
+/// macOS and Windows file systems usually ignore case: `claude.md` and `CLAUDE.md` are one file.
+fn file_system_ignores_case() -> bool {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a"), "").unwrap();
+    dir.path().join("A").exists()
+}
+
 #[test]
 fn a_bare_name_matches_at_any_depth() {
-    case(
-        &["CLAUDE.md"],
-        &[
-            "CLAUDE.md",
-            "docs/CLAUDE.md",
-            "docs/deep/er/CLAUDE.md",
-            "claude.md",
-            "CLAUDE.md.bak",
-        ],
-        &["claude.md", "CLAUDE.md.bak"],
-    );
+    let mut files = vec![
+        "CLAUDE.md",
+        "docs/CLAUDE.md",
+        "docs/deep/er/CLAUDE.md",
+        "CLAUDE.md.bak",
+    ];
+    let mut kept = vec!["CLAUDE.md.bak"];
+    // Matching is case-sensitive; that can only be seen where both spellings can exist.
+    if !file_system_ignores_case() {
+        files.push("claude.md");
+        kept.push("claude.md");
+    }
+    case(&["CLAUDE.md"], &files, &kept);
 }
 
 #[test]
