@@ -114,15 +114,19 @@ pub enum Cmd {
 pub enum HookCmd {
     /// Install the pre-push hook (bypass it for one push with `git push --no-verify`).
     Install {
-        /// Overwrite a pre-push hook that gcma did not write.
+        /// Also install a post-commit hook that respreads the unpushed commits over the schedule
+        /// after every commit (acts in `hook.mode: rewrite` only).
+        #[arg(long)]
+        post_commit: bool,
+        /// Overwrite hooks that gcma did not write.
         #[arg(long)]
         force: bool,
     },
-    /// Remove the pre-push hook if gcma wrote it.
+    /// Remove the hooks gcma wrote (pre-push and post-commit).
     Uninstall,
     /// Entry point used by the installed shim.
     Run {
-        /// The hook name git passes (only `pre-push`).
+        /// The hook name git passes (`pre-push` or `post-commit`).
         name: String,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,

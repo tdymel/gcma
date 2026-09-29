@@ -7,6 +7,10 @@ use std::process::{Command, Stdio};
 use crate::application::ports::CommitStore;
 use crate::domain::error::{Error, Result};
 
+/// Set on every git process we start: a gcma that a hook of such a process starts is nested, and the
+/// post-commit hook refuses to run again from there.
+pub const NESTED_ENV: &str = "GCMA_IN_HOOK";
+
 /// A work tree reached through the `git` binary. Commit reads and unsigned writes can be handed to
 /// another object backend (see `with_objects`); everything else always goes through git.
 pub struct GitCli {
@@ -63,6 +67,7 @@ impl GitCli {
         let mut c = Command::new("git");
         c.arg("-C").arg(&self.dir);
         c.env("LC_ALL", "C");
+        c.env(NESTED_ENV, "1");
         c.env_remove("GIT_DIR");
         c.env_remove("GIT_WORK_TREE");
         c.env_remove("GIT_INDEX_FILE");

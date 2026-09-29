@@ -61,7 +61,7 @@ fn usage_mistakes_exit_2_and_say_what_was_wrong() {
         (vec!["plan", "--from"], "value"),
         (vec!["plan", "--backend", "svn"], "invalid value"),
         (vec!["export", "--batch", "many"], "invalid value"),
-        (vec!["hook", "run", "post-commit"], "unsupported hook"),
+        (vec!["hook", "run", "post-checkout"], "unsupported hook"),
         (vec!["restore", "--prune"], "needs a backup id"),
         (vec!["restore", "no-such-backup"], "no backup matches"),
         (

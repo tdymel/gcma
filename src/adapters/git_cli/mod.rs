@@ -7,4 +7,4 @@ mod runner;
 mod trees;
 mod worktree;
 
-pub use runner::GitCli;
+pub use runner::{GitCli, NESTED_ENV};
