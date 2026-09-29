@@ -1,4 +1,4 @@
-//! Checks and warnings on the commits a plan would rewrite.
+//! Non-fatal warnings about the commits a plan would rewrite.
 
 use std::collections::HashMap;
 

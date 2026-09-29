@@ -69,7 +69,7 @@ impl GitCli {
         c
     }
 
-    pub(super) fn exec(&self, mut cmd: Command, stdin: Option<&[u8]>) -> Result<Out> {
+    pub(super) fn exec(mut cmd: Command, stdin: Option<&[u8]>) -> Result<Out> {
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         cmd.stdin(if stdin.is_some() {
             Stdio::piped()
@@ -116,7 +116,7 @@ impl GitCli {
     pub(super) fn output(&self, args: &[&str], stdin: Option<&[u8]>) -> Result<Out> {
         let mut c = self.command();
         c.args(args);
-        self.exec(c, stdin)
+        Self::exec(c, stdin)
     }
 
     fn run_with(&self, args: &[&str], input: Option<&[u8]>) -> Result<Vec<u8>> {

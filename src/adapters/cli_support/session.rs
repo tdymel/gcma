@@ -19,7 +19,7 @@ pub struct Session {
 impl Session {
     /// The repository (with the selected backend) and the config.
     pub fn open(&self) -> Result<(GitCli, Config)> {
-        open(&self.start, &self.config, self.backend)
+        open(&self.start, self.config.as_deref(), self.backend)
     }
 
     /// The repository alone: the config is never read, so a broken one cannot block commands
@@ -31,7 +31,7 @@ impl Session {
     /// The config alone, without opening an object backend (an explicit `--config` needs no
     /// repository at all).
     pub fn load_config(&self) -> Result<Config> {
-        load_config(&self.config, || {
+        load_config(self.config.as_deref(), || {
             Ok(GitCli::open(&self.start)?.dir().to_path_buf())
         })
     }

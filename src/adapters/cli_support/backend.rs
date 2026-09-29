@@ -36,7 +36,7 @@ pub(super) fn open_repo(dir: &Path, flag: Option<Backend>) -> Result<GitCli> {
 /// Opens the repository and loads the config; the config's `backend:` is the third choice.
 pub(super) fn open(
     dir: &Path,
-    config: &Option<PathBuf>,
+    config: Option<&Path>,
     flag: Option<Backend>,
 ) -> Result<(GitCli, Config)> {
     let cli = GitCli::open(dir)?;
@@ -48,7 +48,7 @@ pub(super) fn open(
 /// Loads the config: the explicit file, else `gcma.yml` in the repository root (`root` is only
 /// asked for in that case), else the defaults.
 pub(super) fn load_config(
-    explicit: &Option<PathBuf>,
+    explicit: Option<&Path>,
     root: impl FnOnce() -> Result<PathBuf>,
 ) -> Result<Config> {
     match explicit {

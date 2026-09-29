@@ -3,11 +3,11 @@
 use std::collections::{HashMap, HashSet};
 
 use super::entries::{build_entries, dropped_parents};
-use super::guards::rewrite_warnings;
 use super::pathplan::{self, PathOutcome};
 use super::range::{RangeInfo, resolve};
 use super::timing::{Schedule, load_external_parents, window_for};
 use super::types::{Built, PlanOptions};
+use super::warnings::rewrite_warnings;
 use crate::application::pathrules::TreeRewriter;
 use crate::application::ports::Repository;
 use crate::application::preconditions::{check_preconditions, refuse_pushed};
