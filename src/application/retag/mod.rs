@@ -1,0 +1,11 @@
+//! `--retag`: tags and notes follow the commits a rewrite replaces.
+
+mod classify;
+mod moves;
+mod notes;
+mod preview;
+
+pub use classify::short_name;
+pub use moves::{TagMove, prepare};
+pub use notes::copy_notes;
+pub use preview::{Preview, preview};
