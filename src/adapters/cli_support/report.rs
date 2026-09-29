@@ -3,7 +3,7 @@
 use super::render::render;
 use crate::application::planning::Built;
 use crate::application::ports::CommitStore;
-use crate::application::rewrite::ApplyReport;
+use crate::application::rewrite::{ApplyReport, Backup, RestoreReport};
 use crate::domain::error::Result;
 
 /// Control characters in commit data must not reach the terminal.
@@ -74,14 +74,15 @@ pub fn print_apply(report: &ApplyReport, branch: &str) {
     }
 }
 
-/// `gcma restore` without an id: one `(id, branch, old tip, new tip)` row per backup.
-pub fn print_backups<'a>(rows: impl IntoIterator<Item = (&'a str, &'a str, &'a str, &'a str)>) {
-    let mut none = true;
-    for (id, branch, old, new) in rows {
-        none = false;
-        println!("{id}  branch {branch}  old {old}  new {new}");
+/// `gcma restore` without an id: one row per backup.
+pub fn print_backups(backups: &[Backup]) {
+    for b in backups {
+        println!(
+            "{}  branch {}  old {}  new {}",
+            b.id, b.branch, b.old, b.new
+        );
     }
-    if none {
+    if backups.is_empty() {
         println!("No backups.");
     }
 }
@@ -94,16 +95,16 @@ other branches) refers to them; see the README on purging history."
     );
 }
 
-/// `gcma restore <id>`: the branch is back at `old`; `parked` is where a forced restore kept the
-/// newer commits.
-pub fn print_restored(branch: &str, old: &str, notes: &[String], parked: Option<&str>) {
-    println!("{branch} restored to {old}");
-    for n in notes {
+/// `gcma restore <id>`: the branch is back at the backup's old tip; `parked` is where a forced
+/// restore kept the newer commits.
+pub fn print_restored(r: &RestoreReport) {
+    println!("{} restored to {}", r.backup.branch, r.backup.old);
+    for n in &r.notes {
         eprintln!("warning: {n}");
     }
-    if let Some(r) = parked {
+    if let Some(parked) = &r.parked {
         println!(
-            "The newer commits are kept at {r}. The index and working tree were not \
+            "The newer commits are kept at {parked}. The index and working tree were not \
              touched and may still hold their content (inspect with `git status`)."
         );
     }

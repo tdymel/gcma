@@ -12,27 +12,9 @@ pub fn run(s: &Session, id: Option<String>, force: bool, prune_it: bool) -> Resu
     }
     let repo = s.open_repo()?;
     match id {
-        None => {
-            let all = list_backups(&repo)?;
-            print_backups(all.iter().map(|b| {
-                (
-                    b.id.as_str(),
-                    b.branch.as_str(),
-                    b.old.as_str(),
-                    b.new.as_str(),
-                )
-            }));
-        }
+        None => print_backups(&list_backups(&repo)?),
         Some(id) if prune_it => print_pruned(&prune(&repo, &id)?.id),
-        Some(id) => {
-            let r = restore(&repo, &id, force)?;
-            print_restored(
-                &r.backup.branch,
-                &r.backup.old,
-                &r.notes,
-                r.parked.as_deref(),
-            );
-        }
+        Some(id) => print_restored(&restore(&repo, &id, force)?),
     }
     Ok(())
 }
