@@ -4,7 +4,7 @@
 
 use crate::application::planning::{PlanOptions, RangeSpec, build_plan};
 use crate::application::ports::{RemoteScope, Repository};
-use crate::application::rewrite::apply;
+use crate::application::rewrite::{ApplyOptions, apply};
 use crate::domain::error::{Error, Result};
 use crate::domain::settings::{Config, HookMode};
 
@@ -100,7 +100,7 @@ fn respread(
     if built.plan.is_empty() {
         return Ok(PostCommitOutcome::Unchanged);
     }
-    let report = apply(repo, &built.plan, false, now)?;
+    let report = apply(repo, &built.plan, &ApplyOptions::new(now))?;
     Ok(if report.noop {
         PostCommitOutcome::Unchanged
     } else {

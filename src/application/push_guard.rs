@@ -2,7 +2,7 @@
 
 use crate::application::planning::{PlanOptions, RangeSpec, build_plan};
 use crate::application::ports::{RemoteScope, Repository};
-use crate::application::rewrite::apply;
+use crate::application::rewrite::{ApplyOptions, apply};
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::is_zero_oid;
 use crate::domain::settings::{Config, HookMode};
@@ -51,7 +51,7 @@ pub fn run_pre_push(
             continue;
         }
         if rewrite {
-            let report = apply(repo, &built.plan, false, now)?;
+            let report = apply(repo, &built.plan, &ApplyOptions::new(now))?;
             if !report.noop {
                 return Err(Error::Nonconforming(format!(
                     "gcma rewrote {} unpushed commit(s) of {branch_ref} to follow the rules; run `git push` again",

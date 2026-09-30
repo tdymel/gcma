@@ -8,5 +8,5 @@ mod tag_backup;
 mod verify;
 mod worktree_sync;
 
-pub use apply::{ApplyReport, apply, apply_retagging, ensure_plan_matches_config};
+pub use apply::{ApplyOptions, ApplyReport, SECRETS_NOTE, apply, ensure_plan_matches_config};
 pub use backups::{Backup, RestoreReport, list_backups, prune, restore};

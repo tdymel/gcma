@@ -6,6 +6,6 @@ mod notes;
 mod preview;
 
 pub use classify::short_name;
-pub use moves::{TagMove, prepare};
+pub use moves::{Moves, TagMove, prepare};
 pub use notes::copy_notes;
 pub use preview::{Preview, preview};

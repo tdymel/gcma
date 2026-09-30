@@ -13,7 +13,7 @@ use crate::application::ports::{
     CommitStore, History, NoteStore, RefStore, RefUpdate, RevRange, TagRef, TagStore, TreeEntry,
     TreeStore, WorkTree,
 };
-use crate::application::rewrite::apply;
+use crate::application::rewrite::{ApplyOptions, apply};
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::{Commit, NewCommit};
 use crate::domain::history::plan::Plan;
@@ -254,7 +254,7 @@ fn apply_with(fault: Fault) -> Error {
         other_tree,
         other_commit: fx.root.clone(),
     };
-    let err = apply(&repo, &plan, false, NOW).expect_err("the fault must be caught");
+    let err = apply(&repo, &plan, &ApplyOptions::new(NOW)).expect_err("the fault must be caught");
     let tip = git(fx.dir.path(), &["rev-parse", "refs/heads/main"]);
     let expected = match fault {
         Fault::BranchMovesBeforeTransaction => fx.root.clone(),
@@ -314,7 +314,7 @@ fn verification_rejects_unchanged_commits_that_fell_out_of_the_history() {
         other_tree: String::new(),
         other_commit: String::new(),
     };
-    let err = apply(&repo, &plan, false, NOW).expect_err("caught");
+    let err = apply(&repo, &plan, &ApplyOptions::new(NOW)).expect_err("caught");
     assert_internal(err, "not reachable from the new tip");
     assert_eq!(git(fx.dir.path(), &["rev-parse", "main"]), fx.old_tip);
     assert!(repo.list_refs("refs/gcma/").unwrap().is_empty());

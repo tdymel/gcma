@@ -114,7 +114,7 @@ pub struct RestoreReport {
     /// For a forced restore that discarded newer commits, the ref that keeps them.
     pub parked: Option<String>,
     /// Follow-ups that did not go as planned after the branch moved.
-    pub notes: Vec<String>,
+    pub warnings: Vec<String>,
 }
 
 /// Resets the branch to the backup's old tip, only if it is still at the recorded new tip (unless
@@ -137,7 +137,7 @@ pub fn restore(repo: &dyn Repository, id: &str, force: bool) -> Result<RestoreRe
             "{branch_ref} has moved on since this backup was made (now {tip}); use --force to discard the newer commits from the branch"
         )));
     }
-    let (tag_updates, mut notes) = restore_updates(repo, b.manifest.as_deref(), force)?;
+    let (tag_updates, mut warnings) = restore_updates(repo, b.manifest.as_deref(), force)?;
     let mut commands = vec![RefUpdate::Move {
         name: branch_ref.clone(),
         new: b.old.clone(),
@@ -159,12 +159,12 @@ pub fn restore(repo: &dyn Repository, id: &str, force: bool) -> Result<RestoreRe
     if let (Some(from), Some(to)) = (moved_from.first(), restored.first())
         && from.tree != to.tree
     {
-        notes.extend(sync_worktree(repo, from, &b.old));
+        warnings.extend(sync_worktree(repo, from, &b.old));
     }
     Ok(RestoreReport {
         backup: b,
         parked,
-        notes,
+        warnings,
     })
 }
 

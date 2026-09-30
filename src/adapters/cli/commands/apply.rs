@@ -7,7 +7,7 @@ use crate::adapters::cli_support::report::print_apply;
 use crate::adapters::cli_support::session::{Session, now, plan_options, warn_if_inert};
 use crate::adapters::plan_file;
 use crate::application::planning::{PlanOptions, build_plan};
-use crate::application::rewrite::{apply_retagging, ensure_plan_matches_config};
+use crate::application::rewrite::{ApplyOptions, apply, ensure_plan_matches_config};
 use crate::domain::error::Result;
 
 pub fn run(s: &Session, range: &RangeArgs, saved: Option<PathBuf>, retag: bool) -> Result<()> {
@@ -31,7 +31,12 @@ pub fn run(s: &Session, range: &RangeArgs, saved: Option<PathBuf>, retag: bool) 
             built.plan
         }
     };
-    let report = apply_retagging(&repo, &plan, range.rewrite_pushed, retag, now())?;
+    let opts = ApplyOptions {
+        rewrite_pushed: range.rewrite_pushed,
+        retag,
+        ..ApplyOptions::new(now())
+    };
+    let report = apply(&repo, &plan, &opts)?;
     print_apply(&report, plan.branch_name());
     Ok(())
 }

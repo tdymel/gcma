@@ -4,7 +4,7 @@ use super::render::render;
 use crate::application::planning::Built;
 use crate::application::ports::CommitStore;
 use crate::application::retag::Preview;
-use crate::application::rewrite::{ApplyReport, Backup, RestoreReport};
+use crate::application::rewrite::{ApplyReport, Backup, RestoreReport, SECRETS_NOTE};
 use crate::domain::error::Result;
 
 /// Control characters in commit data must not reach the terminal.
@@ -101,8 +101,11 @@ pub fn print_apply(report: &ApplyReport, branch: &str) {
             sanitize(&report.tags_moved.join(", "))
         );
     }
-    for n in &report.notes {
-        eprintln!("warning: {n}");
+    for w in &report.warnings {
+        eprintln!("warning: {w}");
+    }
+    if report.paths_removed {
+        eprintln!("warning: {SECRETS_NOTE}");
     }
 }
 
@@ -131,8 +134,8 @@ other branches) refers to them; see the README on purging history."
 /// restore kept the newer commits.
 pub fn print_restored(r: &RestoreReport) {
     println!("{} restored to {}", r.backup.branch, r.backup.old);
-    for n in &r.notes {
-        eprintln!("warning: {n}");
+    for w in &r.warnings {
+        eprintln!("warning: {w}");
     }
     if let Some(parked) = &r.parked {
         println!(
