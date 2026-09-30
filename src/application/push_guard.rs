@@ -94,24 +94,19 @@ fn unpushed_range(
     branch_ref: &str,
 ) -> Result<RangeSpec> {
     let known_remote = !is_zero_oid(&p.remote_sha) && repo.resolve_commit(&p.remote_sha)?.is_some();
-    let (exclude_commits, exclude_remotes, base) = if known_remote {
-        (vec![p.remote_sha.clone()], None, Some(p.remote_sha.clone()))
-    } else if remotes.iter().any(|r| r == remote) {
-        (
-            Vec::new(),
-            Some(RemoteScope::Named(remote.to_string())),
-            None,
-        )
-    } else {
-        (Vec::new(), Some(RemoteScope::All), None)
+    let tip = p.local_sha.clone();
+    let branch_ref = branch_ref.to_string();
+    if known_remote {
+        let pushed = p.remote_sha.clone();
+        return Ok(
+            RangeSpec::unpushed(tip, branch_ref, None).excluding(pushed.clone(), Some(pushed))
+        );
+    }
+    let scope = match remotes.iter().any(|r| r == remote) {
+        true => RemoteScope::Named(remote.to_string()),
+        false => RemoteScope::All,
     };
-    Ok(RangeSpec {
-        tip: p.local_sha.clone(),
-        branch_ref: branch_ref.to_string(),
-        exclude_commits,
-        exclude_remotes,
-        base,
-    })
+    Ok(RangeSpec::unpushed(tip, branch_ref, Some(scope)))
 }
 
 /// The push is refused: always an `Err` (or the failure to read the upstream).

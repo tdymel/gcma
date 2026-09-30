@@ -4,8 +4,8 @@ use crate::application::ports::RemoteScope;
 use crate::application::retag::Preview;
 use crate::domain::history::plan::Plan;
 
-/// An explicit range (used by the pre-push hook): commits reachable from `tip` but not from the
-/// excluded commits or remote-tracking refs.
+/// An explicit range (used by the hooks, see `RangeSpec::unpushed`): commits reachable from `tip`
+/// but not from the excluded commits or remote-tracking refs.
 #[derive(Debug, Clone)]
 pub struct RangeSpec {
     pub tip: String,

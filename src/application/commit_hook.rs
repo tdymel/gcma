@@ -65,17 +65,11 @@ pub fn run_post_commit(repo: &dyn Repository, cfg: &Config, now: i64) -> Result<
     if upstream.is_none() && repo.remotes()?.is_empty() {
         return Ok(skipped(Skip::NoUpstream));
     }
-    let base = match &upstream {
-        Some(up) => repo.merge_base(&tip, up)?,
-        None => None,
-    };
-    let range = RangeSpec {
-        tip,
-        branch_ref,
-        exclude_commits: upstream.into_iter().collect(),
-        exclude_remotes: Some(RemoteScope::All),
-        base,
-    };
+    let mut range = RangeSpec::unpushed(tip.clone(), branch_ref, Some(RemoteScope::All));
+    if let Some(up) = upstream {
+        let base = repo.merge_base(&tip, &up)?;
+        range = range.excluding(up, base);
+    }
     // `all` re-times every commit of the range, not only the nonconforming ones; the range itself
     // keeps the pushed commits out, and `apply` refuses to move them again.
     let opts = PlanOptions {
