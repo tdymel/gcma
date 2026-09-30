@@ -14,7 +14,8 @@ pub fn sanitize(s: &str) -> String {
         .collect()
 }
 
-pub fn print_plan(repo: &dyn CommitStore, b: &Built) -> Result<()> {
+/// The plan, and with `retag` (`plan --retag`) what would happen to the tags and notes.
+pub fn print_plan(repo: &dyn CommitStore, b: &Built, retag: Option<&Preview>) -> Result<()> {
     let p = &b.plan;
     if p.is_empty() {
         if b.range_len == 0 {
@@ -47,13 +48,13 @@ pub fn print_plan(repo: &dyn CommitStore, b: &Built) -> Result<()> {
     )?;
     let dropped = repo.read_commits(&p.dropped)?;
     print!("{}", sanitize(&render(p, &old, &dropped)));
-    if let Some(r) = &b.retag {
+    if let Some(r) = retag {
         print_retag(r);
     }
     for w in b
         .warnings
         .iter()
-        .chain(b.retag.iter().flat_map(|r| &r.warnings))
+        .chain(retag.iter().flat_map(|r| &r.warnings))
     {
         println!("warning: {}", sanitize(w));
     }

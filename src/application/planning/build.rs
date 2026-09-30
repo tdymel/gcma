@@ -11,7 +11,6 @@ use super::warnings::rewrite_warnings;
 use crate::application::pathrules::TreeRewriter;
 use crate::application::ports::Repository;
 use crate::application::preconditions::{check_preconditions, refuse_pushed};
-use crate::application::retag;
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::Commit;
 use crate::domain::history::conform::{self, Ctx};
@@ -62,16 +61,11 @@ pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Re
         &suffix,
         opts.retag,
     )?;
-    let retag = opts
-        .retag
-        .then(|| retag::preview(repo, &plan))
-        .transpose()?;
     Ok(Built {
         plan,
         range_len: range.order.len(),
         frozen: range.order.len() - suffix.len(),
         warnings,
-        retag,
     })
 }
 
@@ -87,7 +81,6 @@ fn nothing_to_do(cfg: &Config, range: &RangeInfo) -> Built {
         range_len: range.order.len(),
         frozen: range.order.len(),
         warnings: Vec::new(),
-        retag: None,
     }
 }
 

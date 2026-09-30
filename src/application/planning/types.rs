@@ -1,7 +1,6 @@
 //! The shapes planning takes and returns.
 
 use crate::application::ports::RemoteScope;
-use crate::application::retag::Preview;
 use crate::domain::history::plan::Plan;
 
 /// An explicit range (used by the pre-push hook): commits reachable from `tip` but not from the
@@ -27,7 +26,7 @@ pub struct PlanOptions {
     pub now: i64,
     /// Refuse on dirty index / operations in progress (apply and plan); the hook verifier relaxes this.
     pub strict: bool,
-    /// Report which tags a rewrite would move (`apply --retag`) instead of warning about them.
+    /// The tags and notes follow the rewrite (`--retag`), so do not warn that they stay behind.
     pub retag: bool,
 }
 
@@ -52,6 +51,4 @@ pub struct Built {
     pub range_len: usize,
     pub frozen: usize,
     pub warnings: Vec<String>,
-    /// With `retag`: the tags and notes that would follow the rewrite.
-    pub retag: Option<Preview>,
 }

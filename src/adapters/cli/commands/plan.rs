@@ -7,6 +7,7 @@ use crate::adapters::cli_support::report::print_plan;
 use crate::adapters::cli_support::session::{Session, plan_options, warn_if_inert};
 use crate::adapters::plan_file;
 use crate::application::planning::{PlanOptions, build_plan};
+use crate::application::retag;
 use crate::domain::error::{Error, Result};
 
 pub fn run(
@@ -23,7 +24,11 @@ pub fn run(
         ..plan_options(range, false)
     };
     let built = build_plan(&repo, &cfg, &opts)?;
-    print_plan(&repo, &built)?;
+    let preview = match retag && !built.plan.is_empty() {
+        true => Some(retag::preview(&repo, &built.plan)?),
+        false => None,
+    };
+    print_plan(&repo, &built, preview.as_ref())?;
     if let Some(out) = out {
         plan_file::save(&built.plan, &out)?;
         println!("plan written to {}", out.display());
