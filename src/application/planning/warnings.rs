@@ -7,18 +7,24 @@ use crate::domain::error::Result;
 use crate::domain::history::commit::Commit;
 use crate::domain::settings::{Config, Signing};
 
-/// Non-fatal consequences of rewriting these commits.
+/// Non-fatal consequences of rewriting these commits. With `retag` the tags and notes follow the
+/// rewrite, so there is nothing to warn about for them here.
 pub(super) fn rewrite_warnings(
     repo: &dyn Repository,
     cfg: &Config,
     linear: &[String],
     commits: &HashMap<String, Commit>,
+    retag: bool,
 ) -> Result<Vec<String>> {
     let mut warnings = Vec::new();
-    let labels = repo.labels_pointing_at(&linear.iter().cloned().collect())?;
+    let labels = match retag {
+        true => Vec::new(),
+        false => repo.labels_pointing_at(&linear.iter().cloned().collect())?,
+    };
     if !labels.is_empty() {
         warnings.push(format!(
-            "tags/notes point at commits that will be rewritten and will keep pointing at the old ones: {}",
+            "tags/notes point at commits that will be rewritten and will keep pointing at the old ones: {} \
+             (pass --retag to move them)",
             labels.join(", ")
         ));
     }

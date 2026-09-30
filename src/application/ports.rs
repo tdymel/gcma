@@ -112,6 +112,47 @@ pub trait RefStore {
     fn labels_pointing_at(&self, oids: &HashSet<String>) -> Result<Vec<String>>;
 }
 
+/// What a tag ref holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TagKind {
+    /// The ref points straight at the object.
+    Lightweight,
+    /// The ref points at a tag object that points at the target.
+    Annotated,
+    /// The ref points at a tag object that points at another tag object.
+    Nested,
+}
+
+/// A ref under `refs/tags/`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagRef {
+    /// The full ref name (`refs/tags/v1`).
+    pub name: String,
+    /// What the ref holds: a commit, or a tag object.
+    pub value: String,
+    pub kind: TagKind,
+    /// The commit the tag finally points at; `None` when it is not a commit (a tree, a blob).
+    pub peeled: Option<String>,
+}
+
+/// Tags: the refs and the tag objects behind annotated ones.
+pub trait TagStore {
+    /// Every ref under `refs/tags/`.
+    fn list_tags(&self) -> Result<Vec<TagRef>>;
+    /// The raw bytes of a tag object.
+    fn read_tag_object(&self, oid: &str) -> Result<Vec<u8>>;
+    /// Writes a raw tag object (checked for well-formedness) and returns its id.
+    fn write_tag_object(&self, raw: &[u8]) -> Result<String>;
+}
+
+/// Notes (`refs/notes/*`) attached to commits.
+pub trait NoteStore {
+    /// (notes ref, annotated commit) for every note in every notes ref.
+    fn list_notes(&self) -> Result<Vec<(String, String)>>;
+    /// Copies the note of `from` to `to` in the notes ref; fails if `to` has a note already.
+    fn copy_note(&self, notes_ref: &str, from: &str, to: &str) -> Result<()>;
+}
+
 /// Questions about the commit graph.
 pub trait History {
     fn merge_base(&self, a: &str, b: &str) -> Result<Option<String>>;
@@ -148,6 +189,12 @@ pub trait WorkTree {
 }
 
 /// Everything a use case may ask of a repository.
-pub trait Repository: CommitStore + TreeStore + RefStore + History + WorkTree {}
+pub trait Repository:
+    CommitStore + TreeStore + RefStore + TagStore + NoteStore + History + WorkTree
+{
+}
 
-impl<T: CommitStore + TreeStore + RefStore + History + WorkTree> Repository for T {}
+impl<T: CommitStore + TreeStore + RefStore + TagStore + NoteStore + History + WorkTree> Repository
+    for T
+{
+}

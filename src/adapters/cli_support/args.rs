@@ -58,6 +58,9 @@ pub enum Cmd {
         /// Exit with code 6 if any commit is nonconforming.
         #[arg(long)]
         check: bool,
+        /// Show which tags `apply --retag` would move.
+        #[arg(long)]
+        retag: bool,
     },
     /// Rewrite the branch (verifies first, keeps a backup).
     Apply {
@@ -66,6 +69,10 @@ pub enum Cmd {
         /// Apply a saved plan instead of planning now (its path rules must match the config).
         #[arg(long)]
         plan: Option<PathBuf>,
+        /// Move tags on the rewritten commits to their new versions (unsigned annotated tags are
+        /// recreated; signed ones stay) and copy notes. `restore` undoes the tag moves.
+        #[arg(long)]
+        retag: bool,
     },
     /// Export commits as compact JSONL for an LLM.
     Export {

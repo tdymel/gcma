@@ -32,8 +32,13 @@ fn run(cli: Cli) -> Result<()> {
     };
     match cli.cmd {
         Cmd::Init { force } => commands::init::run(&session, force),
-        Cmd::Plan { range, out, check } => commands::plan::run(&session, &range, out, check),
-        Cmd::Apply { range, plan } => commands::apply::run(&session, &range, plan),
+        Cmd::Plan {
+            range,
+            out,
+            check,
+            retag,
+        } => commands::plan::run(&session, &range, out, check, retag),
+        Cmd::Apply { range, plan, retag } => commands::apply::run(&session, &range, plan, retag),
         Cmd::Export {
             range,
             plan,

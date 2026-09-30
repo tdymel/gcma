@@ -18,7 +18,7 @@ cargo install --path .           # or: cargo build --release  ->  target/release
 ```
 gcma init                       # write a starter gcma.yml (inert until you enable something)
 gcma plan  [--from <rev|root>]  # dry run; add --out plan.json to save, --check to exit 6 if anything is nonconforming
-gcma apply [--from <rev|root>]  # verify, back up, rewrite
+gcma apply [--from <rev|root>]  # verify, back up, rewrite; --retag also moves tags and copies notes
 gcma restore [<id>] [--force|--prune]   # list, undo, or forget a backup
 -C <dir>, --config <file>, --backend git|gix    # global options
 gcma export / import            # compact JSONL for LLM-written messages (see below)
@@ -78,6 +78,18 @@ must not produce something another rule or itself rewrites again), otherwise `pl
 the first paragraph; `title_only` keeps it and the final trailer block, so a body paragraph that looks like `Key: value`
 lines at the very end counts as that block.
 
+## Tags and notes
+
+A rewrite leaves tags and notes on the old commits, and `plan`/`apply` warn about them. `gcma apply --retag` (also with
+`--plan`) makes them follow: a lightweight tag on a rewritten commit moves to its new commit, and an unsigned annotated tag
+is recreated with the same name, tagger, date and message, pointing at the new commit. The tag moves are part of the
+transaction that moves the branch (each compare-and-swap, so everything moves or nothing does) and are checked before it.
+Tags that stay, with a warning: signed annotated tags (a copy would lose the signature), tags of tags, and tags on commits
+that `paths.exclude` drops. Tags on commits that keep their id are not touched. `gcma plan --retag` lists what would move.
+Notes (`refs/notes/*`) on rewritten commits are copied to the new commits after the branch moved, best effort: a failure
+is a warning and the old notes stay. `gcma restore <id>` puts the tags back, and refuses (exit 4) if one of them changed
+since; with `--force` such a tag is left as it is.
+
 ## Removing paths from history
 
 `paths.exclude` takes gitignore patterns. Every rewritten commit loses those paths; a commit that touched nothing else is
@@ -108,6 +120,8 @@ locally: `gcma restore <id> --prune`, then `git reflog expire --expire=now --all
   are still reachable.
 - One atomic ref transaction creates `refs/gcma/backup/<branch>/<id>/{old,new}` and moves the branch with compare-and-swap.
   Backups are never pruned automatically. `gcma restore <id>` goes back; it refuses if the branch moved on (unless `--force`).
+  With `--retag` the moved tags are recorded in a blob `…/<id>/tags` (plus `…/<id>/tag-<n>`, which keeps the old annotated
+  tag objects reachable); no tag name ever becomes part of a backup ref name.
 - `apply` only moves the checked-out branch named in the plan, a plan from a file must carry the same path rules as the
   config, and every object id and the branch ref in it are validated; `.gitignore` is never written through a symlink.
   The config file (`gcma.yml`) is trusted like a script: with the hook in `rewrite` mode, a config pulled from

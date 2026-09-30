@@ -3,6 +3,7 @@
 use super::render::render;
 use crate::application::planning::Built;
 use crate::application::ports::CommitStore;
+use crate::application::retag::Preview;
 use crate::application::rewrite::{ApplyReport, Backup, RestoreReport};
 use crate::domain::error::Result;
 
@@ -46,10 +47,34 @@ pub fn print_plan(repo: &dyn CommitStore, b: &Built) -> Result<()> {
     )?;
     let dropped = repo.read_commits(&p.dropped)?;
     print!("{}", sanitize(&render(p, &old, &dropped)));
-    for w in &b.warnings {
+    if let Some(r) = &b.retag {
+        print_retag(r);
+    }
+    for w in b
+        .warnings
+        .iter()
+        .chain(b.retag.iter().flat_map(|r| &r.warnings))
+    {
         println!("warning: {}", sanitize(w));
     }
     Ok(())
+}
+
+/// What `--retag` would do besides rewriting the commits.
+fn print_retag(r: &Preview) {
+    if r.tags.is_empty() && r.notes == 0 {
+        println!("No tags or notes to move (--retag).");
+    }
+    if !r.tags.is_empty() {
+        println!(
+            "{} tag(s) would be moved (--retag): {}",
+            r.tags.len(),
+            sanitize(&r.tags.join(", "))
+        );
+    }
+    if r.notes > 0 {
+        println!("{} note(s) would be copied (--retag).", r.notes);
+    }
 }
 
 /// The outcome of `gcma apply`.
@@ -69,6 +94,13 @@ pub fn print_apply(report: &ApplyReport, branch: &str) {
         report.rewritten,
         report.new_tip.as_deref().unwrap_or("?"),
     );
+    if !report.tags_moved.is_empty() {
+        println!(
+            "Moved {} tag(s): {}",
+            report.tags_moved.len(),
+            sanitize(&report.tags_moved.join(", "))
+        );
+    }
     for n in &report.notes {
         eprintln!("warning: {n}");
     }

@@ -2,14 +2,17 @@
 
 use super::backups::BACKUP_PREFIX;
 use super::prepared::{Prepared, prepare};
+use super::tag_backup::apply_updates;
 use super::verify::verify;
 use super::worktree_sync::sync_worktree;
 use crate::application::ports::{RefUpdate, Repository};
 use crate::application::preconditions::{check_preconditions, refuse_pushed};
+use crate::application::retag::{self, TagMove};
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::{NewCommit, short};
 use crate::domain::history::plan::Plan;
 use crate::domain::settings::Config;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug)]
 pub struct ApplyReport {
@@ -19,6 +22,8 @@ pub struct ApplyReport {
     pub new_tip: Option<String>,
     /// True when nothing had to change (empty plan, or the rewrite reproduced identical commits).
     pub noop: bool,
+    /// The tags `--retag` moved, by name as `git tag` lists them.
+    pub tags_moved: Vec<String>,
     /// Follow-ups that did not go as planned after the branch moved.
     pub notes: Vec<String>,
 }
@@ -30,6 +35,7 @@ fn noop(rewritten: usize) -> ApplyReport {
         backup_id: None,
         new_tip: None,
         noop: true,
+        tags_moved: Vec::new(),
         notes: Vec::new(),
     }
 }
@@ -60,6 +66,18 @@ pub fn apply(
     rewrite_pushed: bool,
     now: i64,
 ) -> Result<ApplyReport> {
+    apply_retagging(repo, plan, rewrite_pushed, false, now)
+}
+
+/// `apply`, and with `retag` the tags (and notes) on the rewritten commits follow them: the tags move
+/// in the same transaction as the branch.
+pub fn apply_retagging(
+    repo: &dyn Repository,
+    plan: &Plan,
+    rewrite_pushed: bool,
+    retag: bool,
+    now: i64,
+) -> Result<ApplyReport> {
     plan.validate()?;
     if plan.is_empty() {
         return Ok(noop(0));
@@ -72,23 +90,46 @@ pub fn apply(
     if new_tip == plan.tip_oid {
         return Ok(noop(plan.entries.len()));
     }
-    let id = move_branch(repo, plan, &new_tip, now)?;
-    let notes = if prepared.filter.is_some() {
-        // With path rules the tree changed: the index and `.gitignore` must follow the branch.
-        let mut notes = sync_worktree(repo, &prepared.old_tip, &new_tip);
-        notes.push(SECRETS_NOTE.into());
-        notes
-    } else {
-        Vec::new()
+    let renamed = renamed_commits(plan, &new_oids);
+    let (moves, mut notes) = match retag {
+        true => {
+            let dropped: HashSet<String> = plan.dropped.iter().cloned().collect();
+            let found = retag::prepare(repo, &renamed, &dropped)?;
+            (found.moves, found.warnings)
+        }
+        false => (Vec::new(), Vec::new()),
     };
+    let id = move_branch(repo, plan, &new_tip, now, &moves)?;
+    if retag {
+        notes.extend(retag::copy_notes(repo, &renamed));
+    }
+    if prepared.filter.is_some() {
+        // With path rules the tree changed: the index and `.gitignore` must follow the branch.
+        notes.extend(sync_worktree(repo, &prepared.old_tip, &new_tip));
+        notes.push(SECRETS_NOTE.into());
+    }
     Ok(ApplyReport {
         rewritten: plan.entries.len(),
         dropped: plan.dropped.len(),
         backup_id: Some(id),
         new_tip: Some(new_tip),
         noop: false,
+        tags_moved: moves
+            .iter()
+            .map(|m| retag::short_name(&m.name).into())
+            .collect(),
         notes,
     })
+}
+
+/// The commits whose id changed, old id to new id.
+fn renamed_commits(plan: &Plan, new_oids: &[String]) -> HashMap<String, String> {
+    plan.entries
+        .iter()
+        .zip(new_oids)
+        .filter(|(e, new)| e.old_oid != **new)
+        .map(|(e, new)| (e.old_oid.clone(), new.clone()))
+        .collect()
 }
 
 /// The repository is in a state the plan can be applied to: nothing blocks rewriting, the branch
@@ -152,28 +193,34 @@ fn write_commits(repo: &dyn Repository, plan: &Plan, prepared: &Prepared) -> Res
     Ok(new_oids)
 }
 
-/// One transaction: the backup refs and the branch update (compare-and-swap). Returns the backup id.
-fn move_branch(repo: &dyn Repository, plan: &Plan, new_tip: &str, now: i64) -> Result<String> {
+/// One transaction: the backup refs, the branch update and the tag moves, each a compare-and-swap.
+/// Returns the backup id.
+fn move_branch(
+    repo: &dyn Repository,
+    plan: &Plan,
+    new_tip: &str,
+    now: i64,
+    tags: &[TagMove],
+) -> Result<String> {
     let id = free_backup_id(repo, plan, new_tip, now)?;
     let base = format!("{BACKUP_PREFIX}{}/{id}", plan.branch_name());
-    repo.update_refs(
-        "gcma apply",
-        &[
-            RefUpdate::Create {
-                name: format!("{base}/old"),
-                new: plan.tip_oid.clone(),
-            },
-            RefUpdate::Create {
-                name: format!("{base}/new"),
-                new: new_tip.to_string(),
-            },
-            RefUpdate::Move {
-                name: plan.branch_ref.clone(),
-                new: new_tip.to_string(),
-                old: plan.tip_oid.clone(),
-            },
-        ],
-    )?;
+    let mut updates = vec![
+        RefUpdate::Create {
+            name: format!("{base}/old"),
+            new: plan.tip_oid.clone(),
+        },
+        RefUpdate::Create {
+            name: format!("{base}/new"),
+            new: new_tip.to_string(),
+        },
+        RefUpdate::Move {
+            name: plan.branch_ref.clone(),
+            new: new_tip.to_string(),
+            old: plan.tip_oid.clone(),
+        },
+    ];
+    updates.extend(apply_updates(repo, &base, tags)?);
+    repo.update_refs("gcma apply", &updates)?;
     Ok(id)
 }
 
