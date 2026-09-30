@@ -47,7 +47,10 @@ impl TagStore for GitCli {
     }
 
     fn write_tag_object(&self, raw: &[u8]) -> Result<String> {
-        let out = self.run_stdin(&["hash-object", "-t", "tag", "-w", "--stdin"], raw)?;
+        let out = self.run_stdin(
+            &["hash-object", "-t", "tag", "--literally", "-w", "--stdin"],
+            raw,
+        )?;
         Ok(String::from_utf8_lossy(&out).trim().to_string())
     }
 }

@@ -141,7 +141,8 @@ pub trait TagStore {
     fn list_tags(&self) -> Result<Vec<TagRef>>;
     /// The raw bytes of a tag object.
     fn read_tag_object(&self, oid: &str) -> Result<Vec<u8>>;
-    /// Writes a raw tag object (checked for well-formedness) and returns its id.
+    /// Writes a raw tag object as it is (no fsck, so a legacy tag without a tagger can be copied)
+    /// and returns its id.
     fn write_tag_object(&self, raw: &[u8]) -> Result<String>;
 }
 

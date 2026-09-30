@@ -375,3 +375,36 @@ fn a_tag_of_a_tag_stays_and_is_warned_about_while_the_inner_tag_moves() {
         assert_eq!(r.git(&["for-each-ref", "refs/tags"]), tags);
     });
 }
+
+/// Writes a tag object that `git fsck` finds fault with, and a ref to it.
+fn tag_without_tagger(r: &Repo, name: &str, commit: &str) -> String {
+    let raw = format!("object {commit}\ntype commit\ntag {name}\n\nlegacy tag\n");
+    let mut child = r
+        .cmd("git")
+        .args(["hash-object", "-t", "tag", "--literally", "-w", "--stdin"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(&mut child.stdin.take().unwrap(), raw.as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    let oid = String::from_utf8(out.stdout).unwrap().trim().to_string();
+    r.git(&["update-ref", &format!("refs/tags/{name}"), &oid]);
+    oid
+}
+
+#[test]
+fn a_legacy_annotated_tag_without_a_tagger_follows_its_commit() {
+    on_both_backends(|r| {
+        let old = three_to_rewrite(&r);
+        let before = tag_without_tagger(&r, "legacy", &old[1]);
+        let o = r.gcma(&["apply", "--retag", "--from", "root"]);
+        assert!(o.status.success(), "{}{}", stdout(&o), stderr(&o));
+        assert_ne!(held(&r, "legacy"), before);
+        assert_eq!(peeled(&r, "legacy"), r.log()[1].oid);
+        assert!(!tag_body(&r, "legacy").contains("tagger"));
+        r.gcma_ok(&["restore", &r.backup_id()]);
+        assert_eq!(held(&r, "legacy"), before);
+    });
+}
