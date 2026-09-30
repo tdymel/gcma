@@ -1,11 +1,8 @@
 //! `RefStore` over `rev-parse`, `symbolic-ref`, `for-each-ref` and `update-ref --stdin`.
 
-use std::collections::HashSet;
-
 use super::runner::GitCli;
 use crate::application::ports::{RefStore, RefUpdate};
 use crate::domain::error::{Error, Result};
-use crate::domain::history::commit::short;
 use crate::domain::history::plan::HEADS_PREFIX;
 
 impl RefStore for GitCli {
@@ -77,32 +74,5 @@ impl RefStore for GitCli {
 
     fn remotes(&self) -> Result<Vec<String>> {
         Ok(self.text(&["remote"])?.lines().map(String::from).collect())
-    }
-
-    fn labels_pointing_at(&self, oids: &HashSet<String>) -> Result<Vec<String>> {
-        let mut found = Vec::new();
-        let out = self.text(&[
-            "for-each-ref",
-            "--format=%(refname) %(objectname) %(*objectname)",
-            "refs/tags",
-        ])?;
-        for l in out.lines() {
-            let parts: Vec<&str> = l.split(' ').collect();
-            if parts.len() >= 2
-                && (oids.contains(parts[1]) || parts.get(2).is_some_and(|t| oids.contains(*t)))
-            {
-                found.push(parts[0].to_string());
-            }
-        }
-        if let Ok(notes) = self.text(&["notes", "list"]) {
-            for l in notes.lines() {
-                if let Some((_, target)) = l.split_once(' ')
-                    && oids.contains(target)
-                {
-                    found.push(format!("note on {}", short(target)));
-                }
-            }
-        }
-        Ok(found)
     }
 }

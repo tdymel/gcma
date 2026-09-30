@@ -105,7 +105,6 @@ impl RefStore for Faulty {
     delegate! {
         to self.inner {
             fn remotes(&self) -> Result<Vec<String>>;
-            fn labels_pointing_at(&self, oids: &HashSet<String>) -> Result<Vec<String>>;
         }
     }
 }

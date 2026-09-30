@@ -108,8 +108,6 @@ pub trait RefStore {
     fn list_refs(&self, prefix: &str) -> Result<Vec<(String, String)>>;
     fn update_refs(&self, message: &str, updates: &[RefUpdate]) -> Result<()>;
     fn remotes(&self) -> Result<Vec<String>>;
-    /// Tags and notes that point at any of `oids`, as human-readable labels.
-    fn labels_pointing_at(&self, oids: &HashSet<String>) -> Result<Vec<String>>;
 }
 
 /// What a tag ref holds.
