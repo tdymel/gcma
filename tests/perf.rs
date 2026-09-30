@@ -170,13 +170,10 @@ fn backends_perf() {
     generate(&src, n);
     eprintln!("generated {n} commits in {:?}", t.elapsed());
 
-    let mut backends = vec!["git"];
-    if cfg!(feature = "gix") {
-        backends.push("gix");
-    } else {
+    if BACKENDS.len() == 1 {
         eprintln!("(built without --features gix: only the git backend is measured)");
     }
-    let results: Vec<Timing> = backends.iter().map(|b| run_backend(b, &src, n)).collect();
+    let results: Vec<Timing> = BACKENDS.iter().map(|b| run_backend(b, &src, n)).collect();
 
     eprintln!(
         "\n{:<6} {:>8} {:>9} {:>9} {:>9} {:>9} {:>9}",

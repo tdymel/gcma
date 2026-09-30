@@ -13,6 +13,21 @@ pub struct Repo {
     pub backend: Option<&'static str>,
 }
 
+/// The object backends this build has: `git`, and `gix` when its feature is built.
+pub const BACKENDS: &[&str] = if cfg!(feature = "gix") {
+    &["git", "gix"]
+} else {
+    &["git"]
+};
+
+/// Runs `scenario` once per backend in `BACKENDS`, each time on a fresh repository whose `gcma`
+/// runs use that backend.
+pub fn on_both_backends(scenario: impl Fn(Repo)) {
+    for backend in BACKENDS {
+        scenario(Repo::with_backend(backend));
+    }
+}
+
 pub fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_gcma")
 }
@@ -47,13 +62,15 @@ impl Repo {
     /// A repository whose `gcma` runs use the backend `seed` selects: the two alternate, so a
     /// series of seeds covers both (only `git` when the `gix` feature is not built).
     pub fn for_seed(seed: u64) -> Repo {
-        let mut r = Repo::new();
-        r.backend = Some(if cfg!(feature = "gix") && seed % 2 == 1 {
-            "gix"
-        } else {
-            "git"
-        });
-        r
+        Repo::with_backend(BACKENDS[seed as usize % BACKENDS.len()])
+    }
+
+    /// A repository whose `gcma` runs all use `backend`.
+    pub fn with_backend(backend: &'static str) -> Repo {
+        Repo {
+            backend: Some(backend),
+            ..Repo::new()
+        }
     }
 
     pub fn path(&self) -> &Path {

@@ -8,13 +8,6 @@ use common::*;
 
 const SIGNED_MESSAGE: &str = "signed release\n-----BEGIN PGP SIGNATURE-----\nnot a real signature\n-----END PGP SIGNATURE-----";
 
-/// Runs `scenario` on a fresh repository for each backend.
-fn on_both_backends(scenario: impl Fn(Repo)) {
-    for seed in [0, 1] {
-        scenario(Repo::for_seed(seed));
-    }
-}
-
 /// Three commits by the old identity, which the config rewrites; every one of them is replaced.
 fn three_to_rewrite(r: &Repo) -> Vec<String> {
     let old = r.linear(3, T0);

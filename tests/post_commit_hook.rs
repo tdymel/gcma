@@ -44,10 +44,9 @@ fn oids(r: &Repo) -> Vec<String> {
 
 #[test]
 fn every_commit_respreads_all_unpushed_commits_within_the_hours() {
-    for backend in ["git", "gix"] {
-        if backend == "gix" && !cfg!(feature = "gix") {
-            continue;
-        }
+    // The hook runs inside `git commit`, which does not pass a `GCMA_BACKEND` on: the config
+    // chooses the backend.
+    for backend in BACKENDS {
         let r = hooked(&format!("backend: {backend}\n"));
         commit_ok(&r, "a.txt");
         let rows = r.log();
