@@ -1,6 +1,6 @@
 //! The apply use case: check, write, verify, then move the branch in one ref transaction.
 
-use super::backups::BACKUP_PREFIX;
+use super::backups::backup_base;
 use super::prepared::{Prepared, prepare};
 use super::tag_backup::apply_updates;
 use super::verify::verify;
@@ -203,7 +203,7 @@ fn move_branch(
     tags: &[TagMove],
 ) -> Result<String> {
     let id = free_backup_id(repo, plan, new_tip, now)?;
-    let base = format!("{BACKUP_PREFIX}{}/{id}", plan.branch_name());
+    let base = backup_base(plan.branch_name(), &id);
     let mut updates = vec![
         RefUpdate::Create {
             name: format!("{base}/old"),
@@ -234,7 +234,7 @@ fn free_backup_id(repo: &dyn Repository, plan: &Plan, new_tip: &str, now: i64) -
     let mut id = stem.clone();
     let mut n = 1;
     while repo
-        .ref_value(&format!("{BACKUP_PREFIX}{}/{id}/old", plan.branch_name()))?
+        .ref_value(&format!("{}/old", backup_base(plan.branch_name(), &id)))?
         .is_some()
     {
         n += 1;

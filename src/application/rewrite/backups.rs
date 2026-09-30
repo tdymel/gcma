@@ -11,6 +11,22 @@ use crate::domain::history::commit::short;
 use crate::domain::history::plan::HEADS_PREFIX;
 
 pub const BACKUP_PREFIX: &str = "refs/gcma/backup/";
+
+/// The ref prefix of one backup: `<BACKUP_PREFIX><branch>/<id>`; its refs are `/old`, `/new` and the
+/// tag record, see `tag_backup`.
+pub(super) fn backup_base(branch: &str, id: &str) -> String {
+    format!("{BACKUP_PREFIX}{branch}/{id}")
+}
+
+/// The inverse of `backup_base` for one ref: `(branch, id, kind)`. Splits from the right, as a
+/// branch name may contain slashes.
+fn split_backup_ref(name: &str) -> Option<(&str, &str, &str)> {
+    let rest = name.strip_prefix(BACKUP_PREFIX)?;
+    let (head, kind) = rest.rsplit_once('/')?;
+    let (branch, id) = head.rsplit_once('/')?;
+    Some((branch, id, kind))
+}
+
 /// Where a forced restore parks the tip it discards, so no commit loses its last reference.
 pub const DISCARDED_PREFIX: &str = "refs/gcma/discarded/";
 
@@ -38,11 +54,7 @@ struct Slot {
 pub fn list_backups(repo: &dyn Repository) -> Result<Vec<Backup>> {
     let mut by_key: HashMap<(String, String), Slot> = HashMap::new();
     for (name, oid) in repo.list_refs(BACKUP_PREFIX)? {
-        let rest = name.strip_prefix(BACKUP_PREFIX).unwrap_or(&name);
-        let Some((head, kind)) = rest.rsplit_once('/') else {
-            continue;
-        };
-        let Some((branch, id)) = head.rsplit_once('/') else {
+        let Some((branch, id, kind)) = split_backup_ref(&name) else {
             continue;
         };
         let slot = by_key
@@ -159,7 +171,7 @@ pub fn restore(repo: &dyn Repository, id: &str, force: bool) -> Result<RestoreRe
 /// Deletes both refs of a backup (explicit only).
 pub fn prune(repo: &dyn Repository, id: &str) -> Result<Backup> {
     let b = find_backup(repo, id)?;
-    let base = format!("{BACKUP_PREFIX}{}/{}", b.branch, b.id);
+    let base = backup_base(&b.branch, &b.id);
     let mut deletes = vec![
         RefUpdate::Delete {
             name: format!("{base}/old"),
@@ -176,4 +188,21 @@ pub fn prune(repo: &dyn Repository, id: &str) -> Result<Backup> {
     }));
     repo.update_refs("gcma prune", &deletes)?;
     Ok(b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_backup_ref_splits_back_into_what_backup_base_joined() {
+        let base = backup_base("feature/x", "20260101T000000Z-aaa-bbb");
+        assert_eq!(base, "refs/gcma/backup/feature/x/20260101T000000Z-aaa-bbb");
+        assert_eq!(
+            split_backup_ref(&format!("{base}/old")),
+            Some(("feature/x", "20260101T000000Z-aaa-bbb", "old"))
+        );
+        assert_eq!(split_backup_ref("refs/heads/main"), None);
+        assert_eq!(split_backup_ref("refs/gcma/backup/main"), None);
+    }
 }
