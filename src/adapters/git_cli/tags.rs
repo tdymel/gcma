@@ -11,9 +11,15 @@ impl TagStore for GitCli {
         // `%(type)` is what a tag object points at directly; `%(*objectname)` and
         // `%(*objecttype)` are what it finally peels to, through any number of tag objects.
         let format = "--format=%(refname)%00%(objectname)%00%(objecttype)%00%(type)%00%(*objectname)%00%(*objecttype)";
-        let out = self.text(&["for-each-ref", format, "refs/tags"])?;
+        // A ref name need not be UTF-8 (nor can it hold a newline or NUL), so it is read as bytes.
+        let out = self.run(&["for-each-ref", format, "refs/tags"])?;
         let mut tags = Vec::new();
-        for line in out.lines() {
+        for line in out.split(|&b| b == b'\n').filter(|l| !l.is_empty()) {
+            let name_is_utf8 = line
+                .split(|&b| b == 0)
+                .next()
+                .is_some_and(|n| str::from_utf8(n).is_ok());
+            let line = String::from_utf8_lossy(line);
             let f: Vec<&str> = line.split('\0').collect();
             let [name, value, kind, direct, target, target_kind] = f[..] else {
                 return Err(Error::Git(format!("unexpected for-each-ref line {line:?}")));
@@ -34,6 +40,7 @@ impl TagStore for GitCli {
             };
             tags.push(TagRef {
                 name: name.to_string(),
+                name_is_utf8,
                 value: value.to_string(),
                 kind,
                 peeled,

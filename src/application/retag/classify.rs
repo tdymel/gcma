@@ -17,6 +17,8 @@ pub struct Classified {
     pub signed: Vec<TagRef>,
     /// Tags of tags on a rewritten commit.
     pub nested: Vec<TagRef>,
+    /// Tags on a rewritten commit whose name is not valid UTF-8.
+    pub not_utf8: Vec<TagRef>,
     /// Tags on a commit the rewrite drops.
     pub dropped: Vec<TagRef>,
 }
@@ -49,6 +51,12 @@ impl Classified {
                 names(&self.nested)
             ));
         }
+        if !self.not_utf8.is_empty() {
+            out.push(format!(
+                "tag(s) point at rewritten commits and are not moved, because the name is not valid UTF-8: {}",
+                names(&self.not_utf8)
+            ));
+        }
         if !self.dropped.is_empty() {
             out.push(format!(
                 "tag(s) point at commits that are dropped and are not moved: {}",
@@ -74,6 +82,8 @@ pub fn partition(
             out.dropped.push(tag);
         } else if !rewritten.contains(target) {
             continue;
+        } else if !tag.name_is_utf8 {
+            out.not_utf8.push(tag);
         } else if tag.kind == TagKind::Nested {
             out.nested.push(tag);
         } else if tag.kind == TagKind::Annotated && is_signed(&tag)? {
@@ -103,6 +113,7 @@ mod tests {
     fn tag(name: &str, kind: TagKind, peeled: Option<&str>) -> TagRef {
         TagRef {
             name: format!("{TAGS_PREFIX}{name}"),
+            name_is_utf8: !name.contains('\u{fffd}'),
             value: format!("value-of-{name}"),
             kind,
             peeled: peeled.map(String::from),
@@ -120,6 +131,7 @@ mod tests {
             tag("note", TagKind::Annotated, Some("a")),
             tag("signed", TagKind::Annotated, Some("b")),
             tag("nested", TagKind::Nested, Some("b")),
+            tag("caf\u{fffd}", TagKind::Lightweight, Some("a")),
             tag("gone", TagKind::Lightweight, Some("d")),
             tag("elsewhere", TagKind::Lightweight, Some("z")),
             tag("tree", TagKind::Lightweight, None),
@@ -136,6 +148,7 @@ mod tests {
         assert_eq!(name(&got.movable), ["light", "note"]);
         assert_eq!(name(&got.signed), ["signed"]);
         assert_eq!(name(&got.nested), ["nested"]);
+        assert_eq!(name(&got.not_utf8), ["caf\u{fffd}"]);
         assert_eq!(name(&got.dropped), ["gone"]);
     }
 

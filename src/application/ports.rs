@@ -126,8 +126,11 @@ pub enum TagKind {
 /// A ref under `refs/tags/`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TagRef {
-    /// The full ref name (`refs/tags/v1`).
+    /// The full ref name (`refs/tags/v1`), decoded lossily when it is not UTF-8.
     pub name: String,
+    /// False when the name is not valid UTF-8: `name` is then not the real name and such a tag
+    /// cannot be moved.
+    pub name_is_utf8: bool,
     /// What the ref holds: a commit, or a tag object.
     pub value: String,
     pub kind: TagKind,

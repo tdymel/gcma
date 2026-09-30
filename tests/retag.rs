@@ -408,3 +408,50 @@ fn a_legacy_annotated_tag_without_a_tagger_follows_its_commit() {
         assert_eq!(held(&r, "legacy"), before);
     });
 }
+
+#[test]
+fn a_tag_whose_name_is_not_utf8_stays_and_is_warned_about() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    on_both_backends(|r| {
+        let old = three_to_rewrite(&r);
+        // Some file systems (APFS on macOS) refuse names that are not valid UTF-8 (EILSEQ).
+        let probe = r.path().join(OsStr::from_bytes(b".git/caf\xe9-probe"));
+        match std::fs::write(&probe, "") {
+            Ok(()) => std::fs::remove_file(&probe).unwrap(),
+            Err(e) if matches!(e.raw_os_error(), Some(84 | 92)) => {
+                eprintln!("skipping: this file system rejects non-UTF-8 names ({e})");
+                return;
+            }
+            Err(e) => panic!("cannot create the probe file: {e}"),
+        }
+        let name = OsStr::from_bytes(b"caf\xe9");
+        let made = r
+            .cmd("git")
+            .arg("tag")
+            .arg(name)
+            .arg(&old[1])
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "{}", stderr(&made));
+        r.git(&["tag", "v1", &old[2]]);
+        let plan = r.gcma_ok(&["plan", "--retag", "--from", "root"]);
+        assert!(plan.contains("name is not valid UTF-8"), "{plan}");
+        assert!(
+            plan.contains("1 tag(s) would be moved (--retag): v1"),
+            "{plan}"
+        );
+        let o = r.gcma(&["apply", "--retag", "--from", "root"]);
+        assert!(o.status.success(), "{}{}", stdout(&o), stderr(&o));
+        assert!(
+            stderr(&o).contains("name is not valid UTF-8"),
+            "{}",
+            stderr(&o)
+        );
+        let full = OsStr::from_bytes(b"refs/tags/caf\xe9");
+        let kept = r.cmd("git").arg("rev-parse").arg(full).output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&kept.stdout).trim(), old[1]);
+        assert_eq!(held(&r, "v1"), r.log()[2].oid, "the others still move");
+        r.fsck();
+    });
+}
