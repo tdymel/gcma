@@ -27,6 +27,11 @@ impl Hook {
         }
     }
 
+    /// The hook git runs under `name`, if gcma has one.
+    pub fn from_name(name: &str) -> Option<Hook> {
+        Hook::ALL.into_iter().find(|h| h.name() == name)
+    }
+
     /// The shim's last line. `pre-push` hands over to gcma, whose exit code decides the push. A
     /// commit has already happened, so `post-commit` never fails.
     fn run_line(self) -> String {
@@ -128,6 +133,14 @@ mod tests {
             assert!(s.contains("GCMA='/opt/it'\\''s/gcma'"), "{s}");
             assert!(s.contains(&format!("hook run {}", hook.name())), "{s}");
         }
+    }
+
+    #[test]
+    fn a_hook_is_found_by_its_name() {
+        for hook in Hook::ALL {
+            assert_eq!(Hook::from_name(hook.name()), Some(hook));
+        }
+        assert_eq!(Hook::from_name("pre-commit"), None);
     }
 
     #[test]

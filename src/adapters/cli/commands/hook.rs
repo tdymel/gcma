@@ -32,10 +32,10 @@ pub fn run(s: &Session, cmd: HookCmd) -> Result<()> {
                 println!("hook removed ({})", names.join(", "));
             }
         }
-        HookCmd::Run { name, args } => match name.as_str() {
-            "pre-push" => pre_push(s, &args)?,
-            "post-commit" => post_commit(s),
-            _ => return Err(Error::Usage(format!("unsupported hook {name:?}"))),
+        HookCmd::Run { name, args } => match Hook::from_name(&name) {
+            Some(Hook::PrePush) => pre_push(s, &args)?,
+            Some(Hook::PostCommit) => post_commit(s),
+            None => return Err(Error::Usage(format!("unsupported hook {name:?}"))),
         },
     }
     Ok(())
