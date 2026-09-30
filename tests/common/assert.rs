@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::{Datelike, TimeZone, Timelike};
 
-use super::repo::Row;
+use super::read::Row;
 
 /// Pairs every old commit with the new commit that replaced it: same tree and subject, and the
 /// parents are the replacements of the old parents, in the same order. Panics when a commit has
