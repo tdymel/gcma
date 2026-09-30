@@ -6,11 +6,11 @@ use crate::adapters::cli_support::args::RangeArgs;
 use crate::adapters::cli_support::report::print_apply;
 use crate::adapters::cli_support::session::{Session, now, plan_options, warn_if_inert};
 use crate::adapters::plan_file;
-use crate::application::planning::build_plan;
-use crate::application::rewrite::{apply, ensure_plan_matches_config};
+use crate::application::planning::{PlanOptions, build_plan};
+use crate::application::rewrite::{apply_retagging, ensure_plan_matches_config};
 use crate::domain::error::Result;
 
-pub fn run(s: &Session, range: &RangeArgs, saved: Option<PathBuf>) -> Result<()> {
+pub fn run(s: &Session, range: &RangeArgs, saved: Option<PathBuf>, retag: bool) -> Result<()> {
     let (repo, cfg) = s.open()?;
     warn_if_inert(&cfg);
     let plan = match saved {
@@ -20,14 +20,18 @@ pub fn run(s: &Session, range: &RangeArgs, saved: Option<PathBuf>) -> Result<()>
             plan
         }
         None => {
-            let built = build_plan(&repo, &cfg, &plan_options(range, true))?;
+            let opts = PlanOptions {
+                retag,
+                ..plan_options(range, true)
+            };
+            let built = build_plan(&repo, &cfg, &opts)?;
             for w in &built.warnings {
                 eprintln!("warning: {w}");
             }
             built.plan
         }
     };
-    let report = apply(&repo, &plan, range.rewrite_pushed, now())?;
+    let report = apply_retagging(&repo, &plan, range.rewrite_pushed, retag, now())?;
     print_apply(&report, plan.branch_name());
     Ok(())
 }
