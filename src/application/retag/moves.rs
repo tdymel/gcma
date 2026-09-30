@@ -77,7 +77,11 @@ fn make_move(
                 annotated: false,
             })
         }
-        _ => {
+        TagKind::Nested => Err(Error::Internal(format!(
+            "{} is a tag of a tag and cannot be moved",
+            tag.name
+        ))),
+        TagKind::Annotated => {
             let raw = repo.read_tag_object(&tag.value)?;
             let copy = retarget(&raw, old_commit, new_commit)?;
             let new = repo.write_tag_object(&copy)?;

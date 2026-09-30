@@ -343,3 +343,35 @@ fn notes_are_copied_to_the_new_commits_and_the_old_ones_stay() {
         assert_eq!(r.git(&["notes", "show", &old[1]]), "reviewed");
     });
 }
+
+#[test]
+fn a_tag_of_a_tag_stays_and_is_warned_about_while_the_inner_tag_moves() {
+    on_both_backends(|r| {
+        three_to_rewrite(&r);
+        r.git(&["tag", "-a", "-m", "y", "old", "HEAD~2"]);
+        r.git(&["tag", "-a", "-m", "nest", "nest", "refs/tags/old"]);
+        let (outer, inner, tags) = (
+            held(&r, "nest"),
+            held(&r, "old"),
+            r.git(&["for-each-ref", "refs/tags"]),
+        );
+        let plan = r.gcma_ok(&["plan", "--retag", "--from", "root"]);
+        assert!(
+            plan.contains("1 tag(s) would be moved (--retag): old"),
+            "{plan}"
+        );
+        assert!(
+            plan.contains("warning: tag(s) of tags") && plan.contains("nest"),
+            "{plan}"
+        );
+        let o = r.gcma(&["apply", "--retag", "--from", "root"]);
+        assert!(o.status.success(), "{}{}", stdout(&o), stderr(&o));
+        assert!(stderr(&o).contains("nest"), "{}", stderr(&o));
+        assert_eq!(held(&r, "nest"), outer, "the tag of the tag stays");
+        assert_ne!(held(&r, "old"), inner, "the inner tag is recreated");
+        assert_eq!(peeled(&r, "old"), r.log()[0].oid);
+        r.fsck();
+        r.gcma_ok(&["restore", &r.backup_id()]);
+        assert_eq!(r.git(&["for-each-ref", "refs/tags"]), tags);
+    });
+}

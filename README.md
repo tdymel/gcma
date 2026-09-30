@@ -84,7 +84,8 @@ A rewrite leaves tags and notes on the old commits, and `plan`/`apply` warn abou
 `--plan`) makes them follow: a lightweight tag on a rewritten commit moves to its new commit, and an unsigned annotated tag
 is recreated with the same name, tagger, date and message, pointing at the new commit. The tag moves are part of the
 transaction that moves the branch (each compare-and-swap, so everything moves or nothing does) and are checked before it.
-Tags that stay, with a warning: signed annotated tags (a copy would lose the signature), tags of tags, and tags on commits
+Tags that stay, with a warning: signed annotated tags (a copy would lose the signature), tags of tags (a tag object that
+points at another tag object; the inner tag moves, the outer one keeps pointing at its old object), and tags on commits
 that `paths.exclude` drops. Tags on commits that keep their id are not touched. `gcma plan --retag` lists what would move.
 Notes (`refs/notes/*`) on rewritten commits are copied to the new commits after the branch moved, best effort: a failure
 is a warning and the old notes stay. `gcma restore <id>` puts the tags back, and refuses (exit 4) if one of them changed

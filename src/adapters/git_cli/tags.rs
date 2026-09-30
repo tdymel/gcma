@@ -1,27 +1,31 @@
 //! `TagStore` and `NoteStore` over `for-each-ref`, `hash-object` and `git notes`.
 
 use super::runner::GitCli;
-use crate::application::ports::{NoteStore, RefStore, TagKind, TagRef, TagStore};
+use crate::application::ports::{NoteStore, TagKind, TagRef, TagStore};
 use crate::domain::error::{Error, Result};
 
 const NOTES_PREFIX: &str = "refs/notes/";
 
 impl TagStore for GitCli {
     fn list_tags(&self) -> Result<Vec<TagRef>> {
-        let format =
-            "--format=%(refname)%00%(objectname)%00%(objecttype)%00%(*objectname)%00%(*objecttype)";
+        // `%(type)` is what a tag object points at directly; `%(*objectname)` and
+        // `%(*objecttype)` are what it finally peels to, through any number of tag objects.
+        let format = "--format=%(refname)%00%(objectname)%00%(objecttype)%00%(type)%00%(*objectname)%00%(*objecttype)";
         let out = self.text(&["for-each-ref", format, "refs/tags"])?;
         let mut tags = Vec::new();
         for line in out.lines() {
             let f: Vec<&str> = line.split('\0').collect();
-            let [name, value, kind, target, target_kind] = f[..] else {
+            let [name, value, kind, direct, target, target_kind] = f[..] else {
                 return Err(Error::Git(format!("unexpected for-each-ref line {line:?}")));
             };
-            let (kind, peeled) = match (kind, target_kind) {
-                ("tag", "tag") => (TagKind::Nested, self.resolve_commit(value)?),
-                ("tag", t) => (
+            let (kind, peeled) = match (kind, direct) {
+                ("tag", "tag") => (
+                    TagKind::Nested,
+                    (target_kind == "commit").then(|| target.to_string()),
+                ),
+                ("tag", direct) => (
                     TagKind::Annotated,
-                    (t == "commit").then(|| target.to_string()),
+                    (direct == "commit").then(|| target.to_string()),
                 ),
                 (t, _) => (
                     TagKind::Lightweight,
