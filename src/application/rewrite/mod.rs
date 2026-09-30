@@ -4,8 +4,9 @@ mod apply;
 mod backups;
 mod paths;
 mod prepared;
+mod tag_backup;
 mod verify;
 mod worktree_sync;
 
-pub use apply::{ApplyReport, apply, ensure_plan_matches_config};
+pub use apply::{ApplyReport, apply, apply_retagging, ensure_plan_matches_config};
 pub use backups::{Backup, RestoreReport, list_backups, prune, restore};

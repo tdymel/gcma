@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use super::tag_backup::{KEEP_KIND_PREFIX, MANIFEST_KIND, restore_updates};
 use super::worktree_sync::sync_worktree;
 use crate::application::ports::{RefUpdate, Repository};
 use crate::application::preconditions::check_preconditions;
@@ -19,10 +20,23 @@ pub struct Backup {
     pub id: String,
     pub old: String,
     pub new: String,
+    /// The blob that records the tags the rewrite moved, when it moved any.
+    pub(super) manifest: Option<String>,
+    /// The backup's refs besides `old` and `new` (name, value): the tag record and what it keeps alive.
+    pub(super) tag_refs: Vec<(String, String)>,
+}
+
+/// What the refs of one backup add up to while they are being listed.
+#[derive(Default)]
+struct Slot {
+    old: Option<String>,
+    new: Option<String>,
+    manifest: Option<String>,
+    tag_refs: Vec<(String, String)>,
 }
 
 pub fn list_backups(repo: &dyn Repository) -> Result<Vec<Backup>> {
-    let mut by_key: HashMap<(String, String), (Option<String>, Option<String>)> = HashMap::new();
+    let mut by_key: HashMap<(String, String), Slot> = HashMap::new();
     for (name, oid) in repo.list_refs(BACKUP_PREFIX)? {
         let rest = name.strip_prefix(BACKUP_PREFIX).unwrap_or(&name);
         let Some((head, kind)) = rest.rsplit_once('/') else {
@@ -35,19 +49,26 @@ pub fn list_backups(repo: &dyn Repository) -> Result<Vec<Backup>> {
             .entry((branch.to_string(), id.to_string()))
             .or_default();
         match kind {
-            "old" => slot.0 = Some(oid),
-            "new" => slot.1 = Some(oid),
+            "old" => slot.old = Some(oid),
+            "new" => slot.new = Some(oid),
+            MANIFEST_KIND => {
+                slot.manifest = Some(oid.clone());
+                slot.tag_refs.push((name, oid));
+            }
+            k if k.starts_with(KEEP_KIND_PREFIX) => slot.tag_refs.push((name, oid)),
             _ => {}
         }
     }
     let mut out: Vec<Backup> = by_key
         .into_iter()
-        .filter_map(|((branch, id), (o, n))| {
+        .filter_map(|((branch, id), slot)| {
             Some(Backup {
                 branch,
                 id,
-                old: o?,
-                new: n?,
+                old: slot.old?,
+                new: slot.new?,
+                manifest: slot.manifest,
+                tag_refs: slot.tag_refs,
             })
         })
         .collect();
@@ -104,11 +125,13 @@ pub fn restore(repo: &dyn Repository, id: &str, force: bool) -> Result<RestoreRe
             "{branch_ref} has moved on since this backup was made (now {tip}); use --force to discard the newer commits from the branch"
         )));
     }
+    let (tag_updates, mut notes) = restore_updates(repo, b.manifest.as_deref(), force)?;
     let mut commands = vec![RefUpdate::Move {
         name: branch_ref.clone(),
         new: b.old.clone(),
         old: tip.clone(),
     }];
+    commands.extend(tag_updates);
     let mut parked = None;
     if tip != b.new {
         let name = format!("{DISCARDED_PREFIX}{}/{}-{}", b.branch, b.id, short(&tip));
@@ -121,10 +144,11 @@ pub fn restore(repo: &dyn Repository, id: &str, force: bool) -> Result<RestoreRe
     let moved_from = repo.read_commits(std::slice::from_ref(&tip))?;
     repo.update_refs("gcma restore", &commands)?;
     let restored = repo.read_commits(std::slice::from_ref(&b.old))?;
-    let notes = match (moved_from.first(), restored.first()) {
-        (Some(from), Some(to)) if from.tree != to.tree => sync_worktree(repo, from, &b.old),
-        _ => Vec::new(),
-    };
+    if let (Some(from), Some(to)) = (moved_from.first(), restored.first())
+        && from.tree != to.tree
+    {
+        notes.extend(sync_worktree(repo, from, &b.old));
+    }
     Ok(RestoreReport {
         backup: b,
         parked,
@@ -136,18 +160,20 @@ pub fn restore(repo: &dyn Repository, id: &str, force: bool) -> Result<RestoreRe
 pub fn prune(repo: &dyn Repository, id: &str) -> Result<Backup> {
     let b = find_backup(repo, id)?;
     let base = format!("{BACKUP_PREFIX}{}/{}", b.branch, b.id);
-    repo.update_refs(
-        "gcma prune",
-        &[
-            RefUpdate::Delete {
-                name: format!("{base}/old"),
-                old: b.old.clone(),
-            },
-            RefUpdate::Delete {
-                name: format!("{base}/new"),
-                old: b.new.clone(),
-            },
-        ],
-    )?;
+    let mut deletes = vec![
+        RefUpdate::Delete {
+            name: format!("{base}/old"),
+            old: b.old.clone(),
+        },
+        RefUpdate::Delete {
+            name: format!("{base}/new"),
+            old: b.new.clone(),
+        },
+    ];
+    deletes.extend(b.tag_refs.iter().map(|(name, old)| RefUpdate::Delete {
+        name: name.clone(),
+        old: old.clone(),
+    }));
+    repo.update_refs("gcma prune", &deletes)?;
     Ok(b)
 }
