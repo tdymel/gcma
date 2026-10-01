@@ -162,11 +162,13 @@ fn without_retag_tags_stay_and_the_warning_points_at_the_flag() {
         let before = r.git(&["for-each-ref", "refs/tags"]);
         let o = r.gcma(&["apply", "--from", "root"]);
         assert!(o.status.success(), "{}", stderr(&o));
+        let err = stderr(&o);
+        assert!(err.contains("warning: tags/notes point at"), "{err}");
         assert!(
-            stderr(&o).contains("pass --retag to move them"),
-            "{}",
-            stderr(&o)
+            err.contains("refs/tags/v1") && err.contains("refs/tags/v2"),
+            "{err}"
         );
+        assert!(err.contains("pass --retag to move them"), "{err}");
         assert_eq!(r.git(&["for-each-ref", "refs/tags"]), before);
         assert_eq!(r.backup_count(), 1);
         assert!(!r.refs().contains("/tags "), "a backup without tag records");
@@ -190,6 +192,10 @@ fn plan_shows_the_tags_it_would_move_and_those_it_would_not() {
         assert!(!out.contains("pass --retag"), "{out}");
         assert_eq!(r.refs(), refs, "a plan changes nothing");
         let plain = r.gcma_ok(&["plan", "--from", "root"]);
+        assert!(
+            plain.contains("refs/tags/v1") && plain.contains("refs/tags/v2"),
+            "{plain}"
+        );
         assert!(plain.contains("pass --retag to move them"), "{plain}");
     });
 }
