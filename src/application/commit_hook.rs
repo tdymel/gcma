@@ -36,6 +36,9 @@ pub enum PostCommitOutcome {
     Rewritten {
         commits: usize,
         backup_id: Option<String>,
+        /// What went wrong after the branch moved (`ApplyReport::warnings`), e.g. the index could
+        /// not follow a rewrite with path rules.
+        warnings: Vec<String>,
     },
 }
 
@@ -101,6 +104,7 @@ fn respread(
         PostCommitOutcome::Rewritten {
             commits: report.rewritten,
             backup_id: report.backup_id,
+            warnings: report.warnings,
         }
     })
 }
