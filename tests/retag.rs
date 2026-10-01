@@ -168,7 +168,8 @@ fn without_retag_tags_stay_and_the_warning_points_at_the_flag() {
             stderr(&o)
         );
         assert_eq!(r.git(&["for-each-ref", "refs/tags"]), before);
-        assert!(r.git(&["for-each-ref", "refs/gcma/backup"]).lines().count() == 2);
+        assert_eq!(r.backup_count(), 1);
+        assert!(!r.refs().contains("/tags "), "a backup without tag records");
     });
 }
 
@@ -313,7 +314,7 @@ fn prune_forgets_the_tag_records_too() {
         let old = three_to_rewrite(&r);
         r.git(&["tag", "-a", "-m", "release", "v2", &old[1]]);
         r.gcma_ok(&["apply", "--retag", "--from", "root"]);
-        assert!(r.git(&["for-each-ref", "refs/gcma/backup"]).lines().count() > 2);
+        assert!(r.refs().contains("/tags "), "the backup records the tags");
         let id = r.backup_id();
         r.gcma_ok(&["restore", &id, "--prune"]);
         assert_eq!(r.git(&["for-each-ref", "refs/gcma/backup"]), "");

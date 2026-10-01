@@ -18,8 +18,9 @@ fn refused(r: &Repo, args: &[&str], why: &str) {
     );
     assert_eq!(r.refs(), before, "no ref may change");
     assert_eq!(r.git(&["rev-parse", "HEAD"]), head);
-    assert!(
-        !r.git(&["for-each-ref", "refs/gcma/"]).contains("backup"),
+    assert_eq!(
+        r.backup_count(),
+        0,
         "no backup is created for a refused run"
     );
 }

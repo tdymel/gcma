@@ -116,6 +116,14 @@ impl Repo {
             .to_string()
     }
 
+    /// How many backups the rewrites have left, read from the refs: one `<id>/old` ref each.
+    pub fn backup_count(&self) -> usize {
+        self.git(&["for-each-ref", "--format=%(refname)", "refs/gcma/backup/"])
+            .lines()
+            .filter(|l| l.ends_with("/old"))
+            .count()
+    }
+
     /// Raw commit object bytes.
     pub fn cat(&self, oid: &str) -> Vec<u8> {
         self.cmd("git")

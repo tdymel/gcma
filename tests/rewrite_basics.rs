@@ -153,5 +153,5 @@ fn all_flag_with_nothing_to_change_is_a_clean_noop() {
     let o = r.gcma_ok(&["apply", "--from", "root", "--all"]);
     assert!(o.contains("Nothing to do"), "{o}");
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
-    assert!(r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty());
+    assert_eq!(r.backup_count(), 0);
 }
