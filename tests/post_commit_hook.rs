@@ -256,7 +256,8 @@ fn nothing_is_rewritten_while_a_rebase_or_merge_runs() {
     let o = r
         .cmd("git")
         .args(["rebase", "-i", "-q", "--root"])
-        .env("GIT_SEQUENCE_EDITOR", "sed -i 's/^pick/edit/'")
+        // `-i.bak` (no space) is the in-place form both GNU and BSD sed accept.
+        .env("GIT_SEQUENCE_EDITOR", "sed -i.bak 's/^pick/edit/'")
         .output()
         .unwrap();
     assert!(o.status.success(), "{}", stderr(&o));
