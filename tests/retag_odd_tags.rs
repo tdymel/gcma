@@ -9,39 +9,15 @@ use std::os::unix::ffi::OsStrExt;
 
 use common::*;
 
-/// Runs `scenario` on a fresh repository for each backend.
-fn on_both_backends(scenario: impl Fn(Repo)) {
-    for seed in [0, 1] {
-        scenario(Repo::for_seed(seed));
-    }
-}
-
-/// Three commits by the old identity, which the config rewrites; every one of them is replaced.
-fn three_to_rewrite(r: &Repo) -> Vec<String> {
-    let old = r.linear(3, T0);
-    r.config(IDENTITY_CFG);
-    old
-}
-
-/// The id of the commit a ref finally points at.
-fn peeled(r: &Repo, name: &str) -> String {
-    r.git(&["rev-parse", &format!("{name}^{{commit}}")])
-}
-
-/// The id of what a tag ref holds (a tag object for an annotated tag).
-fn held(r: &Repo, name: &str) -> String {
-    r.git(&["rev-parse", &format!("refs/tags/{name}")])
-}
-
 #[test]
 fn a_tag_of_a_tag_stays_and_is_warned_about_while_the_inner_tag_moves() {
     on_both_backends(|r| {
-        three_to_rewrite(&r);
+        r.three_to_rewrite();
         r.git(&["tag", "-a", "-m", "y", "old", "HEAD~2"]);
         r.git(&["tag", "-a", "-m", "nest", "nest", "refs/tags/old"]);
         let (outer, inner, tags) = (
-            held(&r, "nest"),
-            held(&r, "old"),
+            r.tag_value("nest"),
+            r.tag_value("old"),
             r.git(&["for-each-ref", "refs/tags"]),
         );
         let plan = r.gcma_ok(&["plan", "--retag", "--from", "root"]);
@@ -56,9 +32,9 @@ fn a_tag_of_a_tag_stays_and_is_warned_about_while_the_inner_tag_moves() {
         let o = r.gcma(&["apply", "--retag", "--from", "root"]);
         assert!(o.status.success(), "{}{}", stdout(&o), stderr(&o));
         assert!(stderr(&o).contains("nest"), "{}", stderr(&o));
-        assert_eq!(held(&r, "nest"), outer, "the tag of the tag stays");
-        assert_ne!(held(&r, "old"), inner, "the inner tag is recreated");
-        assert_eq!(peeled(&r, "old"), r.log()[0].oid);
+        assert_eq!(r.tag_value("nest"), outer, "the tag of the tag stays");
+        assert_ne!(r.tag_value("old"), inner, "the inner tag is recreated");
+        assert_eq!(r.peeled("old"), r.log()[0].oid);
         r.fsck();
         r.gcma_ok(&["restore", &r.backup_id()]);
         assert_eq!(r.git(&["for-each-ref", "refs/tags"]), tags);
@@ -86,23 +62,23 @@ fn tag_without_tagger(r: &Repo, name: &str, commit: &str) -> String {
 #[test]
 fn a_legacy_annotated_tag_without_a_tagger_follows_its_commit() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         let before = tag_without_tagger(&r, "legacy", &old[1]);
         let o = r.gcma(&["apply", "--retag", "--from", "root"]);
         assert!(o.status.success(), "{}{}", stdout(&o), stderr(&o));
-        assert_ne!(held(&r, "legacy"), before);
-        assert_eq!(peeled(&r, "legacy"), r.log()[1].oid);
+        assert_ne!(r.tag_value("legacy"), before);
+        assert_eq!(r.peeled("legacy"), r.log()[1].oid);
         let body = r.git(&["cat-file", "tag", "refs/tags/legacy"]);
         assert!(!body.contains("tagger"), "{body}");
         r.gcma_ok(&["restore", &r.backup_id()]);
-        assert_eq!(held(&r, "legacy"), before);
+        assert_eq!(r.tag_value("legacy"), before);
     });
 }
 
 #[test]
 fn a_tag_whose_name_is_not_utf8_stays_and_is_warned_about() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         // Some file systems (APFS on macOS) refuse names that are not valid UTF-8 (EILSEQ).
         let probe = r.path().join(OsStr::from_bytes(b".git/caf\xe9-probe"));
         match std::fs::write(&probe, "") {
@@ -139,7 +115,7 @@ fn a_tag_whose_name_is_not_utf8_stays_and_is_warned_about() {
         let full = OsStr::from_bytes(b"refs/tags/caf\xe9");
         let kept = r.cmd("git").arg("rev-parse").arg(full).output().unwrap();
         assert_eq!(String::from_utf8_lossy(&kept.stdout).trim(), old[1]);
-        assert_eq!(held(&r, "v1"), r.log()[2].oid, "the others still move");
+        assert_eq!(r.tag_value("v1"), r.log()[2].oid, "the others still move");
         r.fsck();
     });
 }
