@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::classify::{classify, short_name};
-use crate::application::ports::{Repository, TagKind, TagRef};
+use crate::application::ports::{CommitStore, RefStore, TagKind, TagRef, TagStore};
 use crate::domain::error::{Error, Result};
 use crate::domain::history::tag::retarget;
 
@@ -31,8 +31,8 @@ pub struct Moves {
 /// The tag moves for a rewrite that turned the commits `renamed` (old id to new id; only commits
 /// whose id changed) into new ones and dropped `dropped`. Annotated tags get a fresh tag object, an
 /// unreferenced object until the ref transaction; each move is verified here.
-pub fn prepare(
-    repo: &dyn Repository,
+pub fn prepare<R: TagStore + RefStore + CommitStore + ?Sized>(
+    repo: &R,
     renamed: &HashMap<String, String>,
     dropped: &HashSet<String>,
 ) -> Result<Moves> {
@@ -49,8 +49,8 @@ pub fn prepare(
     })
 }
 
-fn make_move(
-    repo: &dyn Repository,
+fn make_move<R: TagStore + RefStore + CommitStore + ?Sized>(
+    repo: &R,
     tag: &TagRef,
     renamed: &HashMap<String, String>,
 ) -> Result<TagMove> {

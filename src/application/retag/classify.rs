@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use crate::application::ports::{Repository, TagKind, TagRef};
+use crate::application::ports::{TagKind, TagRef, TagStore};
 use crate::domain::error::Result;
 use crate::domain::history::tag::is_signed;
 
@@ -96,8 +96,8 @@ pub fn partition(
 }
 
 /// Reads the repository's tags and sorts those that point at the given commits.
-pub fn classify(
-    repo: &dyn Repository,
+pub fn classify<R: TagStore + ?Sized>(
+    repo: &R,
     rewritten: &HashSet<String>,
     dropped: &HashSet<String>,
 ) -> Result<Classified> {
