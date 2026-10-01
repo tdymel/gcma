@@ -2,7 +2,7 @@
 
 use crate::application::planning::{PlanOptions, RangeSpec, build_plan};
 use crate::application::ports::{RemoteScope, Repository};
-use crate::application::rewrite::{ApplyOptions, apply};
+use crate::application::rewrite::{ApplyOptions, SECRETS_NOTE, apply};
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::is_zero_oid;
 use crate::domain::settings::{Config, HookMode};
@@ -15,13 +15,16 @@ pub struct PushedRef {
     pub remote_sha: String,
 }
 
-/// `Ok(())` lets the push proceed; an error aborts it. `now` is the current unix time.
+/// `Ok(())` lets the push proceed; an error aborts it. `now` is the current unix time. What a
+/// rewrite has to tell besides (its warnings, the secrets note) is added to `warnings`, whether the
+/// push proceeds or not.
 pub fn run_pre_push(
     repo: &dyn Repository,
     cfg: &Config,
     remote: &str,
     pushed: &[PushedRef],
     now: i64,
+    warnings: &mut Vec<String>,
 ) -> Result<()> {
     let remotes = repo.remotes()?;
     let Some(branch_ref) = repo.current_branch_ref()? else {
@@ -52,6 +55,10 @@ pub fn run_pre_push(
         }
         if rewrite {
             let report = apply(repo, &built.plan, &ApplyOptions::new(now))?;
+            warnings.extend(report.warnings);
+            if report.paths_removed {
+                warnings.push(SECRETS_NOTE.to_string());
+            }
             if !report.noop {
                 return Err(Error::Nonconforming(format!(
                     "gcma rewrote {} unpushed commit(s) of {branch_ref} to follow the rules; run `git push` again",

@@ -46,7 +46,19 @@ fn pre_push(s: &Session, args: &[String]) -> Result<()> {
     let mut stdin = String::new();
     std::io::stdin().read_to_string(&mut stdin)?;
     let remote = args.first().map(String::as_str).unwrap_or("");
-    push_guard::run_pre_push(&repo, &cfg, remote, &parse_pushed_refs(&stdin), now())
+    let mut warnings = Vec::new();
+    let verdict = push_guard::run_pre_push(
+        &repo,
+        &cfg,
+        remote,
+        &parse_pushed_refs(&stdin),
+        now(),
+        &mut warnings,
+    );
+    for line in warnings {
+        eprintln!("gcma: pre-push: {line}");
+    }
+    verdict
 }
 
 /// Set (non-empty) to have the post-commit hook say what it did.

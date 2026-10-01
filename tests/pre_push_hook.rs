@@ -335,3 +335,20 @@ fn a_settled_history_reschedules_only_its_new_commits() {
     assert_scheduled(&after);
     assert!(after[10].ct >= settled.last().unwrap().ct);
 }
+
+#[test]
+fn rewrite_mode_prints_the_warnings_of_the_rewrite() {
+    let (r, _remote) = hook_repo(&format!("{SECRETS_CFG}hook:\n  mode: rewrite\n"));
+    r.commit_files(&[(".gitignore", "target\n"), ("a.txt", "a\n")], "init", T0);
+    r.commit_files(&[("secrets/k", "k\n"), ("b.txt", "b\n")], "add b", T0 + 100);
+    r.write(".gitignore", "target\nmine\n"); // unstaged local edit
+    let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
+    assert!(!o.status.success());
+    let err = stderr(&o);
+    assert!(err.contains("run `git push` again"), "{err}");
+    assert!(
+        err.contains("gcma: pre-push: the working copy's .gitignore has local changes"),
+        "{err}"
+    );
+    assert!(err.contains("rotate"), "the secrets note is printed: {err}");
+}
