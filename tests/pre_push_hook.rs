@@ -1,7 +1,7 @@
 //! The pre-push hook: what it blocks (verify mode), rewrites (rewrite mode) and leaves alone, and
-//! how it behaves next to path rules, a broken config, a custom hooks path and the different ways
-//! a push can be spelled. Also the case the hook meets on every push: a settled history that gains
-//! new commits, of which only the new ones are rescheduled.
+//! how it behaves next to path rules, a broken or missing config and the different ways a push can
+//! be spelled. Also the case the hook meets on every push: a settled history that gains new
+//! commits, of which only the new ones are rescheduled. Installing it is in `hook_install.rs`.
 
 mod common;
 
@@ -92,16 +92,6 @@ fn deletes_and_other_branches_are_not_judged_but_the_checked_out_one_is() {
         "the hook must judge the checked-out branch"
     );
     assert!(stderr(&o).contains("gcma apply"));
-
-    // Install refuses to clobber a foreign hook, uninstall refuses to remove one.
-    r.gcma_ok(&["hook", "uninstall"]);
-    let hook = r.path().join(".git/hooks/pre-push");
-    std::fs::write(&hook, "#!/bin/sh\nexit 0\n").unwrap();
-    assert_eq!(Repo::code(&r.gcma(&["hook", "install"])), 3);
-    assert_eq!(Repo::code(&r.gcma(&["hook", "uninstall"])), 3);
-    r.gcma_ok(&["hook", "install", "--force"]);
-    r.gcma_ok(&["hook", "uninstall"]);
-    assert!(!hook.exists());
 }
 
 #[test]
@@ -170,20 +160,6 @@ fn rewrite_mode_fixes_a_push_spelled_as_head() {
     assert_eq!(r.log().last().unwrap().an, "Jane Doe");
     let o = r.git_out(&["push", "-q", "origin", "HEAD"]);
     assert!(o.status.success(), "{}", stderr(&o));
-}
-
-#[test]
-fn uninstalling_without_a_hook_says_so_and_succeeds() {
-    let r = Repo::new();
-    r.linear(1, T0);
-    let out = r.gcma_ok(&["hook", "uninstall"]);
-    assert!(out.contains("no hook installed"), "{out}");
-    r.gcma_ok(&["hook", "install"]);
-    assert!(r.gcma_ok(&["hook", "uninstall"]).contains("hook removed"));
-    assert!(
-        r.gcma_ok(&["hook", "uninstall"])
-            .contains("no hook installed")
-    );
 }
 
 // ---------- the hook next to path rules, config errors and other push shapes ----------
@@ -289,25 +265,6 @@ fn without_a_config_file_every_push_passes() {
     let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
     assert!(o.status.success(), "{}", stderr(&o));
     assert_eq!(remote_tip(&remote, "main"), r.git(&["rev-parse", "HEAD"]));
-}
-
-#[test]
-fn the_hook_honours_a_custom_hooks_path() {
-    let r = Repo::new();
-    r.bare_remote();
-    r.config(IDENTITY_CFG);
-    let hooks = r.path().join(".githooks");
-    std::fs::create_dir_all(&hooks).unwrap();
-    r.git(&["config", "core.hooksPath", ".githooks"]);
-    r.gcma_ok(&["hook", "install"]);
-    r.commit_at("bad.txt", "bad", T0);
-    let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
-    assert!(
-        !o.status.success(),
-        "the hook must run from core.hooksPath ({}): {}",
-        hooks.display(),
-        stderr(&o)
-    );
 }
 
 #[test]

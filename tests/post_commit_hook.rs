@@ -1,6 +1,6 @@
 //! The post-commit hook: after every commit the times of all unpushed commits are respread over
 //! the schedule (`hook.mode: rewrite`); pushed commits are never touched, and the commit itself
-//! never fails.
+//! never fails. Installing it is in `hook_install.rs`.
 
 mod common;
 
@@ -317,45 +317,4 @@ fn path_rules_keep_the_working_copy_and_index_in_step() {
     assert!(r.path().join("secrets/key.pem").exists());
     assert_scheduled(&r.log());
     assert!(!r.git(&["status", "--porcelain"]).contains("src.txt"));
-}
-
-#[test]
-fn install_and_uninstall_manage_both_shims_and_respect_foreign_hooks() {
-    let r = Repo::new();
-    let post = r.path().join(".git/hooks/post-commit");
-    let pre = r.path().join(".git/hooks/pre-push");
-
-    r.gcma_ok(&["hook", "install"]);
-    assert!(pre.exists() && !post.exists(), "post-commit is opt-in");
-    r.gcma_ok(&["hook", "install", "--post-commit"]);
-    assert!(pre.exists() && post.exists());
-    assert!(
-        std::fs::read_to_string(&post)
-            .unwrap()
-            .contains("gcma-managed-hook")
-    );
-    assert!(r.gcma_ok(&["hook", "uninstall"]).contains("hook removed"));
-    assert!(!pre.exists() && !post.exists());
-    assert!(
-        r.gcma_ok(&["hook", "uninstall"])
-            .contains("no hook installed")
-    );
-
-    // A foreign post-commit hook: install refuses (and writes nothing), --force replaces it.
-    std::fs::write(&post, "#!/bin/sh\nexit 0\n").unwrap();
-    assert_eq!(
-        Repo::code(&r.gcma(&["hook", "install", "--post-commit"])),
-        3
-    );
-    assert!(!pre.exists(), "nothing is written when one shim is refused");
-    assert_eq!(Repo::code(&r.gcma(&["hook", "uninstall"])), 3);
-    r.gcma_ok(&["hook", "install"]); // the pre-push alone is fine
-    r.gcma_ok(&["hook", "uninstall"]); // and leaves the foreign hook alone
-    assert!(post.exists() && !pre.exists());
-    r.gcma_ok(&["hook", "install", "--post-commit", "--force"]);
-    assert!(
-        std::fs::read_to_string(&post)
-            .unwrap()
-            .contains("gcma-managed-hook")
-    );
 }
