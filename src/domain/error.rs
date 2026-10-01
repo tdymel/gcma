@@ -27,4 +27,11 @@ pub enum Error {
     Io(#[from] std::io::Error),
 }
 
+impl Error {
+    /// A check of what a rewrite wrote failed, before any ref moved.
+    pub fn verification(what: impl std::fmt::Display) -> Error {
+        Error::Internal(format!("verification failed, no ref was changed: {what}"))
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;

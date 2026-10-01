@@ -59,12 +59,7 @@ fn make_move<R: TagStore + RefStore + CommitStore + ?Sized>(
         .as_ref()
         .ok_or_else(|| Error::Internal(format!("{} does not point at a commit", tag.name)))?;
     let new_commit = &renamed[old_commit];
-    let fail = |what: &str| {
-        Error::Internal(format!(
-            "verification failed, no ref was changed: tag {} {what}",
-            short_name(&tag.name)
-        ))
-    };
+    let fail = |what: &str| Error::verification(format!("tag {} {what}", short_name(&tag.name)));
     match tag.kind {
         TagKind::Lightweight => {
             if !repo.objects_exist(std::slice::from_ref(new_commit))? {
