@@ -1,6 +1,6 @@
 //! The post-commit hook: after every commit the times of all unpushed commits are respread over
 //! the schedule (`hook.mode: rewrite`); pushed commits are never touched, and the commit itself
-//! never fails.
+//! never fails. Installing it is in `hook_install.rs`.
 
 mod common;
 
@@ -30,37 +30,28 @@ fn commit_ok(r: &Repo, name: &str) {
     assert_eq!(stderr(&o), "", "the hook is quiet");
 }
 
-/// How many backups `apply`-like rewrites have made on this repository.
-fn backups(r: &Repo) -> usize {
-    r.git(&["for-each-ref", "--format=%(refname)", "refs/gcma/backup"])
-        .lines()
-        .filter(|l| l.ends_with("/old"))
-        .count()
-}
-
 fn oids(r: &Repo) -> Vec<String> {
     r.log().into_iter().map(|x| x.oid).collect()
 }
 
 #[test]
 fn every_commit_respreads_all_unpushed_commits_within_the_hours() {
-    for backend in ["git", "gix"] {
-        if backend == "gix" && !cfg!(feature = "gix") {
-            continue;
-        }
+    // The hook runs inside `git commit`, which does not pass a `GCMA_BACKEND` on: the config
+    // chooses the backend.
+    for backend in BACKENDS {
         let r = hooked(&format!("backend: {backend}\n"));
         commit_ok(&r, "a.txt");
         let rows = r.log();
         assert_eq!(rows.len(), 1);
         assert_scheduled(&rows);
-        assert_eq!(backups(&r), 1);
+        assert_eq!(r.backup_count(), 1);
 
         commit_ok(&r, "b.txt");
         commit_ok(&r, "c.txt");
         let rows = r.log();
         assert_eq!(rows.len(), 3);
         assert_scheduled(&rows);
-        assert_eq!(backups(&r), 3, "one backup per rewrite, no recursion");
+        assert_eq!(r.backup_count(), 3, "one backup per rewrite, no recursion");
         assert_eq!(r.git(&["status", "--porcelain"]), "?? gcma.yml");
         r.fsck();
     }
@@ -101,7 +92,7 @@ fn pushed_commits_are_never_touched_and_only_new_ones_are_retimed() {
     commit_ok(&r, "b.txt");
     r.git(&["push", "-q", "-u", "origin", "main"]);
     let pushed = oids(&r);
-    let backups_before = backups(&r);
+    let backups_before = r.backup_count();
 
     commit_ok(&r, "c.txt");
     commit_ok(&r, "d.txt");
@@ -114,7 +105,7 @@ fn pushed_commits_are_never_touched_and_only_new_ones_are_retimed() {
         "new commits come after the pushed ones"
     );
     assert_eq!(r.git(&["rev-parse", "origin/main"]), pushed[1]);
-    assert_eq!(backups(&r), backups_before + 2);
+    assert_eq!(r.backup_count(), backups_before + 2);
     r.git(&["push", "-q"]); // the pre-push hook finds nothing to fix
 }
 
@@ -135,12 +126,12 @@ fn running_the_hook_again_changes_nothing() {
     let r = hooked("");
     commit_ok(&r, "a.txt");
     commit_ok(&r, "b.txt");
-    let (before, n) = (r.refs(), backups(&r));
+    let (before, n) = (r.refs(), r.backup_count());
     let o = r.gcma(&["hook", "run", "post-commit"]);
     assert!(o.status.success(), "{}", stderr(&o));
     assert_eq!((stdout(&o), stderr(&o)), (String::new(), String::new()));
     assert_eq!(r.refs(), before);
-    assert_eq!(backups(&r), n);
+    assert_eq!(r.backup_count(), n);
 }
 
 #[test]
@@ -188,7 +179,7 @@ fn verify_mode_does_nothing() {
     let first = r.commit_at("a.txt", "a", T0);
     assert_eq!(r.git(&["rev-parse", "HEAD"]), first);
     assert_eq!(r.log()[0].ct, T0);
-    assert_eq!(backups(&r), 0);
+    assert_eq!(r.backup_count(), 0);
 }
 
 #[test]
@@ -198,7 +189,7 @@ fn without_a_schedule_there_is_nothing_to_distribute() {
     r.config(&format!("{IDENTITY_CFG}{REWRITE}"));
     r.gcma_ok(&["hook", "install", "--post-commit"]);
     commit_ok(&r, "a.txt");
-    assert_eq!(backups(&r), 0);
+    assert_eq!(r.backup_count(), 0);
     assert_eq!(
         r.log()[0].an,
         "Old Me",
@@ -213,7 +204,7 @@ fn without_an_upstream_or_a_remote_the_hook_skips() {
     r.gcma_ok(&["hook", "install", "--post-commit"]);
     commit_ok(&r, "a.txt");
     commit_ok(&r, "b.txt");
-    assert_eq!(backups(&r), 0);
+    assert_eq!(r.backup_count(), 0);
     assert!(
         r.log().iter().all(|x| x.ct > 1_700_000_000),
         "real commit times"
@@ -228,7 +219,7 @@ fn a_window_without_capacity_is_skipped_silently() {
     let r = hooked("");
     r.config("version: 1\nfrom: 2026-01-06\nto: 2026-01-09\nschedule:\n  days: [mon]\n  hours: \"09:00-10:00\"\nhook: {mode: rewrite}\n");
     commit_ok(&r, "a.txt");
-    assert_eq!(backups(&r), 0);
+    assert_eq!(r.backup_count(), 0);
 }
 
 #[test]
@@ -237,9 +228,9 @@ fn a_detached_head_is_left_alone() {
     commit_ok(&r, "a.txt");
     let main = r.git(&["rev-parse", "main"]);
     r.git(&["checkout", "-q", "--detach"]);
-    let before = backups(&r);
+    let before = r.backup_count();
     commit_ok(&r, "b.txt");
-    assert_eq!(backups(&r), before);
+    assert_eq!(r.backup_count(), before);
     assert_eq!(r.git(&["rev-parse", "main"]), main);
 }
 
@@ -250,7 +241,7 @@ fn nothing_is_rewritten_while_a_rebase_or_merge_runs() {
     commit_ok(&r, "b.txt");
     r.git(&["checkout", "-q", "-b", "side", "HEAD~1"]);
     commit_ok(&r, "s.txt");
-    let before = backups(&r);
+    let before = r.backup_count();
 
     // `git rebase -i` stops at the commit; amending it runs post-commit in the middle of the rebase.
     let o = r
@@ -264,7 +255,11 @@ fn nothing_is_rewritten_while_a_rebase_or_merge_runs() {
     let o = r.git_out(&["commit", "--amend", "-q", "--no-edit", "--allow-empty"]);
     assert!(o.status.success());
     assert_eq!(stderr(&o), "");
-    assert_eq!(backups(&r), before, "no rewrite under a running rebase");
+    assert_eq!(
+        r.backup_count(),
+        before,
+        "no rewrite under a running rebase"
+    );
     let o = r.gcma(&["hook", "run", "post-commit"]);
     assert_eq!((Repo::code(&o), stderr(&o)), (0, String::new()));
     r.git(&["rebase", "--abort"]);
@@ -323,45 +318,4 @@ fn path_rules_keep_the_working_copy_and_index_in_step() {
     assert!(r.path().join("secrets/key.pem").exists());
     assert_scheduled(&r.log());
     assert!(!r.git(&["status", "--porcelain"]).contains("src.txt"));
-}
-
-#[test]
-fn install_and_uninstall_manage_both_shims_and_respect_foreign_hooks() {
-    let r = Repo::new();
-    let post = r.path().join(".git/hooks/post-commit");
-    let pre = r.path().join(".git/hooks/pre-push");
-
-    r.gcma_ok(&["hook", "install"]);
-    assert!(pre.exists() && !post.exists(), "post-commit is opt-in");
-    r.gcma_ok(&["hook", "install", "--post-commit"]);
-    assert!(pre.exists() && post.exists());
-    assert!(
-        std::fs::read_to_string(&post)
-            .unwrap()
-            .contains("gcma-managed-hook")
-    );
-    assert!(r.gcma_ok(&["hook", "uninstall"]).contains("hook removed"));
-    assert!(!pre.exists() && !post.exists());
-    assert!(
-        r.gcma_ok(&["hook", "uninstall"])
-            .contains("no hook installed")
-    );
-
-    // A foreign post-commit hook: install refuses (and writes nothing), --force replaces it.
-    std::fs::write(&post, "#!/bin/sh\nexit 0\n").unwrap();
-    assert_eq!(
-        Repo::code(&r.gcma(&["hook", "install", "--post-commit"])),
-        3
-    );
-    assert!(!pre.exists(), "nothing is written when one shim is refused");
-    assert_eq!(Repo::code(&r.gcma(&["hook", "uninstall"])), 3);
-    r.gcma_ok(&["hook", "install"]); // the pre-push alone is fine
-    r.gcma_ok(&["hook", "uninstall"]); // and leaves the foreign hook alone
-    assert!(post.exists() && !pre.exists());
-    r.gcma_ok(&["hook", "install", "--post-commit", "--force"]);
-    assert!(
-        std::fs::read_to_string(&post)
-            .unwrap()
-            .contains("gcma-managed-hook")
-    );
 }

@@ -84,27 +84,31 @@ fn domain_is_layered_internally() {
     assert_passes!(rule);
 }
 
+/// The layers inside `src/application`: (layer, glob). Like `PLACES`, one list feeds both the
+/// rules and the check that no application file escapes them.
+const APPLICATION_PLACES: &[(&str, &str)] = &[
+    ("ports", "src/application/ports.rs"),
+    ("preconditions", "src/application/preconditions.rs"),
+    ("pathrules", "src/application/pathrules.rs"),
+    ("retag", "src/application/retag/**"),
+    ("planning", "src/application/planning/**"),
+    ("rewrite", "src/application/rewrite/**"),
+    ("llm", "src/application/llm/**"),
+    ("push_guard", "src/application/push_guard.rs"),
+    ("commit_hook", "src/application/commit_hook.rs"),
+];
+
 #[test]
 fn application_is_layered_internally() {
-    // Ports are the base; the use cases build on them and must not reach into each other
-    // except planning (shared by the rewrite and the push guard).
-    let rule = project_layers()
-        .layer("ports")
-        .defined_by("src/application/ports.rs")
-        .layer("preconditions")
-        .defined_by("src/application/preconditions.rs")
-        .layer("pathrules")
-        .defined_by("src/application/pathrules.rs")
-        .layer("retag")
-        .defined_by("src/application/retag/**")
-        .layer("planning")
-        .defined_by("src/application/planning/**")
-        .layer("rewrite")
-        .defined_by("src/application/rewrite/**")
-        .layer("llm")
-        .defined_by("src/application/llm/**")
-        .layer("push_guard")
-        .defined_by("src/application/push_guard.rs")
+    // Ports are the base. planning and rewrite both build on retag (the tag moves), which sees
+    // only the ports; the rewrite does not reach into planning. The two hook entry points
+    // (push_guard, commit_hook) drive planning and the rewrite. llm stands alone.
+    let layers = APPLICATION_PLACES
+        .iter()
+        .fold(project_layers(), |layers, (layer, glob)| {
+            layers.layer(*layer).defined_by(*glob)
+        });
+    let rule = layers
         .where_layer("ports")
         .may_only_depend_on_layers(&[])
         .where_layer("pathrules")
@@ -116,17 +120,19 @@ fn application_is_layered_internally() {
         .where_layer("planning")
         .may_only_depend_on_layers(&["preconditions", "pathrules", "retag", "ports"])
         .where_layer("rewrite")
-        .may_only_depend_on_layers(&["preconditions", "pathrules", "planning", "retag", "ports"])
+        .may_only_depend_on_layers(&["preconditions", "pathrules", "retag", "ports"])
         .where_layer("llm")
         .may_only_depend_on_layers(&["ports"])
         .where_layer("push_guard")
+        .may_only_depend_on_layers(&["planning", "rewrite", "ports"])
+        .where_layer("commit_hook")
         .may_only_depend_on_layers(&["planning", "rewrite", "ports"]);
     assert_passes!(rule);
 }
 
-/// Whether `path` is covered by a glob of `PLACES`: a `dir/**` prefix or an exact file.
-fn is_placed(path: &str) -> bool {
-    PLACES
+/// Whether `path` is covered by a glob of `places`: a `dir/**` prefix or an exact file.
+fn is_placed(places: &[(&str, &str)], path: &str) -> bool {
+    places
         .iter()
         .any(|(_, glob)| match glob.strip_suffix("**") {
             Some(dir) => path.starts_with(dir),
@@ -135,12 +141,27 @@ fn is_placed(path: &str) -> bool {
 }
 
 #[test]
+fn every_application_file_is_assigned_to_a_layer() {
+    // mod.rs only declares the modules and is itself in no layer.
+    let rule = project_files()
+        .in_path("src/application/**")
+        .should()
+        .adhere_to(
+            |file: &FileInfo| {
+                file.path == "src/application/mod.rs" || is_placed(APPLICATION_PLACES, &file.path)
+            },
+            "be assigned to a layer in APPLICATION_PLACES",
+        );
+    assert_passes!(rule);
+}
+
+#[test]
 fn every_adapter_file_is_assigned_to_a_layer() {
     let rule = project_files()
         .in_path("src/adapters/**")
         .should()
         .adhere_to(
-            |file: &FileInfo| is_placed(&file.path),
+            |file: &FileInfo| is_placed(PLACES, &file.path),
             "be assigned to a layer in PLACES",
         );
     assert_passes!(rule);

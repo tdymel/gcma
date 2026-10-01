@@ -1,6 +1,6 @@
 //! The basics of a rewrite: identities change and everything else stays, merges keep their parent
-//! order and trees, commits that already conform keep their ids, a second run is a no-op, and
-//! `plan --check` reports what is left to do.
+//! order and trees, unrelated roots all stay roots, commits that already conform keep their ids, a
+//! second run is a no-op, and `plan --check` reports what is left to do.
 
 mod common;
 
@@ -153,5 +153,43 @@ fn all_flag_with_nothing_to_change_is_a_clean_noop() {
     let o = r.gcma_ok(&["apply", "--from", "root", "--all"]);
     assert!(o.contains("Nothing to do"), "{o}");
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
-    assert!(r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty());
+    assert_eq!(r.backup_count(), 0);
+}
+
+#[test]
+fn unrelated_roots_are_all_rewritten_and_stay_roots() {
+    let r = Repo::new();
+    r.commit_at("a.txt", "first root", T0);
+    r.commit_at("b.txt", "after the first root", T0 + 1000);
+    r.git(&["checkout", "-q", "--orphan", "other"]);
+    r.git(&["rm", "-rfq", "."]);
+    r.commit_at("o.txt", "second root", T0 + 2000);
+    r.git(&["checkout", "-q", "main"]);
+    r.git(&[
+        "merge",
+        "-q",
+        "--allow-unrelated-histories",
+        "-m",
+        "join",
+        "other",
+    ]);
+    r.commit_at("z.txt", "after the join", T0 + 3000);
+    let roots = |rev: &str| r.git(&["rev-list", "--max-parents=0", rev]).lines().count();
+    assert_eq!(roots("HEAD"), 2);
+    r.config(&berlin_cfg(IDENTITY_RULE));
+    let old = r.log();
+    r.gcma_ok(&["apply", "--from", "root"]);
+    let new = r.log();
+    assert_same_content(&old, &new);
+    assert_scheduled(&new);
+    assert_eq!(roots("HEAD"), 2, "both roots survive");
+    assert!(new.iter().all(|x| x.an == "Jane Doe"));
+    r.fsck();
+    assert!(
+        r.gcma_ok(&["apply", "--from", "root"])
+            .contains("Nothing to do")
+    );
+    let id = r.backup_id();
+    r.gcma_ok(&["restore", &id]);
+    assert_same_content(&old, &r.log());
 }

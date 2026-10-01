@@ -332,7 +332,7 @@ fn tampered_plan_is_rejected_before_anything_is_written() {
     let o = r.gcma(&["apply", "--plan", path.to_str().unwrap()]);
     assert!(!o.status.success());
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
-    assert!(r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty());
+    assert_eq!(r.backup_count(), 0);
 }
 
 #[test]

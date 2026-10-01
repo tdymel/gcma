@@ -1,14 +1,14 @@
-//! The pre-push hook: what it blocks, rewrites and leaves alone, how it installs, and how it
-//! behaves next to path rules, a broken config, a custom hooks path and the different ways a push
-//! can be spelled. Also the case the hook meets on every push: a settled history that gains new
-//! commits, of which only the new ones are rescheduled.
+//! The pre-push hook: what it blocks (verify mode), rewrites (rewrite mode) and leaves alone, and
+//! how it behaves next to path rules, a broken or missing config and the different ways a push can
+//! be spelled. Also the case the hook meets on every push: a settled history that gains new
+//! commits, of which only the new ones are rescheduled. Installing it is in `hook_install.rs`.
 
 mod common;
 
 use common::*;
 
 #[test]
-fn hook_verify_blocks_nonconforming_pushes_and_allows_conforming_ones() {
+fn verify_mode_blocks_nonconforming_pushes_until_they_are_fixed() {
     let r = Repo::new();
     r.bare_remote();
     r.config(IDENTITY_CFG);
@@ -42,7 +42,7 @@ fn hook_verify_blocks_nonconforming_pushes_and_allows_conforming_ones() {
 }
 
 #[test]
-fn hook_rewrite_mode_rewrites_then_aborts_and_the_retry_succeeds() {
+fn rewrite_mode_rewrites_aborts_and_the_retry_succeeds() {
     let r = Repo::new();
     let remote = r.bare_remote();
     r.config(&format!("{IDENTITY_CFG}hook:\n  mode: rewrite\n"));
@@ -69,7 +69,7 @@ fn hook_rewrite_mode_rewrites_then_aborts_and_the_retry_succeeds() {
 }
 
 #[test]
-fn hook_ignores_deletes_and_other_branches_and_install_is_safe() {
+fn deletes_and_other_branches_are_not_judged_but_the_checked_out_one_is() {
     let r = Repo::new();
     r.bare_remote();
     r.config(IDENTITY_CFG);
@@ -92,20 +92,10 @@ fn hook_ignores_deletes_and_other_branches_and_install_is_safe() {
         "the hook must judge the checked-out branch"
     );
     assert!(stderr(&o).contains("gcma apply"));
-
-    // Install refuses to clobber a foreign hook, uninstall refuses to remove one.
-    r.gcma_ok(&["hook", "uninstall"]);
-    let hook = r.path().join(".git/hooks/pre-push");
-    std::fs::write(&hook, "#!/bin/sh\nexit 0\n").unwrap();
-    assert_eq!(Repo::code(&r.gcma(&["hook", "install"])), 3);
-    assert_eq!(Repo::code(&r.gcma(&["hook", "uninstall"])), 3);
-    r.gcma_ok(&["hook", "install", "--force"]);
-    r.gcma_ok(&["hook", "uninstall"]);
-    assert!(!hook.exists());
 }
 
 #[test]
-fn hook_ignores_pushes_of_non_tip_commits_and_judges_the_branch() {
+fn a_conforming_ancestor_pushed_as_a_revision_passes() {
     let r = Repo::new();
     r.bare_remote();
     r.config(IDENTITY_CFG);
@@ -113,8 +103,8 @@ fn hook_ignores_pushes_of_non_tip_commits_and_judges_the_branch() {
     r.commit_as("b.txt", "b", 1_600_100_000, "Jane Doe", "jane@work.com");
     r.commit_at("bad.txt", "bad", 1_600_200_000); // nonconforming tip
     r.gcma_ok(&["hook", "install"]);
-    // Pushing HEAD~1 to main only sends conforming commits, but the hook only judges when the
-    // pushed local ref is the checked-out branch, so `HEAD~1:main` is not judged at all.
+    // Pushing HEAD~1 to main only sends conforming commits, so it passes (the opposite case is
+    // `a_nonconforming_ancestor_pushed_as_a_revision_is_blocked`).
     let o = r.git_out(&["push", "-q", "origin", "HEAD~1:refs/heads/main"]);
     assert!(o.status.success(), "{}", stderr(&o));
     // Pushing the branch itself includes the bad tip and is blocked.
@@ -123,7 +113,7 @@ fn hook_ignores_pushes_of_non_tip_commits_and_judges_the_branch() {
 }
 
 #[test]
-fn hook_judges_pushes_spelled_as_head_or_sha() {
+fn pushes_spelled_as_head_or_a_sha_are_judged() {
     let r = Repo::new();
     r.bare_remote();
     r.config(IDENTITY_CFG);
@@ -153,7 +143,7 @@ fn hook_judges_pushes_spelled_as_head_or_sha() {
 }
 
 #[test]
-fn hook_rewrite_mode_fixes_head_pushes() {
+fn rewrite_mode_fixes_a_push_spelled_as_head() {
     let r = Repo::new();
     r.bare_remote();
     r.config(&format!("{IDENTITY_CFG}hook: {{mode: rewrite}}\n"));
@@ -172,20 +162,6 @@ fn hook_rewrite_mode_fixes_head_pushes() {
     assert!(o.status.success(), "{}", stderr(&o));
 }
 
-#[test]
-fn uninstalling_without_a_hook_says_so_and_succeeds() {
-    let r = Repo::new();
-    r.linear(1, T0);
-    let out = r.gcma_ok(&["hook", "uninstall"]);
-    assert!(out.contains("no hook installed"), "{out}");
-    r.gcma_ok(&["hook", "install"]);
-    assert!(r.gcma_ok(&["hook", "uninstall"]).contains("hook removed"));
-    assert!(
-        r.gcma_ok(&["hook", "uninstall"])
-            .contains("no hook installed")
-    );
-}
-
 // ---------- the hook next to path rules, config errors and other push shapes ----------
 
 fn hook_repo(cfg: &str) -> (Repo, std::path::PathBuf) {
@@ -197,7 +173,7 @@ fn hook_repo(cfg: &str) -> (Repo, std::path::PathBuf) {
 }
 
 #[test]
-fn the_hook_in_verify_mode_blocks_secrets_until_the_history_is_cleaned() {
+fn verify_mode_blocks_secrets_until_the_history_is_cleaned() {
     let (r, remote) = hook_repo(SECRETS_CFG);
     r.commit_files(
         &[("src/a.rs", "a\n"), ("secrets/key.pem", "k\n")],
@@ -224,7 +200,7 @@ fn the_hook_in_verify_mode_blocks_secrets_until_the_history_is_cleaned() {
 }
 
 #[test]
-fn the_hook_in_rewrite_mode_removes_secrets_aborts_and_the_retry_succeeds() {
+fn rewrite_mode_removes_secrets_aborts_and_the_retry_succeeds() {
     let (r, remote) = hook_repo(&format!("{SECRETS_CFG}hook:\n  mode: rewrite\n"));
     r.commit_files(
         &[("src/a.rs", "a\n"), ("secrets/key.pem", "k\n")],
@@ -272,7 +248,7 @@ fn a_broken_config_blocks_the_push_and_no_verify_bypasses_the_hook() {
 }
 
 #[test]
-fn without_any_rules_the_hook_lets_everything_through() {
+fn without_any_rules_every_push_passes() {
     let (r, remote) = hook_repo("version: 1\n");
     r.commit_at("a.txt", "a", T0);
     let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
@@ -281,7 +257,7 @@ fn without_any_rules_the_hook_lets_everything_through() {
 }
 
 #[test]
-fn without_a_config_file_the_hook_lets_everything_through() {
+fn without_a_config_file_every_push_passes() {
     let r = Repo::new();
     let remote = r.bare_remote();
     r.gcma_ok(&["hook", "install"]);
@@ -292,26 +268,7 @@ fn without_a_config_file_the_hook_lets_everything_through() {
 }
 
 #[test]
-fn the_hook_honours_a_custom_hooks_path() {
-    let r = Repo::new();
-    r.bare_remote();
-    r.config(IDENTITY_CFG);
-    let hooks = r.path().join(".githooks");
-    std::fs::create_dir_all(&hooks).unwrap();
-    r.git(&["config", "core.hooksPath", ".githooks"]);
-    r.gcma_ok(&["hook", "install"]);
-    r.commit_at("bad.txt", "bad", T0);
-    let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
-    assert!(
-        !o.status.success(),
-        "the hook must run from core.hooksPath ({}): {}",
-        hooks.display(),
-        stderr(&o)
-    );
-}
-
-#[test]
-fn the_hook_survives_a_push_of_a_new_branch_from_a_clean_history() {
+fn a_new_branch_of_conforming_commits_is_pushed() {
     let (r, _) = hook_repo(IDENTITY_CFG);
     r.commit_as("a.txt", "a", T0, "Jane Doe", "jane@work.com");
     r.git(&["checkout", "-q", "-b", "feature"]);
@@ -321,7 +278,7 @@ fn the_hook_survives_a_push_of_a_new_branch_from_a_clean_history() {
 }
 
 #[test]
-fn the_hook_judges_a_nonconforming_ancestor_pushed_as_a_revision() {
+fn a_nonconforming_ancestor_pushed_as_a_revision_is_blocked() {
     let r = Repo::new();
     r.bare_remote();
     r.config(IDENTITY_CFG);
@@ -342,7 +299,7 @@ fn the_hook_judges_a_nonconforming_ancestor_pushed_as_a_revision() {
 }
 
 #[test]
-fn the_hook_blocks_commits_that_would_only_be_dropped() {
+fn commits_that_would_only_be_dropped_are_blocked() {
     let r = Repo::new();
     r.bare_remote();
     r.config(SECRETS_NO_GITIGNORE_CFG);
@@ -356,7 +313,7 @@ fn the_hook_blocks_commits_that_would_only_be_dropped() {
 }
 
 #[test]
-fn hook_case_only_new_commits_are_rescheduled() {
+fn a_settled_history_reschedules_only_its_new_commits() {
     let r = Repo::new();
     r.linear(10, 1_500_000_000);
     r.config(&berlin_cfg(""));

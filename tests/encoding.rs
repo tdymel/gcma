@@ -36,12 +36,7 @@ fn name_bytes(r: &Repo, rev: &str) -> Vec<u8> {
 
 #[test]
 fn schedule_run_keeps_non_utf8_names_when_no_rule_matches() {
-    let backends: &[&str] = if cfg!(feature = "gix") {
-        &["git", "gix"]
-    } else {
-        &["git"]
-    };
-    for backend in backends.iter().copied() {
+    for backend in BACKENDS {
         let r = latin1_history();
         r.config(&berlin_cfg(IDENTITY_RULE));
         let o = r.gcma(&["--backend", backend, "apply", "--from", "root"]);

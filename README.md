@@ -199,18 +199,19 @@ Domain-driven design with a hexagonal layout (`src/`):
 
 ```
 domain/        pure model and rules (no I/O): error, settings, scheduling, text, paths, history
-application/   use cases and the ports they need: planning, rewrite (apply/restore), llm, push_guard, commit_hook,
-               preconditions, pathrules, ports
+application/   use cases and the ports they need: planning, rewrite (apply/restore), retag, llm, push_guard,
+               commit_hook, preconditions, pathrules, ports
 adapters/      git_cli, gix_store, repository (composition), config_file, plan_file, hook_installer,
                llm_jsonl, fsutil, convert, cli (the commands) and cli_support (grammar, session, output)
 ```
 
 Dependencies point inwards only: `domain` knows nothing of ours, `application` only the domain, the leaf adapters
 (`git_cli`, `gix_store`, files) the application and domain, `repository` composes the leaf adapters, `cli` may use all.
-Inside the domain and application there are sub-layers too (e.g. `scheduling` builds on `settings`; `rewrite` and
-`push_guard` build on `planning`). `tests/architecture.rs` enforces this with
-[archunit](https://crates.io/crates/archunit), together with: no module cycles, no I/O or CLI crates in the domain,
-`git_cli` and `gix_store` independent of each other, and a size cap per file.
+Inside the domain and application there are sub-layers too (e.g. `scheduling` builds on `settings`; `planning` and
+`rewrite` both build on `retag`, and the hook entry points `push_guard` and `commit_hook` drive `planning` and
+`rewrite`). `tests/architecture.rs` enforces this with [archunit](https://crates.io/crates/archunit), together with: no
+module cycles, no I/O or CLI crates in the domain, `git_cli` and `gix_store` independent of each other, and a size cap
+per file.
 
 ## Development
 

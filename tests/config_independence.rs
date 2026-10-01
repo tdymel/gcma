@@ -1,6 +1,6 @@
 //! The undo path (`restore`, `hook install`, `hook uninstall`) never reads `gcma.yml`, so a
 //! broken or outdated config cannot lock anyone out of getting their history back. Commands
-//! that do need the rules still reject it.
+//! that do need the rules still reject it. The hook commands are checked in `hook_install.rs`.
 
 mod common;
 
@@ -36,15 +36,6 @@ fn prune_works_with_a_broken_config() {
     let (r, _, id) = rewritten_then_broken();
     r.gcma_ok(&["restore", &id, "--prune"]);
     assert!(r.gcma_ok(&["restore"]).contains("No backups."));
-}
-
-#[test]
-fn hook_install_and_uninstall_work_with_a_broken_config() {
-    let (r, _, _) = rewritten_then_broken();
-    r.gcma_ok(&["hook", "install"]);
-    assert!(r.path().join(".git/hooks/pre-push").exists());
-    assert!(r.gcma_ok(&["hook", "uninstall"]).contains("hook removed"));
-    assert!(!r.path().join(".git/hooks/pre-push").exists());
 }
 
 #[test]

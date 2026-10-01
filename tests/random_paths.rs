@@ -274,7 +274,7 @@ fn run_case(seed: u64) {
             .success(),
         "seed {seed}"
     );
-    if r.git(&["for-each-ref", "refs/gcma/backup/"]).is_empty() {
+    if r.backup_count() == 0 {
         // Nothing to rewrite: the history never had a secret and no schedule applied.
         assert!(
             !schedule && old_files.iter().all(|p| !p.starts_with("secrets/")),
