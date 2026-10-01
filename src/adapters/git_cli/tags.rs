@@ -1,27 +1,37 @@
 //! `TagStore` and `NoteStore` over `for-each-ref`, `hash-object` and `git notes`.
 
 use super::runner::GitCli;
-use crate::application::ports::{NoteStore, RefStore, TagKind, TagRef, TagStore};
+use crate::application::ports::{NoteStore, TagKind, TagRef, TagStore};
 use crate::domain::error::{Error, Result};
 
 const NOTES_PREFIX: &str = "refs/notes/";
 
 impl TagStore for GitCli {
     fn list_tags(&self) -> Result<Vec<TagRef>> {
-        let format =
-            "--format=%(refname)%00%(objectname)%00%(objecttype)%00%(*objectname)%00%(*objecttype)";
-        let out = self.text(&["for-each-ref", format, "refs/tags"])?;
+        // `%(type)` is what a tag object points at directly; `%(*objectname)` and
+        // `%(*objecttype)` are what it finally peels to, through any number of tag objects.
+        let format = "--format=%(refname)%00%(objectname)%00%(objecttype)%00%(type)%00%(*objectname)%00%(*objecttype)";
+        // A ref name need not be UTF-8 (nor can it hold a newline or NUL), so it is read as bytes.
+        let out = self.run(&["for-each-ref", format, "refs/tags"])?;
         let mut tags = Vec::new();
-        for line in out.lines() {
+        for line in out.split(|&b| b == b'\n').filter(|l| !l.is_empty()) {
+            let name_is_utf8 = line
+                .split(|&b| b == 0)
+                .next()
+                .is_some_and(|n| str::from_utf8(n).is_ok());
+            let line = String::from_utf8_lossy(line);
             let f: Vec<&str> = line.split('\0').collect();
-            let [name, value, kind, target, target_kind] = f[..] else {
+            let [name, value, kind, direct, target, target_kind] = f[..] else {
                 return Err(Error::Git(format!("unexpected for-each-ref line {line:?}")));
             };
-            let (kind, peeled) = match (kind, target_kind) {
-                ("tag", "tag") => (TagKind::Nested, self.resolve_commit(value)?),
-                ("tag", t) => (
+            let (kind, peeled) = match (kind, direct) {
+                ("tag", "tag") => (
+                    TagKind::Nested,
+                    (target_kind == "commit").then(|| target.to_string()),
+                ),
+                ("tag", direct) => (
                     TagKind::Annotated,
-                    (t == "commit").then(|| target.to_string()),
+                    (direct == "commit").then(|| target.to_string()),
                 ),
                 (t, _) => (
                     TagKind::Lightweight,
@@ -30,6 +40,7 @@ impl TagStore for GitCli {
             };
             tags.push(TagRef {
                 name: name.to_string(),
+                name_is_utf8,
                 value: value.to_string(),
                 kind,
                 peeled,
@@ -43,7 +54,10 @@ impl TagStore for GitCli {
     }
 
     fn write_tag_object(&self, raw: &[u8]) -> Result<String> {
-        let out = self.run_stdin(&["hash-object", "-t", "tag", "-w", "--stdin"], raw)?;
+        let out = self.run_stdin(
+            &["hash-object", "-t", "tag", "--literally", "-w", "--stdin"],
+            raw,
+        )?;
         Ok(String::from_utf8_lossy(&out).trim().to_string())
     }
 }

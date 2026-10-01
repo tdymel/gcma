@@ -108,8 +108,6 @@ pub trait RefStore {
     fn list_refs(&self, prefix: &str) -> Result<Vec<(String, String)>>;
     fn update_refs(&self, message: &str, updates: &[RefUpdate]) -> Result<()>;
     fn remotes(&self) -> Result<Vec<String>>;
-    /// Tags and notes that point at any of `oids`, as human-readable labels.
-    fn labels_pointing_at(&self, oids: &HashSet<String>) -> Result<Vec<String>>;
 }
 
 /// What a tag ref holds.
@@ -126,8 +124,11 @@ pub enum TagKind {
 /// A ref under `refs/tags/`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TagRef {
-    /// The full ref name (`refs/tags/v1`).
+    /// The full ref name (`refs/tags/v1`), decoded lossily when it is not UTF-8.
     pub name: String,
+    /// False when the name is not valid UTF-8: `name` is then not the real name and such a tag
+    /// cannot be moved.
+    pub name_is_utf8: bool,
     /// What the ref holds: a commit, or a tag object.
     pub value: String,
     pub kind: TagKind,
@@ -141,7 +142,8 @@ pub trait TagStore {
     fn list_tags(&self) -> Result<Vec<TagRef>>;
     /// The raw bytes of a tag object.
     fn read_tag_object(&self, oid: &str) -> Result<Vec<u8>>;
-    /// Writes a raw tag object (checked for well-formedness) and returns its id.
+    /// Writes a raw tag object as it is (no fsck, so a legacy tag without a tagger can be copied)
+    /// and returns its id.
     fn write_tag_object(&self, raw: &[u8]) -> Result<String>;
 }
 
