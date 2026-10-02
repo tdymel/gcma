@@ -5,6 +5,7 @@ use crate::application::ports::{RemoteScope, Repository};
 use crate::application::rewrite::{ApplyOptions, SECRETS_NOTE, apply};
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::is_zero_oid;
+use crate::domain::history::plan::HEADS_PREFIX;
 use crate::domain::settings::{Config, HookMode};
 
 /// One ref a push is about to update, as git reports it to the hook.
@@ -36,14 +37,16 @@ pub fn run_pre_push(
         if is_zero_oid(&p.local_sha) {
             continue; // a delete push
         }
-        if !is_branch_push(repo, p, &branch_ref, tip.as_deref()) {
+        let Some(pushed) = judged_commit(repo, p, &branch_ref, tip.as_deref())? else {
             continue;
-        }
-        let range = unpushed_range(repo, p, remote, &remotes, &branch_ref)?;
-        // Rewriting is only possible when the pushed commit is the branch tip; the plan is built
-        // once, with the strict (clean index) preconditions only when we are going to write.
-        let rewrite =
-            cfg.hook.mode == HookMode::Rewrite && tip.as_deref() == Some(p.local_sha.as_str());
+        };
+        let range = unpushed_range(repo, p, &pushed.commit, remote, &remotes, &branch_ref)?;
+        // Rewriting only fixes the push when the pushed commit is the branch tip and the push
+        // follows the branch (a tag would stay on the old commit); the plan is built once, with
+        // the strict (clean index) preconditions only when we are going to write.
+        let rewrite = cfg.hook.mode == HookMode::Rewrite
+            && pushed.follows_branch
+            && tip.as_deref() == Some(pushed.commit.as_str());
         let opts = PlanOptions {
             range: Some(range),
             strict: rewrite,
@@ -73,38 +76,66 @@ pub fn run_pre_push(
     Ok(())
 }
 
-/// Only pushes of the checked-out branch are judged: by name, as `HEAD` (which is what
-/// `git push origin HEAD` and `HEAD:<ref>` report), or by a ref/sha that is the branch tip. A raw
-/// revision (`git push origin HEAD~1:main` reports `HEAD~1`) that is part of the branch is judged
-/// as well; named refs other than the branch are not.
-fn is_branch_push(
+/// The commit a judged push sends.
+struct Judged {
+    /// The pushed object peeled to a commit (an annotated tag pushes its tag object).
+    commit: String,
+    /// The push names the branch itself, `HEAD` or a raw revision, so after a rewrite of the branch
+    /// pushing again sends the new commits; a tag or another ref would still send the old ones.
+    follows_branch: bool,
+}
+
+/// Which pushes are judged, and the commit they send. The checked-out branch is judged by name, as
+/// `HEAD` (which is what `git push origin HEAD` and `HEAD:<ref>` report) or as a raw revision that is
+/// part of it (`git push origin HEAD~1:main` reports `HEAD~1`). Other branches are ignored, unless
+/// they point at the tip. Any other ref (a tag, `refs/<anything>`) is judged when its commit is the
+/// tip or an ancestor of it; one that points at no commit (a tree, a blob) or at a commit that is
+/// not part of the branch is ignored.
+fn judged_commit(
     repo: &dyn Repository,
     p: &PushedRef,
     branch_ref: &str,
     tip: Option<&str>,
-) -> bool {
-    let ancestor_of_branch = !p.local_ref.starts_with("refs/")
-        && tip.is_some_and(|t| repo.is_ancestor(&p.local_sha, t).unwrap_or(false));
-    p.local_ref == branch_ref
-        || p.local_ref == "HEAD"
-        || tip == Some(p.local_sha.as_str())
-        || ancestor_of_branch
+) -> Result<Option<Judged>> {
+    let Some(commit) = repo.resolve_commit(&p.local_sha)? else {
+        return Ok(None);
+    };
+    let follows_branch =
+        p.local_ref == branch_ref || p.local_ref == "HEAD" || !p.local_ref.starts_with("refs/");
+    let at_tip = tip == Some(commit.as_str());
+    let judged = if p.local_ref == branch_ref || p.local_ref == "HEAD" || at_tip {
+        true
+    } else if p.local_ref.starts_with(HEADS_PREFIX) {
+        false
+    } else {
+        match tip {
+            Some(t) => repo.is_ancestor(&commit, t)?,
+            None => false,
+        }
+    };
+    Ok(judged.then_some(Judged {
+        commit,
+        follows_branch,
+    }))
 }
 
-/// The commits the push would send: `remote_sha..local_sha`, or for a remote sha we do not have
+/// The commits the push would send: `remote_sha..commit`, or for a remote sha we do not have
 /// (a new branch) everything not on the remote's tracking refs.
 fn unpushed_range(
     repo: &dyn Repository,
     p: &PushedRef,
+    commit: &str,
     remote: &str,
     remotes: &[String],
     branch_ref: &str,
 ) -> Result<RangeSpec> {
-    let known_remote = !is_zero_oid(&p.remote_sha) && repo.resolve_commit(&p.remote_sha)?.is_some();
-    let tip = p.local_sha.clone();
+    let known_remote = match is_zero_oid(&p.remote_sha) {
+        true => None,
+        false => repo.resolve_commit(&p.remote_sha)?,
+    };
+    let tip = commit.to_string();
     let branch_ref = branch_ref.to_string();
-    if known_remote {
-        let pushed = p.remote_sha.clone();
+    if let Some(pushed) = known_remote {
         return Ok(
             RangeSpec::unpushed(tip, branch_ref, None).excluding(pushed.clone(), Some(pushed))
         );

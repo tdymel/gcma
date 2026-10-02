@@ -169,8 +169,12 @@ commit writes move between backends; refs, signing and hooks always use git. Mea
 ## Hook
 
 `gcma hook install` adds a `pre-push` hook. In `verify` mode it blocks pushes of nonconforming commits ("run `gcma apply`").
-In `rewrite` mode it rewrites them and aborts the push so you push again. Deletes and pushes of other branches are ignored; `git push origin HEAD` and a revision of the branch
-(`HEAD~1:main`) count as the checked-out branch. Skip it once with `git push --no-verify`. Remember that config errors block pushes too.
+In `rewrite` mode it rewrites them and aborts the push so you push again. It judges what a push would send of the
+checked-out branch: the branch itself, `git push origin HEAD`, a revision of the branch (`HEAD~1:main`), and tags or other
+refs whose commit is part of the branch (`git push origin v1`, `--tags`, `v1:refs/heads/main`). A tag cannot follow a
+rewrite of the branch, so in `rewrite` mode a nonconforming tag push is blocked like in `verify` mode. Deletes, other
+branches, and tags on commits outside the branch (or on no commit) are ignored. Skip it once with `git push --no-verify`.
+Remember that config errors block pushes too.
 
 ### Post-commit hook (opt-in)
 
