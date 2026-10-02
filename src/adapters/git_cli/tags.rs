@@ -3,6 +3,7 @@
 use super::runner::GitCli;
 use crate::application::ports::{NoteList, NoteStore, TagKind, TagRef, TagStore};
 use crate::domain::error::{Error, Result};
+use crate::domain::history::tag::TAGS_PREFIX;
 
 const NOTES_PREFIX: &str = "refs/notes/";
 
@@ -13,7 +14,7 @@ impl TagStore for GitCli {
         // `%(symref)` is the target of a symbolic ref, which is left out: it follows its target.
         let format = "--format=%(refname)%00%(objectname)%00%(objecttype)%00%(type)%00%(*objectname)%00%(*objecttype)%00%(symref)";
         // A ref name need not be UTF-8 (nor can it hold a newline or NUL), so it is read as bytes.
-        let out = self.run(&["for-each-ref", format, "refs/tags"])?;
+        let out = self.run(&["for-each-ref", format, TAGS_PREFIX])?;
         let mut tags = Vec::new();
         for line in out.split(|&b| b == b'\n').filter(|l| !l.is_empty()) {
             let name_is_utf8 = line
