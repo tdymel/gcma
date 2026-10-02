@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::application::ports::{NoteStore, Repository, TagStore};
+use crate::application::ports::{NoteList, NoteStore, Repository, TagStore};
 use crate::domain::error::Result;
 use crate::domain::history::commit::{Commit, short};
 use crate::domain::history::tag::short_name;
@@ -69,14 +69,10 @@ fn labels_pointing_at<R: TagStore + NoteStore + ?Sized>(
             .is_some_and(|c| oids.contains(c))
             .then(|| short_name(&t.name).to_string())
     });
-    let (notes, unlisted) = match repo.list_notes() {
-        Ok(list) => {
-            let unlisted = list.warnings();
-            (list.notes, unlisted)
-        }
-        Err(e) => (Vec::new(), vec![format!("could not list the notes ({e})")]),
-    };
-    let notes = notes
+    let list = NoteList::or_unlisted(repo.list_notes());
+    let unlisted = list.warnings();
+    let notes = list
+        .notes
         .into_iter()
         .filter_map(|(_, c)| oids.contains(&c).then(|| format!("note on {}", short(&c))));
     Ok((tags.chain(notes).collect(), unlisted))
@@ -85,7 +81,7 @@ fn labels_pointing_at<R: TagStore + NoteStore + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::ports::{NoteList, TagKind, TagRef};
+    use crate::application::ports::{TagKind, TagRef};
 
     struct Fake;
 

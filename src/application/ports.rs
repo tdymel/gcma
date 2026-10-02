@@ -157,6 +157,15 @@ pub struct NoteList {
 }
 
 impl NoteList {
+    /// The notes `list_notes` returned, or when it failed altogether, no notes and the failure as
+    /// the one notes ref (`refs/notes/`) that could not be read.
+    pub fn or_unlisted(listed: Result<NoteList>) -> NoteList {
+        listed.unwrap_or_else(|e| NoteList {
+            notes: Vec::new(),
+            skipped: vec![("refs/notes/".to_string(), e.to_string())],
+        })
+    }
+
     /// One warning per notes ref that could not be read.
     pub fn warnings(&self) -> Vec<String> {
         self.skipped
@@ -220,4 +229,28 @@ pub trait Repository:
 impl<T: CommitStore + TreeStore + RefStore + TagStore + NoteStore + History + WorkTree> Repository
     for T
 {
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::error::Error;
+
+    #[test]
+    fn a_failed_listing_is_one_unreadable_notes_ref() {
+        let listed = NoteList {
+            notes: vec![("refs/notes/commits".into(), "a".into())],
+            skipped: Vec::new(),
+        };
+        assert_eq!(NoteList::or_unlisted(Ok(listed.clone())), listed);
+        let failed = NoteList::or_unlisted(Err(Error::Git("boom".into())));
+        assert!(failed.notes.is_empty());
+        let warnings = failed.warnings();
+        assert_eq!(warnings.len(), 1);
+        assert!(
+            warnings[0].starts_with("could not read the notes in refs/notes/,"),
+            "{warnings:?}"
+        );
+        assert!(warnings[0].contains("boom"), "{warnings:?}");
+    }
 }

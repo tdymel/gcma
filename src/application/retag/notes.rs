@@ -2,16 +2,13 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::application::ports::NoteStore;
+use crate::application::ports::{NoteList, NoteStore};
 use crate::domain::history::commit::short;
 
 /// Copies every note of a rewritten commit to its new commit, after the branch moved. Failures are
 /// returned as warnings; the old notes stay where they are.
 pub fn copy_notes(repo: &dyn NoteStore, renamed: &HashMap<String, String>) -> Vec<String> {
-    let list = match repo.list_notes() {
-        Ok(n) => n,
-        Err(e) => return vec![format!("could not list the notes to copy them ({e})")],
-    };
+    let list = NoteList::or_unlisted(repo.list_notes());
     let mut warnings = list.warnings();
     for (notes_ref, old) in list.notes {
         let Some(new) = renamed.get(&old) else {
@@ -31,16 +28,13 @@ pub fn copy_notes(repo: &dyn NoteStore, renamed: &HashMap<String, String>) -> Ve
 /// How many notes sit on commits of `rewritten`, and warnings about the notes that cannot be
 /// listed (those are not counted).
 pub fn count_notes(repo: &dyn NoteStore, rewritten: &HashSet<String>) -> (usize, Vec<String>) {
-    match repo.list_notes() {
-        Ok(list) => (
-            list.notes
-                .iter()
-                .filter(|(_, old)| rewritten.contains(old))
-                .count(),
-            list.warnings(),
-        ),
-        Err(e) => (0, vec![format!("could not list the notes ({e})")]),
-    }
+    let list = NoteList::or_unlisted(repo.list_notes());
+    let count = list
+        .notes
+        .iter()
+        .filter(|(_, old)| rewritten.contains(old))
+        .count();
+    (count, list.warnings())
 }
 
 #[cfg(test)]
@@ -48,7 +42,6 @@ mod tests {
     use std::cell::RefCell;
 
     use super::*;
-    use crate::application::ports::NoteList;
     use crate::domain::error::{Error, Result};
 
     /// Notes on `a`, `b` and `z` in one notes ref, another notes ref that cannot be read; copying
