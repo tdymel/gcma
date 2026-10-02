@@ -208,8 +208,8 @@ adapters/      git_cli, gix_store, repository (composition), config_file, plan_f
 
 Dependencies point inwards only: `domain` knows nothing of ours, `application` only the domain, the leaf adapters
 (`git_cli`, `gix_store`, files) the application and domain, `repository` composes the leaf adapters, `cli` may use all.
-Inside the domain and application there are sub-layers too (e.g. `scheduling` builds on `settings`; `planning` and
-`rewrite` both build on `retag`, and the hook entry points `push_guard` and `commit_hook` drive `planning` and
+Inside the domain and application there are sub-layers too (e.g. `scheduling` builds on `settings`; `rewrite` builds
+on `retag` while `planning` reads the tag and note ports directly, and the hook entry points `push_guard` and `commit_hook` drive `planning` and
 `rewrite`). `tests/architecture.rs` enforces this with [archunit](https://crates.io/crates/archunit), together with: no
 module cycles, no I/O or CLI crates in the domain, `git_cli` and `gix_store` independent of each other, and a size cap
 per file.

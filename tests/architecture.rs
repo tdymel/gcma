@@ -100,9 +100,10 @@ const APPLICATION_PLACES: &[(&str, &str)] = &[
 
 #[test]
 fn application_is_layered_internally() {
-    // Ports are the base. planning and rewrite both build on retag (the tag moves), which sees
-    // only the ports; the rewrite does not reach into planning. The two hook entry points
-    // (push_guard, commit_hook) drive planning and the rewrite. llm stands alone.
+    // Ports are the base. rewrite builds on retag (the tag moves), which sees only the ports;
+    // planning reads the tag/note ports directly. The rewrite does not reach into planning, nor
+    // planning into the rewrite. The two hook entry points (push_guard, commit_hook) drive
+    // planning and the rewrite. llm stands alone.
     let layers = APPLICATION_PLACES
         .iter()
         .fold(project_layers(), |layers, (layer, glob)| {
@@ -118,7 +119,7 @@ fn application_is_layered_internally() {
         .where_layer("retag")
         .may_only_depend_on_layers(&["ports"])
         .where_layer("planning")
-        .may_only_depend_on_layers(&["preconditions", "pathrules", "retag", "ports"])
+        .may_only_depend_on_layers(&["preconditions", "pathrules", "ports"])
         .where_layer("rewrite")
         .may_only_depend_on_layers(&["preconditions", "pathrules", "retag", "ports"])
         .where_layer("llm")
