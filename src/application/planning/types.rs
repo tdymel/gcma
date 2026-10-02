@@ -28,6 +28,9 @@ pub struct PlanOptions {
     pub strict: bool,
     /// The tags and notes follow the rewrite (`--retag`), so do not warn that they stay behind.
     pub retag: bool,
+    /// Without `retag`, say that `--retag` would move the tags and notes left on the old commits
+    /// (the command line); a hook has no such option.
+    pub retag_hint: bool,
 }
 
 impl PlanOptions {
@@ -41,6 +44,7 @@ impl PlanOptions {
             now,
             strict: false,
             retag: false,
+            retag_hint: false,
         }
     }
 }

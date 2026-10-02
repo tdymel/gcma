@@ -52,15 +52,7 @@ pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Re
     if suffix.is_empty() {
         return Ok(nothing_to_do(cfg, &range));
     }
-    let (plan, warnings) = assemble(
-        repo,
-        cfg,
-        &range,
-        &loaded,
-        filter.as_ref(),
-        &suffix,
-        opts.retag,
-    )?;
+    let (plan, warnings) = assemble(repo, cfg, &range, &loaded, filter.as_ref(), &suffix, opts)?;
     Ok(Built {
         plan,
         range_len: range.order.len(),
@@ -171,7 +163,7 @@ fn assemble(
     loaded: &Loaded,
     filter: Option<&PathFilter>,
     suffix: &[String],
-    retag: bool,
+    opts: &PlanOptions,
 ) -> Result<(Plan, Vec<String>)> {
     let commits = &loaded.commits;
     let linear = linearize(suffix, commits);
@@ -208,7 +200,7 @@ fn assemble(
         plan.new_tip = new_tip;
     }
     let touched: Vec<String> = plan.touched_oids().cloned().collect();
-    let warnings = rewrite_warnings(repo, cfg, &touched, commits, retag)?;
+    let warnings = rewrite_warnings(repo, cfg, &touched, commits, opts)?;
     Ok((plan, warnings))
 }
 

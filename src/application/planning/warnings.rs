@@ -2,32 +2,29 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::types::PlanOptions;
 use crate::application::ports::{NoteList, NoteStore, Repository, TagStore};
 use crate::domain::error::Result;
 use crate::domain::history::commit::{Commit, short};
 use crate::domain::history::tag::short_name;
 use crate::domain::settings::{Config, Signing};
 
-/// Non-fatal consequences of rewriting these commits. With `retag` the tags and notes follow the
-/// rewrite, so there is nothing to warn about for them here.
+/// Non-fatal consequences of rewriting these commits. With `opts.retag` the tags and notes follow
+/// the rewrite, so there is nothing to warn about for them here.
 pub(super) fn rewrite_warnings(
     repo: &dyn Repository,
     cfg: &Config,
     linear: &[String],
     commits: &HashMap<String, Commit>,
-    retag: bool,
+    opts: &PlanOptions,
 ) -> Result<Vec<String>> {
     let mut warnings = Vec::new();
-    let (labels, unlisted) = match retag {
+    let (labels, unlisted) = match opts.retag {
         true => (Vec::new(), Vec::new()),
         false => labels_pointing_at(repo, &linear.iter().cloned().collect())?,
     };
     if !labels.is_empty() {
-        warnings.push(format!(
-            "tags/notes point at commits that will be rewritten and will keep pointing at the old ones: {} \
-             (pass --retag to move them)",
-            labels.join(", ")
-        ));
+        warnings.push(left_behind(&labels, opts.retag_hint));
     }
     warnings.extend(unlisted);
     if cfg.signing == Signing::Resign {
@@ -55,6 +52,19 @@ pub(super) fn rewrite_warnings(
         }
     }
     Ok(warnings)
+}
+
+/// The warning that the labelled tags and notes stay on the old commits; with `hint` it says how
+/// to move them.
+fn left_behind(labels: &[String], hint: bool) -> String {
+    let hint = match hint {
+        true => " (pass --retag to move them)",
+        false => "",
+    };
+    format!(
+        "tags/notes point at commits that will be rewritten and will keep pointing at the old ones: {}{hint}",
+        labels.join(", ")
+    )
 }
 
 /// The tags (by short name) and notes that finally point at any of `oids`, as labels, and
@@ -122,6 +132,18 @@ mod tests {
         fn copy_note(&self, _: &str, _: &str, _: &str) -> Result<()> {
             unreachable!()
         }
+    }
+
+    #[test]
+    fn only_the_command_line_hears_about_retag() {
+        let labels = ["v1".to_string(), "note on aaaaaaaa".to_string()];
+        let base = "tags/notes point at commits that will be rewritten and will keep pointing at \
+                    the old ones: v1, note on aaaaaaaa";
+        assert_eq!(
+            left_behind(&labels, true),
+            format!("{base} (pass --retag to move them)")
+        );
+        assert_eq!(left_behind(&labels, false), base);
     }
 
     #[test]

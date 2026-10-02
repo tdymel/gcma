@@ -45,6 +45,7 @@ pub fn plan_options(r: &RangeArgs, strict: bool) -> PlanOptions {
         rewrite_pushed: r.rewrite_pushed,
         all: r.all,
         strict,
+        retag_hint: true,
         ..PlanOptions::new(now())
     }
 }
