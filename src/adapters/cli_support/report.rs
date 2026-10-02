@@ -4,7 +4,7 @@ use super::render::render;
 use crate::application::planning::Built;
 use crate::application::ports::CommitStore;
 use crate::application::retag::Preview;
-use crate::application::rewrite::{ApplyReport, Backup, RestoreReport, SECRETS_NOTE};
+use crate::application::rewrite::{ApplyReport, Backup, RestoreReport};
 use crate::domain::error::Result;
 
 /// Control characters in commit data must not reach the terminal.
@@ -102,11 +102,8 @@ pub fn print_apply(report: &ApplyReport, branch: &str) {
             sanitize(&report.tags_moved.join(", "))
         );
     }
-    for w in &report.warnings {
+    for w in report.notices() {
         eprintln!("warning: {w}");
-    }
-    if report.paths_removed {
-        eprintln!("warning: {SECRETS_NOTE}");
     }
 }
 

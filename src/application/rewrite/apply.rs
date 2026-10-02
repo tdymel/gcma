@@ -32,6 +32,14 @@ pub struct ApplyReport {
     pub warnings: Vec<String>,
 }
 
+impl ApplyReport {
+    /// What to tell besides the summary: the warnings, then `SECRETS_NOTE` when paths were removed.
+    pub fn notices(&self) -> Vec<String> {
+        let note = self.paths_removed.then(|| SECRETS_NOTE.to_string());
+        self.warnings.iter().cloned().chain(note).collect()
+    }
+}
+
 fn noop(rewritten: usize) -> ApplyReport {
     ApplyReport {
         rewritten,
@@ -268,4 +276,22 @@ fn free_backup_id(repo: &dyn Repository, plan: &Plan, new_tip: &str, now: i64) -
         id = format!("{stem}-{n}");
     }
     Ok(id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_notices_are_the_warnings_then_the_secrets_note() {
+        let mut report = noop(0);
+        assert!(report.notices().is_empty());
+        report.warnings = vec!["the index could not follow".into()];
+        assert_eq!(report.notices(), ["the index could not follow"]);
+        report.paths_removed = true;
+        assert_eq!(
+            report.notices(),
+            ["the index could not follow", SECRETS_NOTE]
+        );
+    }
 }
