@@ -147,10 +147,31 @@ pub trait TagStore {
     fn write_tag_object(&self, raw: &[u8]) -> Result<String>;
 }
 
+/// The notes of every notes ref, and the notes refs that could not be read.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct NoteList {
+    /// (notes ref, annotated commit) for every note of the notes refs that could be read.
+    pub notes: Vec<(String, String)>,
+    /// (notes ref, why) for every notes ref that could not be read; its notes are left out.
+    pub skipped: Vec<(String, String)>,
+}
+
+impl NoteList {
+    /// One warning per notes ref that could not be read.
+    pub fn warnings(&self) -> Vec<String> {
+        self.skipped
+            .iter()
+            .map(|(r, why)| {
+                format!("could not read the notes in {r}, so they are left out ({why})")
+            })
+            .collect()
+    }
+}
+
 /// Notes (`refs/notes/*`) attached to commits.
 pub trait NoteStore {
-    /// (notes ref, annotated commit) for every note in every notes ref.
-    fn list_notes(&self) -> Result<Vec<(String, String)>>;
+    /// Every note in every notes ref; a notes ref that cannot be read is skipped, not an error.
+    fn list_notes(&self) -> Result<NoteList>;
     /// Copies the note of `from` to `to` in the notes ref; fails if `to` has a note already.
     fn copy_note(&self, notes_ref: &str, from: &str, to: &str) -> Result<()>;
 }

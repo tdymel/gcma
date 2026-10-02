@@ -1,7 +1,7 @@
 //! `TagStore` and `NoteStore` over `for-each-ref`, `hash-object` and `git notes`.
 
 use super::runner::GitCli;
-use crate::application::ports::{NoteStore, TagKind, TagRef, TagStore};
+use crate::application::ports::{NoteList, NoteStore, TagKind, TagRef, TagStore};
 use crate::domain::error::{Error, Result};
 
 const NOTES_PREFIX: &str = "refs/notes/";
@@ -67,18 +67,26 @@ impl TagStore for GitCli {
 }
 
 impl NoteStore for GitCli {
-    fn list_notes(&self) -> Result<Vec<(String, String)>> {
+    fn list_notes(&self) -> Result<NoteList> {
         let refs = self.text(&["for-each-ref", "--format=%(refname)", NOTES_PREFIX])?;
-        let mut notes = Vec::new();
+        let mut out = NoteList::default();
         for notes_ref in refs.lines() {
-            let list = self.text(&["notes", "--ref", notes_ref, "list"])?;
+            let list = match self.text(&["notes", "--ref", notes_ref, "list"]) {
+                Ok(list) => list,
+                Err(e) => {
+                    out.skipped
+                        .push((notes_ref.to_string(), e.to_string().trim().to_string()));
+                    continue;
+                }
+            };
             for line in list.lines() {
                 if let Some((_blob, annotated)) = line.split_once(' ') {
-                    notes.push((notes_ref.to_string(), annotated.to_string()));
+                    out.notes
+                        .push((notes_ref.to_string(), annotated.to_string()));
                 }
             }
         }
-        Ok(notes)
+        Ok(out)
     }
 
     fn copy_note(&self, notes_ref: &str, from: &str, to: &str) -> Result<()> {

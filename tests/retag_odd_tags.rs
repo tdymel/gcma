@@ -183,3 +183,24 @@ fn a_symbolic_tag_to_the_branch_does_not_clash_with_the_branch_update() {
         r.fsck();
     });
 }
+
+#[test]
+fn an_unreadable_notes_ref_is_warned_about_and_the_other_notes_still_follow() {
+    on_both_backends(|r| {
+        let old = three_to_rewrite(&r);
+        r.git(&["notes", "add", "-m", "reviewed", &old[1]]);
+        let blob = r.git(&["hash-object", "-w", "gcma.yml"]);
+        r.git(&["update-ref", "refs/notes/weird", &blob]);
+        let skipped = "could not read the notes in refs/notes/weird";
+        let plan = r.gcma_ok(&["plan", "--from", "root"]);
+        assert!(plan.contains("note on"), "{plan}");
+        assert!(plan.contains(skipped), "{plan}");
+        let plan = r.gcma_ok(&["plan", "--retag", "--from", "root"]);
+        assert!(plan.contains("1 note(s) would be copied"), "{plan}");
+        assert!(plan.contains(skipped), "{plan}");
+        let o = r.gcma(&["apply", "--retag", "--from", "root"]);
+        assert!(o.status.success(), "{}{}", stdout(&o), stderr(&o));
+        assert!(stderr(&o).contains(skipped), "{}", stderr(&o));
+        assert_eq!(r.git(&["notes", "show", &r.log()[1].oid]), "reviewed");
+    });
+}

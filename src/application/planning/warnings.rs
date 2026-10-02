@@ -17,8 +17,8 @@ pub(super) fn rewrite_warnings(
     retag: bool,
 ) -> Result<Vec<String>> {
     let mut warnings = Vec::new();
-    let labels = match retag {
-        true => Vec::new(),
+    let (labels, unlisted) = match retag {
+        true => (Vec::new(), Vec::new()),
         false => labels_pointing_at(repo, &linear.iter().cloned().collect())?,
     };
     if !labels.is_empty() {
@@ -28,6 +28,7 @@ pub(super) fn rewrite_warnings(
             labels.join(", ")
         ));
     }
+    warnings.extend(unlisted);
     if cfg.signing == Signing::Resign {
         let lossy = linear
             .iter()
@@ -55,30 +56,35 @@ pub(super) fn rewrite_warnings(
     Ok(warnings)
 }
 
-/// The tags (by full ref name) and notes that finally point at any of `oids`, as labels. Notes
-/// that cannot be listed are left out.
+/// The tags (by full ref name) and notes that finally point at any of `oids`, as labels, and
+/// warnings about the notes that cannot be listed (those are left out).
 fn labels_pointing_at<R: TagStore + NoteStore + ?Sized>(
     repo: &R,
     oids: &HashSet<String>,
-) -> Result<Vec<String>> {
+) -> Result<(Vec<String>, Vec<String>)> {
     let tags = repo.list_tags()?.into_iter().filter_map(|t| {
         t.peeled
             .as_ref()
             .is_some_and(|c| oids.contains(c))
             .then_some(t.name)
     });
-    let notes = repo
-        .list_notes()
-        .unwrap_or_default()
+    let (notes, unlisted) = match repo.list_notes() {
+        Ok(list) => {
+            let unlisted = list.warnings();
+            (list.notes, unlisted)
+        }
+        Err(e) => (Vec::new(), vec![format!("could not list the notes ({e})")]),
+    };
+    let notes = notes
         .into_iter()
         .filter_map(|(_, c)| oids.contains(&c).then(|| format!("note on {}", short(&c))));
-    Ok(tags.chain(notes).collect())
+    Ok((tags.chain(notes).collect(), unlisted))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::ports::{TagKind, TagRef};
+    use crate::application::ports::{NoteList, TagKind, TagRef};
 
     struct Fake;
 
@@ -107,11 +113,14 @@ mod tests {
     }
 
     impl NoteStore for Fake {
-        fn list_notes(&self) -> Result<Vec<(String, String)>> {
-            Ok(vec![
-                ("refs/notes/commits".into(), "aaaaaaaaaaaa".into()),
-                ("refs/notes/commits".into(), "zzzzzzzzzzzz".into()),
-            ])
+        fn list_notes(&self) -> Result<NoteList> {
+            Ok(NoteList {
+                notes: vec![
+                    ("refs/notes/commits".into(), "aaaaaaaaaaaa".into()),
+                    ("refs/notes/commits".into(), "zzzzzzzzzzzz".into()),
+                ],
+                skipped: vec![("refs/notes/weird".into(), "bad".into())],
+            })
         }
         fn copy_note(&self, _: &str, _: &str, _: &str) -> Result<()> {
             unreachable!()
@@ -121,9 +130,14 @@ mod tests {
     #[test]
     fn labels_name_the_tags_and_notes_on_the_given_commits() {
         let oids = HashSet::from(["aaaaaaaaaaaa".to_string()]);
+        let (labels, unlisted) = labels_pointing_at(&Fake, &oids).unwrap();
         assert_eq!(
-            labels_pointing_at(&Fake, &oids).unwrap(),
+            labels,
             ["refs/tags/light", "refs/tags/nested", "note on aaaaaaaa"]
+        );
+        assert_eq!(
+            unlisted,
+            ["could not read the notes in refs/notes/weird, so they are left out (bad)"]
         );
     }
 }

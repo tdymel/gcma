@@ -14,7 +14,8 @@ pub struct Preview {
     pub tags: Vec<String>,
     /// How many notes would be copied to new commits.
     pub notes: usize,
-    /// The tags on rewritten or dropped commits that would stay where they are.
+    /// The tags on rewritten or dropped commits that would stay where they are, and the notes
+    /// that cannot be listed.
     pub warnings: Vec<String>,
 }
 
@@ -24,13 +25,16 @@ pub fn preview<R: TagStore + NoteStore>(repo: &R, plan: &Plan) -> Result<Preview
     let rewritten: HashSet<String> = plan.entries.iter().map(|e| e.old_oid.clone()).collect();
     let dropped: HashSet<String> = plan.dropped.iter().cloned().collect();
     let classified = classify(repo, &rewritten, &dropped)?;
+    let (notes, note_warnings) = count_notes(repo, &rewritten);
+    let mut warnings = classified.warnings();
+    warnings.extend(note_warnings);
     Ok(Preview {
         tags: classified
             .movable
             .iter()
             .map(|t| short_name(&t.name).to_string())
             .collect(),
-        notes: count_notes(repo, &rewritten).unwrap_or(0),
-        warnings: classified.warnings(),
+        notes,
+        warnings,
     })
 }
