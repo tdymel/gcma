@@ -110,7 +110,7 @@ impl Repo {
                 }
             }
         }
-        // Always finish on a branch that has everything: merge all others into main when possible.
+        // End on main.
         self.git(&["checkout", "-q", "main"]);
     }
 }
