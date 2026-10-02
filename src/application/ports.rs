@@ -138,7 +138,7 @@ pub struct TagRef {
 
 /// Tags: the refs and the tag objects behind annotated ones.
 pub trait TagStore {
-    /// Every ref under `refs/tags/`.
+    /// Every ref under `refs/tags/`, except symbolic refs: they follow their target.
     fn list_tags(&self) -> Result<Vec<TagRef>>;
     /// The raw bytes of a tag object.
     fn read_tag_object(&self, oid: &str) -> Result<Vec<u8>>;

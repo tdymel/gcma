@@ -143,3 +143,43 @@ fn a_tag_whose_name_is_not_utf8_stays_and_is_warned_about() {
         r.fsck();
     });
 }
+
+#[test]
+fn a_symbolic_tag_follows_its_target_and_is_not_moved_itself() {
+    on_both_backends(|r| {
+        let old = three_to_rewrite(&r);
+        r.git(&["tag", "light", &old[1]]);
+        r.git(&["symbolic-ref", "refs/tags/latest", "refs/tags/light"]);
+        let plan = r.gcma_ok(&["plan", "--retag", "--from", "root"]);
+        assert!(
+            plan.contains("1 tag(s) would be moved (--retag): light\n"),
+            "{plan}"
+        );
+        assert!(!plan.contains("latest"), "{plan}");
+        let o = r.gcma(&["apply", "--retag", "--from", "root"]);
+        assert!(o.status.success(), "{}{}", stdout(&o), stderr(&o));
+        assert!(!stderr(&o).contains("latest"), "{}", stderr(&o));
+        assert_eq!(held(&r, "light"), r.log()[1].oid);
+        let target = |r: &Repo| r.git(&["symbolic-ref", "refs/tags/latest"]);
+        assert_eq!(target(&r), "refs/tags/light");
+        r.fsck();
+        r.gcma_ok(&["restore", &r.backup_id()]);
+        assert_eq!(held(&r, "light"), old[1]);
+        assert_eq!(target(&r), "refs/tags/light");
+    });
+}
+
+#[test]
+fn a_symbolic_tag_to_the_branch_does_not_clash_with_the_branch_update() {
+    on_both_backends(|r| {
+        three_to_rewrite(&r);
+        r.git(&["symbolic-ref", "refs/tags/x", "refs/heads/main"]);
+        let plan = r.gcma_ok(&["plan", "--retag", "--from", "root"]);
+        assert!(!plan.contains("tag(s) would be moved"), "{plan}");
+        let o = r.gcma(&["apply", "--retag", "--from", "root"]);
+        assert!(o.status.success(), "{}{}", stdout(&o), stderr(&o));
+        assert_eq!(r.git(&["symbolic-ref", "refs/tags/x"]), "refs/heads/main");
+        assert_eq!(held(&r, "x"), r.log()[2].oid);
+        r.fsck();
+    });
+}

@@ -10,7 +10,8 @@ impl TagStore for GitCli {
     fn list_tags(&self) -> Result<Vec<TagRef>> {
         // `%(type)` is what a tag object points at directly; `%(*objectname)` and
         // `%(*objecttype)` are what it finally peels to, through any number of tag objects.
-        let format = "--format=%(refname)%00%(objectname)%00%(objecttype)%00%(type)%00%(*objectname)%00%(*objecttype)";
+        // `%(symref)` is the target of a symbolic ref, which is left out: it follows its target.
+        let format = "--format=%(refname)%00%(objectname)%00%(objecttype)%00%(type)%00%(*objectname)%00%(*objecttype)%00%(symref)";
         // A ref name need not be UTF-8 (nor can it hold a newline or NUL), so it is read as bytes.
         let out = self.run(&["for-each-ref", format, "refs/tags"])?;
         let mut tags = Vec::new();
@@ -21,9 +22,12 @@ impl TagStore for GitCli {
                 .is_some_and(|n| str::from_utf8(n).is_ok());
             let line = String::from_utf8_lossy(line);
             let f: Vec<&str> = line.split('\0').collect();
-            let [name, value, kind, direct, target, target_kind] = f[..] else {
+            let [name, value, kind, direct, target, target_kind, symref] = f[..] else {
                 return Err(Error::Git(format!("unexpected for-each-ref line {line:?}")));
             };
+            if !symref.is_empty() {
+                continue;
+            }
             let (kind, peeled) = match (kind, direct) {
                 ("tag", "tag") => (
                     TagKind::Nested,
