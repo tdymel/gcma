@@ -1,8 +1,9 @@
 //! Shared helpers of the integration tests: a scratch git repository (`repo`) with a builder for
-//! histories (`commits`) and readers for what a run left behind (`read`), assertions about what a run did to the schedule and the graph (`assert`), and the
-//! outside world of ssh signing and bare remotes (`signing`). This file holds the small things all
-//! of them share: the configs and the first commit time most tests use, a seeded random number
-//! generator, and the text of a command's output.
+//! histories (`commits`) and for a random one (`dag`), readers for what a run left behind (`read`),
+//! assertions about what a run did to the schedule and the graph (`assert`), and the outside world
+//! of ssh signing and bare remotes (`signing`). This file holds the small things all of them share:
+//! the configs and the first commit time most tests use, a seeded random number generator, and the
+//! text of a command's output.
 //!
 //! Every test binary pulls in the whole module and uses a part of it.
 #![allow(dead_code, unused_imports)]
@@ -14,6 +15,7 @@ use rand_chacha::ChaCha8Rng;
 
 mod assert;
 mod commits;
+mod dag;
 mod read;
 mod repo;
 mod signing;

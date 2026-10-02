@@ -124,6 +124,16 @@ impl Repo {
             .count()
     }
 
+    /// The id of the commit a ref finally points at.
+    pub fn peeled(&self, name: &str) -> String {
+        self.git(&["rev-parse", &format!("{name}^{{commit}}")])
+    }
+
+    /// The id of what the tag `name` holds (a tag object for an annotated tag).
+    pub fn tag_value(&self, name: &str) -> String {
+        self.git(&["rev-parse", &format!("refs/tags/{name}")])
+    }
+
     /// Raw commit object bytes.
     pub fn cat(&self, oid: &str) -> Vec<u8> {
         self.cmd("git")

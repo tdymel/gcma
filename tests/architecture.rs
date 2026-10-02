@@ -6,7 +6,7 @@
 //! wiring      the composition of leaf adapters into one repository
 //! cli         the driving adapter (the commands and their shared support); may use everything
 
-use archunit::{FileInfo, assert_passes, project_files, project_layers};
+use archunit::{CheckOptions, FileInfo, assert_passes, project_files, project_layers};
 
 const MAX_NON_BLANK_LINES: usize = 350;
 
@@ -319,11 +319,25 @@ fn no_dependency_cycles() {
     assert_passes!(rule);
 }
 
+fn small_enough(file: &FileInfo) -> bool {
+    file.non_blank_line_count <= MAX_NON_BLANK_LINES
+}
+
 #[test]
 fn files_stay_small_enough_to_have_one_responsibility() {
-    let rule = project_files().in_path("src/**").should().adhere_to(
-        |file: &FileInfo| file.non_blank_line_count <= MAX_NON_BLANK_LINES,
-        "contain at most 350 non-blank lines",
-    );
+    let rule = project_files()
+        .in_path("src/**")
+        .should()
+        .adhere_to(small_enough, "contain at most 350 non-blank lines");
     assert_passes!(rule);
+}
+
+/// The integration tests (archunit reads them only when asked to) keep the same limit.
+#[test]
+fn test_files_stay_as_small_as_source_files() {
+    let rule = project_files()
+        .in_path("tests/**")
+        .should()
+        .adhere_to(small_enough, "contain at most 350 non-blank lines");
+    assert_passes!(rule, CheckOptions::new().with_test_sources(true));
 }

@@ -148,3 +148,13 @@ impl Repo {
             .collect()
     }
 }
+
+impl Repo {
+    /// Three commits by the old identity, which the config (`IDENTITY_CFG`) rewrites; every one of
+    /// them is replaced. Returns their ids, oldest first.
+    pub fn three_to_rewrite(&self) -> Vec<String> {
+        let old = self.linear(3, super::T0);
+        self.config(super::IDENTITY_CFG);
+        old
+    }
+}

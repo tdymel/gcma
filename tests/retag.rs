@@ -8,23 +8,6 @@ use common::*;
 
 const SIGNED_MESSAGE: &str = "signed release\n-----BEGIN PGP SIGNATURE-----\nnot a real signature\n-----END PGP SIGNATURE-----";
 
-/// Three commits by the old identity, which the config rewrites; every one of them is replaced.
-fn three_to_rewrite(r: &Repo) -> Vec<String> {
-    let old = r.linear(3, T0);
-    r.config(IDENTITY_CFG);
-    old
-}
-
-/// The id of the commit a ref finally points at.
-fn peeled(r: &Repo, name: &str) -> String {
-    r.git(&["rev-parse", &format!("{name}^{{commit}}")])
-}
-
-/// The id of what a tag ref holds (a tag object for an annotated tag).
-fn held(r: &Repo, name: &str) -> String {
-    r.git(&["rev-parse", &format!("refs/tags/{name}")])
-}
-
 /// The tag object without its first line, which names the target.
 fn tag_body(r: &Repo, name: &str) -> String {
     let raw = r.git(&["cat-file", "tag", &format!("refs/tags/{name}")]);
@@ -34,11 +17,11 @@ fn tag_body(r: &Repo, name: &str) -> String {
 #[test]
 fn a_lightweight_tag_follows_its_commit() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         r.git(&["tag", "v1", &old[1]]);
         let out = r.gcma_ok(&["apply", "--retag", "--from", "root"]);
         let rows = r.log();
-        assert_eq!(held(&r, "v1"), rows[1].oid);
+        assert_eq!(r.tag_value("v1"), rows[1].oid);
         assert_ne!(rows[1].oid, old[1]);
         assert!(out.contains("Moved 1 tag(s): v1"), "{out}");
         r.fsck();
@@ -48,7 +31,7 @@ fn a_lightweight_tag_follows_its_commit() {
 #[test]
 fn an_unsigned_annotated_tag_is_recreated_with_its_message_and_tagger() {
     on_both_backends(|r| {
-        three_to_rewrite(&r);
+        r.three_to_rewrite();
         r.git(&[
             "tag",
             "-a",
@@ -57,12 +40,12 @@ fn an_unsigned_annotated_tag_is_recreated_with_its_message_and_tagger() {
             "v2",
             "HEAD~1",
         ]);
-        let (old_object, old_body) = (held(&r, "v2"), tag_body(&r, "v2"));
+        let (old_object, old_body) = (r.tag_value("v2"), tag_body(&r, "v2"));
         r.gcma_ok(&["apply", "--retag", "--from", "root"]);
         let rows = r.log();
-        assert_ne!(held(&r, "v2"), old_object, "a new tag object");
+        assert_ne!(r.tag_value("v2"), old_object, "a new tag object");
         assert_eq!(r.git(&["cat-file", "-t", "refs/tags/v2"]), "tag");
-        assert_eq!(peeled(&r, "v2"), rows[1].oid);
+        assert_eq!(r.peeled("v2"), rows[1].oid);
         assert_eq!(tag_body(&r, "v2"), old_body, "name, tagger, date, message");
         assert!(old_body.contains("tagger Old Me <me@home.org>"));
         r.fsck();
@@ -72,10 +55,10 @@ fn an_unsigned_annotated_tag_is_recreated_with_its_message_and_tagger() {
 #[test]
 fn a_signed_annotated_tag_stays_and_is_warned_about() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         r.git(&["tag", "-a", "-m", SIGNED_MESSAGE, "v3", &old[1]]);
         r.git(&["tag", "v1", &old[2]]);
-        let before = held(&r, "v3");
+        let before = r.tag_value("v3");
         let o = r.gcma(&["apply", "--retag", "--from", "root"]);
         assert!(o.status.success(), "{}", stderr(&o));
         assert!(
@@ -83,9 +66,9 @@ fn a_signed_annotated_tag_stays_and_is_warned_about() {
             "{}",
             stderr(&o)
         );
-        assert_eq!(held(&r, "v3"), before, "the signed tag is left alone");
-        assert_eq!(peeled(&r, "v3"), old[1]);
-        assert_eq!(held(&r, "v1"), r.log()[2].oid, "the others still move");
+        assert_eq!(r.tag_value("v3"), before, "the signed tag is left alone");
+        assert_eq!(r.peeled("v3"), old[1]);
+        assert_eq!(r.tag_value("v1"), r.log()[2].oid, "the others still move");
     });
 }
 
@@ -106,8 +89,8 @@ fn a_tag_on_a_dropped_commit_is_warned_about_and_stays() {
             "{}",
             stderr(&o)
         );
-        assert_eq!(held(&r, "gone"), secret);
-        assert_eq!(held(&r, "tip"), r.log()[1].oid);
+        assert_eq!(r.tag_value("gone"), secret);
+        assert_eq!(r.tag_value("tip"), r.log()[1].oid);
         r.fsck();
     });
 }
@@ -122,8 +105,8 @@ fn tags_on_commits_that_conform_are_untouched() {
         r.git(&["tag", "kept", &kept]);
         r.git(&["tag", "moved", &old]);
         let out = r.gcma_ok(&["apply", "--retag", "--from", "root"]);
-        assert_eq!(held(&r, "kept"), kept);
-        assert_eq!(held(&r, "moved"), r.log()[1].oid);
+        assert_eq!(r.tag_value("kept"), kept);
+        assert_eq!(r.tag_value("moved"), r.log()[1].oid);
         assert!(out.contains("Moved 1 tag(s): moved"), "{out}");
     });
 }
@@ -137,7 +120,7 @@ fn a_commit_that_is_rewritten_into_itself_keeps_its_tag() {
         r.git(&["tag", "same", &same]);
         let out = r.gcma_ok(&["apply", "--all", "--retag", "--from", "root"]);
         assert_eq!(r.log()[0].oid, same, "the same commit comes out");
-        assert_eq!(held(&r, "same"), same);
+        assert_eq!(r.tag_value("same"), same);
         assert!(!out.contains("Moved"), "{out}");
     });
 }
@@ -149,14 +132,14 @@ fn tags_below_the_range_are_untouched() {
         r.config(IDENTITY_CFG);
         r.git(&["tag", "below", &old[0]]);
         r.gcma_ok(&["apply", "--retag", "--from", &old[1]]);
-        assert_eq!(held(&r, "below"), old[0]);
+        assert_eq!(r.tag_value("below"), old[0]);
     });
 }
 
 #[test]
 fn without_retag_tags_stay_and_the_warning_points_at_the_flag() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         r.git(&["tag", "v1", &old[1]]);
         r.git(&["tag", "-a", "-m", "release", "v2", &old[2]]);
         let before = r.git(&["for-each-ref", "refs/tags"]);
@@ -178,7 +161,7 @@ fn without_retag_tags_stay_and_the_warning_points_at_the_flag() {
 #[test]
 fn plan_shows_the_tags_it_would_move_and_those_it_would_not() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         r.git(&["tag", "v1", &old[0]]);
         r.git(&["tag", "-a", "-m", "release", "v2", &old[1]]);
         r.git(&["tag", "-a", "-m", SIGNED_MESSAGE, "v3", &old[2]]);
@@ -203,19 +186,19 @@ fn plan_shows_the_tags_it_would_move_and_those_it_would_not() {
 #[test]
 fn a_saved_plan_can_be_applied_with_retag() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         r.git(&["tag", "v1", &old[2]]);
         let plan = r.path().join("plan.json");
         r.gcma_ok(&["plan", "--from", "root", "--out", plan.to_str().unwrap()]);
         r.gcma_ok(&["apply", "--retag", "--plan", plan.to_str().unwrap()]);
-        assert_eq!(held(&r, "v1"), r.git(&["rev-parse", "HEAD"]));
+        assert_eq!(r.tag_value("v1"), r.git(&["rev-parse", "HEAD"]));
     });
 }
 
 #[test]
 fn a_run_that_changes_nothing_moves_no_tag_and_a_rerun_is_a_noop() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         r.git(&["tag", "v1", &old[1]]);
         r.gcma_ok(&["apply", "--retag", "--from", "root"]);
         let refs = r.refs();
@@ -228,7 +211,7 @@ fn a_run_that_changes_nothing_moves_no_tag_and_a_rerun_is_a_noop() {
 #[test]
 fn restore_puts_every_tag_back() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         r.git(&["tag", "v1", &old[0]]);
         r.git(&["tag", "-a", "-m", "release", "v2", &old[1]]);
         let (tags, tip) = (r.git(&["for-each-ref", "refs/tags"]), old[2].clone());
@@ -245,22 +228,22 @@ fn restore_puts_every_tag_back() {
 #[test]
 fn the_old_annotated_tag_object_stays_reachable_through_the_backup() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         r.git(&["tag", "-a", "-m", "release", "v2", &old[1]]);
-        let old_object = held(&r, "v2");
+        let old_object = r.tag_value("v2");
         r.gcma_ok(&["apply", "--retag", "--from", "root"]);
         r.git(&["gc", "-q", "--prune=now"]);
         assert_eq!(r.git(&["cat-file", "-t", &old_object]), "tag");
         let id = r.backup_id();
         r.gcma_ok(&["restore", &id]);
-        assert_eq!(held(&r, "v2"), old_object);
+        assert_eq!(r.tag_value("v2"), old_object);
     });
 }
 
 #[test]
 fn tags_named_like_the_backup_refs_do_not_confuse_the_listing() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         for name in ["old", "new", "tags", "tag-0", "x/old"] {
             r.git(&["tag", name, &old[1]]);
         }
@@ -272,7 +255,7 @@ fn tags_named_like_the_backup_refs_do_not_confuse_the_listing() {
         assert!(list.contains(&new_tip), "{list}");
         r.gcma_ok(&["restore", &id]);
         for name in ["old", "new", "tags", "tag-0", "x/old"] {
-            assert_eq!(held(&r, name), old[1], "{name}");
+            assert_eq!(r.tag_value(name), old[1], "{name}");
         }
         assert_eq!(r.git(&["rev-parse", "HEAD"]), old[2]);
     });
@@ -281,7 +264,7 @@ fn tags_named_like_the_backup_refs_do_not_confuse_the_listing() {
 #[test]
 fn restore_refuses_when_a_tag_moved_meanwhile_and_changes_nothing() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         r.git(&["tag", "v1", &old[0]]);
         r.git(&["tag", "v2", &old[1]]);
         r.gcma_ok(&["apply", "--retag", "--from", "root"]);
@@ -298,18 +281,18 @@ fn restore_refuses_when_a_tag_moved_meanwhile_and_changes_nothing() {
 #[test]
 fn a_forced_restore_leaves_a_tag_that_moved_meanwhile() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         r.git(&["tag", "v1", &old[0]]);
         r.git(&["tag", "v2", &old[1]]);
         r.gcma_ok(&["apply", "--retag", "--from", "root"]);
         let id = r.backup_id();
         r.git(&["tag", "-f", "v1", "HEAD"]);
-        let moved = held(&r, "v1");
+        let moved = r.tag_value("v1");
         let o = r.gcma(&["restore", &id, "--force"]);
         assert!(o.status.success(), "{}", stderr(&o));
         assert!(stderr(&o).contains("tag v1 was changed"), "{}", stderr(&o));
-        assert_eq!(held(&r, "v1"), moved);
-        assert_eq!(held(&r, "v2"), old[1]);
+        assert_eq!(r.tag_value("v1"), moved);
+        assert_eq!(r.tag_value("v2"), old[1]);
         assert_eq!(r.git(&["rev-parse", "HEAD"]), old[2]);
     });
 }
@@ -317,7 +300,7 @@ fn a_forced_restore_leaves_a_tag_that_moved_meanwhile() {
 #[test]
 fn prune_forgets_the_tag_records_too() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         r.git(&["tag", "-a", "-m", "release", "v2", &old[1]]);
         r.gcma_ok(&["apply", "--retag", "--from", "root"]);
         assert!(r.refs().contains("/tags "), "the backup records the tags");
@@ -330,7 +313,7 @@ fn prune_forgets_the_tag_records_too() {
 #[test]
 fn notes_are_copied_to_the_new_commits_and_the_old_ones_stay() {
     on_both_backends(|r| {
-        let old = three_to_rewrite(&r);
+        let old = r.three_to_rewrite();
         r.git(&["notes", "add", "-m", "reviewed", &old[1]]);
         r.git(&["notes", "--ref", "extra", "add", "-m", "other", &old[2]]);
         r.gcma_ok(&["apply", "--retag", "--from", "root"]);

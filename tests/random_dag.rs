@@ -13,113 +13,6 @@ static MERGES: AtomicUsize = AtomicUsize::new(0);
 static OCTOPUS: AtomicUsize = AtomicUsize::new(0);
 static PARTIAL: AtomicUsize = AtomicUsize::new(0);
 
-/// Two thirds of the commits carry sign-off and co-author trailers.
-fn body(n: usize, subject: &str) -> String {
-    if n % 3 == 1 {
-        subject.to_string()
-    } else {
-        format!(
-            "{subject}\n\nBody of {n}.\n\nSigned-off-by: Dev <dev@x.org>\nCo-authored-by: Pair <pair@x.org>"
-        )
-    }
-}
-
-fn build_random_repo(r: &Repo, rng: &mut Rand, ops: usize) {
-    r.commit_as("root.txt", "root", 1_500_000_000, "Old Me", "me@home.org");
-    let mut branches: Vec<String> = vec!["main".into()];
-    let mut n = 0;
-    for _ in 0..ops {
-        n += 1;
-        // Odd, non-monotone timestamps, sometimes far in the future.
-        let t = 1_400_000_000 + (rng.below(400_000_000) as i64);
-        let who = if rng.below(3) == 0 {
-            ("Jane Doe", "jane@work.com")
-        } else {
-            ("Old Me", "me@home.org")
-        };
-        match rng.below(10) {
-            0 | 1 => {
-                // New branch from a random existing commit.
-                let commits = r.git(&["rev-list", "--all"]);
-                let all: Vec<&str> = commits.lines().collect();
-                let from = all[rng.below(all.len() as u64) as usize];
-                let name = format!("b{n}");
-                r.git(&["checkout", "-q", "-b", &name, from]);
-                branches.push(name);
-                r.commit_as(
-                    &format!("f{n}.txt"),
-                    &body(n, &format!("branch commit {n}")),
-                    t,
-                    who.0,
-                    who.1,
-                );
-            }
-            2 | 3 => {
-                // Switch branch.
-                let b = branches[rng.below(branches.len() as u64) as usize].clone();
-                r.git(&["checkout", "-q", &b]);
-                r.commit_as(
-                    &format!("f{n}.txt"),
-                    &body(n, &format!("commit {n}")),
-                    t,
-                    who.0,
-                    who.1,
-                );
-            }
-            4 | 5 => {
-                // Merge one or two other branches into the current one (octopus when two).
-                let cur = r.git(&["rev-parse", "--abbrev-ref", "HEAD"]);
-                let mut others: Vec<String> =
-                    branches.iter().filter(|b| **b != cur).cloned().collect();
-                if others.is_empty() {
-                    r.commit_as(
-                        &format!("f{n}.txt"),
-                        &body(n, &format!("commit {n}")),
-                        t,
-                        who.0,
-                        who.1,
-                    );
-                    continue;
-                }
-                let k = if others.len() > 1 && rng.below(3) == 0 {
-                    2
-                } else {
-                    1
-                };
-                let mut picked = Vec::new();
-                for _ in 0..k {
-                    picked.push(others.remove(rng.below(others.len() as u64) as usize));
-                }
-                let date = format!("{t} +0000");
-                let mut args: Vec<&str> = vec!["merge", "-q", "--no-ff", "-m", "merge"];
-                args.extend(picked.iter().map(|s| s.as_str()));
-                let o = r
-                    .cmd("git")
-                    .args(&args)
-                    .env("GIT_AUTHOR_DATE", &date)
-                    .env("GIT_COMMITTER_DATE", &date)
-                    .output()
-                    .unwrap();
-                if !o.status.success() {
-                    // Conflict or nothing to merge: clean up and carry on.
-                    let _ = r.git_out(&["merge", "--abort"]);
-                }
-            }
-            _ => {
-                r.commit_as(
-                    &format!("f{n}.txt"),
-                    &body(n, &format!("commit {n}")),
-                    t,
-                    who.0,
-                    who.1,
-                );
-            }
-        }
-    }
-    // Always finish on a branch that has everything: merge all others into main when possible.
-    r.git(&["checkout", "-q", "main"]);
-}
-
 /// A random history before the run under test, and what the checks afterwards compare against.
 struct Case {
     seed: u64,
@@ -148,7 +41,7 @@ impl Case {
 fn start_case(seed: u64) -> (Repo, Case) {
     let mut rng = Rand::new(seed);
     let r = Repo::for_seed(seed);
-    build_random_repo(&r, &mut rng, 14 + (seed as usize % 12));
+    r.random_dag(&mut rng, 14 + (seed as usize % 12));
     let old = r.log();
     MERGES.fetch_add(
         old.iter().filter(|x| x.parents.len() >= 2).count(),
