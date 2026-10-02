@@ -12,8 +12,14 @@ use crate::domain::history::plan::HEADS_PREFIX;
 
 pub const BACKUP_PREFIX: &str = "refs/gcma/backup/";
 
-/// The ref prefix of one backup: `<BACKUP_PREFIX><branch>/<id>`; its refs are `/old`, `/new` and the
-/// tag record, see `tag_backup`.
+/// The kind (last name component) of the backup ref that holds the branch tip before the rewrite.
+pub(super) const OLD_KIND: &str = "old";
+/// The kind of the backup ref that holds the branch tip the rewrite made. The tag record has its
+/// own kinds, see `tag_backup`.
+pub(super) const NEW_KIND: &str = "new";
+
+/// The ref prefix of one backup: `<BACKUP_PREFIX><branch>/<id>`; its refs are `/<OLD_KIND>`,
+/// `/<NEW_KIND>` and the tag record, see `tag_backup`.
 pub(super) fn backup_base(branch: &str, id: &str) -> String {
     format!("{BACKUP_PREFIX}{branch}/{id}")
 }
@@ -61,8 +67,8 @@ pub fn list_backups(repo: &dyn Repository) -> Result<Vec<Backup>> {
             .entry((branch.to_string(), id.to_string()))
             .or_default();
         match kind {
-            "old" => slot.old = Some(oid),
-            "new" => slot.new = Some(oid),
+            OLD_KIND => slot.old = Some(oid),
+            NEW_KIND => slot.new = Some(oid),
             MANIFEST_KIND => {
                 slot.manifest = Some(oid.clone());
                 slot.tag_refs.push((name, oid));
@@ -174,11 +180,11 @@ pub fn prune(repo: &dyn Repository, id: &str) -> Result<Backup> {
     let base = backup_base(&b.branch, &b.id);
     let mut deletes = vec![
         RefUpdate::Delete {
-            name: format!("{base}/old"),
+            name: format!("{base}/{OLD_KIND}"),
             old: b.old.clone(),
         },
         RefUpdate::Delete {
-            name: format!("{base}/new"),
+            name: format!("{base}/{NEW_KIND}"),
             old: b.new.clone(),
         },
     ];
@@ -199,8 +205,8 @@ mod tests {
         let base = backup_base("feature/x", "20260101T000000Z-aaa-bbb");
         assert_eq!(base, "refs/gcma/backup/feature/x/20260101T000000Z-aaa-bbb");
         assert_eq!(
-            split_backup_ref(&format!("{base}/old")),
-            Some(("feature/x", "20260101T000000Z-aaa-bbb", "old"))
+            split_backup_ref(&format!("{base}/{OLD_KIND}")),
+            Some(("feature/x", "20260101T000000Z-aaa-bbb", OLD_KIND))
         );
         assert_eq!(split_backup_ref("refs/heads/main"), None);
         assert_eq!(split_backup_ref("refs/gcma/backup/main"), None);

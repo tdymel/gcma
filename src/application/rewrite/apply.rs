@@ -1,6 +1,6 @@
 //! The apply use case: check, write, verify, then move the branch in one ref transaction.
 
-use super::backups::backup_base;
+use super::backups::{NEW_KIND, OLD_KIND, backup_base};
 use super::prepared::{Prepared, prepare};
 use super::tag_backup::apply_updates;
 use super::verify::verify;
@@ -230,11 +230,11 @@ fn commit_transaction(
     let base = backup_base(plan.branch_name(), id);
     let mut updates = vec![
         RefUpdate::Create {
-            name: format!("{base}/old"),
+            name: format!("{base}/{OLD_KIND}"),
             new: plan.tip_oid.clone(),
         },
         RefUpdate::Create {
-            name: format!("{base}/new"),
+            name: format!("{base}/{NEW_KIND}"),
             new: new_tip.to_string(),
         },
         RefUpdate::Move {
@@ -257,7 +257,10 @@ fn free_backup_id(repo: &dyn Repository, plan: &Plan, new_tip: &str, now: i64) -
     let mut id = stem.clone();
     let mut n = 1;
     while repo
-        .ref_value(&format!("{}/old", backup_base(plan.branch_name(), &id)))?
+        .ref_value(&format!(
+            "{}/{OLD_KIND}",
+            backup_base(plan.branch_name(), &id)
+        ))?
         .is_some()
     {
         n += 1;
