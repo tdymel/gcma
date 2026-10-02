@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use crate::application::ports::{NoteStore, Repository, TagStore};
 use crate::domain::error::Result;
 use crate::domain::history::commit::{Commit, short};
+use crate::domain::history::tag::short_name;
 use crate::domain::settings::{Config, Signing};
 
 /// Non-fatal consequences of rewriting these commits. With `retag` the tags and notes follow the
@@ -56,7 +57,7 @@ pub(super) fn rewrite_warnings(
     Ok(warnings)
 }
 
-/// The tags (by full ref name) and notes that finally point at any of `oids`, as labels, and
+/// The tags (by short name) and notes that finally point at any of `oids`, as labels, and
 /// warnings about the notes that cannot be listed (those are left out).
 fn labels_pointing_at<R: TagStore + NoteStore + ?Sized>(
     repo: &R,
@@ -66,7 +67,7 @@ fn labels_pointing_at<R: TagStore + NoteStore + ?Sized>(
         t.peeled
             .as_ref()
             .is_some_and(|c| oids.contains(c))
-            .then_some(t.name)
+            .then(|| short_name(&t.name).to_string())
     });
     let (notes, unlisted) = match repo.list_notes() {
         Ok(list) => {
@@ -131,10 +132,7 @@ mod tests {
     fn labels_name_the_tags_and_notes_on_the_given_commits() {
         let oids = HashSet::from(["aaaaaaaaaaaa".to_string()]);
         let (labels, unlisted) = labels_pointing_at(&Fake, &oids).unwrap();
-        assert_eq!(
-            labels,
-            ["refs/tags/light", "refs/tags/nested", "note on aaaaaaaa"]
-        );
+        assert_eq!(labels, ["light", "nested", "note on aaaaaaaa"]);
         assert_eq!(
             unlisted,
             ["could not read the notes in refs/notes/weird, so they are left out (bad)"]

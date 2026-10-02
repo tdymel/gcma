@@ -2,10 +2,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::classify::{classify, short_name};
+use super::classify::classify;
 use crate::application::ports::{CommitStore, RefStore, TagKind, TagRef, TagStore};
 use crate::domain::error::{Error, Result};
-use crate::domain::history::tag::retarget;
+use crate::domain::history::tag::{retarget, short_name};
 
 /// One tag ref that moves to the rewritten commit's counterpart.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,10 +54,12 @@ fn make_move<R: TagStore + RefStore + CommitStore + ?Sized>(
     tag: &TagRef,
     renamed: &HashMap<String, String>,
 ) -> Result<TagMove> {
-    let old_commit = tag
-        .peeled
-        .as_ref()
-        .ok_or_else(|| Error::Internal(format!("{} does not point at a commit", tag.name)))?;
+    let old_commit = tag.peeled.as_ref().ok_or_else(|| {
+        Error::Internal(format!(
+            "tag {} does not point at a commit",
+            short_name(&tag.name)
+        ))
+    })?;
     let new_commit = &renamed[old_commit];
     let fail = |what: &str| Error::verification(format!("tag {} {what}", short_name(&tag.name)));
     match tag.kind {
@@ -73,8 +75,8 @@ fn make_move<R: TagStore + RefStore + CommitStore + ?Sized>(
             })
         }
         TagKind::Nested => Err(Error::Internal(format!(
-            "{} is a tag of a tag and cannot be moved",
-            tag.name
+            "tag {} is a tag of a tag and cannot be moved",
+            short_name(&tag.name)
         ))),
         TagKind::Annotated => {
             let raw = repo.read_tag_object(&tag.value)?;

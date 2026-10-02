@@ -11,6 +11,7 @@
 use crate::application::ports::{RefUpdate, Repository};
 use crate::application::retag::TagMove;
 use crate::domain::error::{Error, Result};
+use crate::domain::history::tag::short_name;
 
 pub(super) const MANIFEST_KIND: &str = "tags";
 pub(super) const KEEP_KIND_PREFIX: &str = "tag-";
@@ -99,13 +100,13 @@ pub(super) fn restore_updates(
             });
         } else if force {
             notes.push(format!(
-                "{} was changed after the rewrite, so it was left as it is",
-                m.name
+                "tag {} was changed after the rewrite, so it was left as it is",
+                short_name(&m.name)
             ));
         } else {
             return Err(Error::TipMoved(format!(
-                "{} has moved on since this backup was made (now {}); use --force to restore the branch and leave the tag as it is",
-                m.name,
+                "tag {} has moved on since this backup was made (now {}); use --force to restore the branch and leave the tag as it is",
+                short_name(&m.name),
                 now.as_deref().unwrap_or("deleted")
             )));
         }

@@ -165,7 +165,7 @@ fn without_retag_tags_stay_and_the_warning_points_at_the_flag() {
         let err = stderr(&o);
         assert!(err.contains("warning: tags/notes point at"), "{err}");
         assert!(
-            err.contains("refs/tags/v1") && err.contains("refs/tags/v2"),
+            err.contains("old ones: v1, v2 (") && !err.contains("refs/tags/"),
             "{err}"
         );
         assert!(err.contains("pass --retag to move them"), "{err}");
@@ -193,7 +193,7 @@ fn plan_shows_the_tags_it_would_move_and_those_it_would_not() {
         assert_eq!(r.refs(), refs, "a plan changes nothing");
         let plain = r.gcma_ok(&["plan", "--from", "root"]);
         assert!(
-            plain.contains("refs/tags/v1") && plain.contains("refs/tags/v2"),
+            plain.contains("old ones: v1, v2, v3 (") && !plain.contains("refs/tags/"),
             "{plain}"
         );
         assert!(plain.contains("pass --retag to move them"), "{plain}");
@@ -290,7 +290,7 @@ fn restore_refuses_when_a_tag_moved_meanwhile_and_changes_nothing() {
         let refs = r.refs();
         let o = r.gcma(&["restore", &id]);
         assert_eq!(Repo::code(&o), 4, "{}", stderr(&o));
-        assert!(stderr(&o).contains("refs/tags/v1"), "{}", stderr(&o));
+        assert!(stderr(&o).contains("tag v1 has moved on"), "{}", stderr(&o));
         assert_eq!(r.refs(), refs, "the branch and the other tag stay put");
     });
 }
@@ -307,7 +307,7 @@ fn a_forced_restore_leaves_a_tag_that_moved_meanwhile() {
         let moved = held(&r, "v1");
         let o = r.gcma(&["restore", &id, "--force"]);
         assert!(o.status.success(), "{}", stderr(&o));
-        assert!(stderr(&o).contains("refs/tags/v1"), "{}", stderr(&o));
+        assert!(stderr(&o).contains("tag v1 was changed"), "{}", stderr(&o));
         assert_eq!(held(&r, "v1"), moved);
         assert_eq!(held(&r, "v2"), old[1]);
         assert_eq!(r.git(&["rev-parse", "HEAD"]), old[2]);

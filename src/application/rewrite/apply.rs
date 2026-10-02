@@ -11,6 +11,7 @@ use crate::application::retag::{self, TagMove};
 use crate::domain::error::{Error, Result};
 use crate::domain::history::commit::{NewCommit, short};
 use crate::domain::history::plan::Plan;
+use crate::domain::history::tag::short_name;
 use crate::domain::settings::Config;
 use std::collections::{HashMap, HashSet};
 
@@ -123,7 +124,7 @@ pub fn apply(repo: &dyn Repository, plan: &Plan, opts: &ApplyOptions) -> Result<
         tags_moved: tags
             .moves
             .iter()
-            .map(|m| retag::short_name(&m.name).into())
+            .map(|m| short_name(&m.name).into())
             .collect(),
         paths_removed: prepared.filter.is_some(),
         warnings,

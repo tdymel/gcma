@@ -2,11 +2,12 @@
 
 use std::collections::HashSet;
 
-use super::classify::{classify, short_name};
+use super::classify::classify;
 use super::notes::count_notes;
 use crate::application::ports::{NoteStore, TagStore};
 use crate::domain::error::Result;
 use crate::domain::history::plan::Plan;
+use crate::domain::history::tag::short_name;
 
 #[derive(Debug, Default, Clone)]
 pub struct Preview {

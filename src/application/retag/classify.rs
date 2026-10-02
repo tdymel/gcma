@@ -4,9 +4,7 @@ use std::collections::HashSet;
 
 use crate::application::ports::{TagKind, TagRef, TagStore};
 use crate::domain::error::Result;
-use crate::domain::history::tag::is_signed;
-
-const TAGS_PREFIX: &str = "refs/tags/";
+use crate::domain::history::tag::{is_signed, short_name};
 
 /// The tags that point at rewritten or dropped commits, by what happens to them.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -21,11 +19,6 @@ pub struct Classified {
     pub not_utf8: Vec<TagRef>,
     /// Tags on a commit the rewrite drops.
     pub dropped: Vec<TagRef>,
-}
-
-/// The name as `git tag` shows it.
-pub fn short_name(ref_name: &str) -> &str {
-    ref_name.strip_prefix(TAGS_PREFIX).unwrap_or(ref_name)
 }
 
 fn names(tags: &[TagRef]) -> String {
@@ -109,6 +102,7 @@ pub fn classify<R: TagStore + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::history::tag::TAGS_PREFIX;
 
     fn tag(name: &str, kind: TagKind, peeled: Option<&str>) -> TagRef {
         TagRef {

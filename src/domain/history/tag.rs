@@ -1,7 +1,15 @@
-//! Annotated tag objects: telling a signed one from an unsigned one, and pointing a copy at
-//! another commit without touching anything else (name, tagger, date, message).
+//! Tags: their names, and annotated tag objects (telling a signed one from an unsigned one, and
+//! pointing a copy at another commit without touching anything else: name, tagger, date, message).
 
 use crate::domain::error::{Error, Result};
+
+/// Where tag refs live.
+pub const TAGS_PREFIX: &str = "refs/tags/";
+
+/// The name of a tag ref as `git tag` shows it (`v1` for `refs/tags/v1`); what the user sees.
+pub fn short_name(ref_name: &str) -> &str {
+    ref_name.strip_prefix(TAGS_PREFIX).unwrap_or(ref_name)
+}
 
 /// The lines that open a signature block at the end of a tag message (what git itself looks for).
 const SIGNATURE_MARKERS: &[&[u8]] = &[
@@ -47,6 +55,13 @@ mod tests {
 
     const OLD: &str = "1111111111111111111111111111111111111111";
     const NEW: &str = "2222222222222222222222222222222222222222";
+
+    #[test]
+    fn the_short_name_drops_only_the_tags_prefix() {
+        assert_eq!(short_name("refs/tags/v1"), "v1");
+        assert_eq!(short_name("refs/tags/rel/v1.0"), "rel/v1.0");
+        assert_eq!(short_name("refs/heads/main"), "refs/heads/main");
+    }
     const PGP: &str = "-----BEGIN PGP SIGNATURE-----";
 
     fn tag_by(tagger: &str, message: &str) -> Vec<u8> {
