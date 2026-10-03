@@ -7,9 +7,7 @@ use common::*;
 
 fn hooked(cfg: &str) -> Repo {
     let r = Repo::new();
-    r.bare_remote();
-    r.config(cfg);
-    r.gcma_ok(&["hook", "install"]);
+    r.hooked(cfg);
     r
 }
 

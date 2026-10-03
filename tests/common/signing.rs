@@ -82,4 +82,12 @@ impl Repo {
         self.git(&["remote", "add", "origin", remote.to_str().unwrap()]);
         remote
     }
+
+    /// A bare remote (`origin`), the config `cfg` and the pre-push hook; returns the remote.
+    pub fn hooked(&self, cfg: &str) -> PathBuf {
+        let remote = self.bare_remote();
+        self.config(cfg);
+        self.gcma_ok(&["hook", "install"]);
+        remote
+    }
 }

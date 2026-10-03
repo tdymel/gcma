@@ -10,10 +10,8 @@ use common::*;
 #[test]
 fn verify_mode_blocks_nonconforming_pushes_until_they_are_fixed() {
     let r = Repo::new();
-    r.bare_remote();
-    r.config(IDENTITY_CFG);
+    r.hooked(IDENTITY_CFG);
     r.linear(3, T0);
-    r.gcma_ok(&["hook", "install"]);
 
     // First push of a new branch: nonconforming -> blocked.
     let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
@@ -44,10 +42,8 @@ fn verify_mode_blocks_nonconforming_pushes_until_they_are_fixed() {
 #[test]
 fn rewrite_mode_rewrites_aborts_and_the_retry_succeeds() {
     let r = Repo::new();
-    let remote = r.bare_remote();
-    r.config(&format!("{IDENTITY_CFG}hook:\n  mode: rewrite\n"));
+    let remote = r.hooked(&format!("{IDENTITY_CFG}hook:\n  mode: rewrite\n"));
     r.linear(3, T0);
-    r.gcma_ok(&["hook", "install"]);
     let old_tip = r.git(&["rev-parse", "HEAD"]);
 
     let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
@@ -71,10 +67,8 @@ fn rewrite_mode_rewrites_aborts_and_the_retry_succeeds() {
 #[test]
 fn deletes_and_other_branches_are_not_judged_but_the_checked_out_one_is() {
     let r = Repo::new();
-    r.bare_remote();
-    r.config(IDENTITY_CFG);
+    r.hooked(IDENTITY_CFG);
     r.commit_as("ok.txt", "ok", T0, "Jane Doe", "jane@work.com");
-    r.gcma_ok(&["hook", "install"]);
     r.git(&["push", "-q", "-u", "origin", "main"]);
     // A nonconforming commit on another branch is not judged when pushing main... and a delete is a no-op.
     r.git(&["checkout", "-q", "-b", "other"]);
@@ -97,12 +91,10 @@ fn deletes_and_other_branches_are_not_judged_but_the_checked_out_one_is() {
 #[test]
 fn a_conforming_ancestor_pushed_as_a_revision_passes() {
     let r = Repo::new();
-    r.bare_remote();
-    r.config(IDENTITY_CFG);
+    r.hooked(IDENTITY_CFG);
     r.commit_as("a.txt", "a", T0, "Jane Doe", "jane@work.com");
     r.commit_as("b.txt", "b", 1_600_100_000, "Jane Doe", "jane@work.com");
     r.commit_at("bad.txt", "bad", 1_600_200_000); // nonconforming tip
-    r.gcma_ok(&["hook", "install"]);
     // Pushing HEAD~1 to main only sends conforming commits, so it passes (the opposite case is
     // `a_nonconforming_ancestor_pushed_as_a_revision_is_blocked`).
     let o = r.git_out(&["push", "-q", "origin", "HEAD~1:refs/heads/main"]);
@@ -115,10 +107,8 @@ fn a_conforming_ancestor_pushed_as_a_revision_passes() {
 #[test]
 fn pushes_spelled_as_head_or_a_sha_are_judged() {
     let r = Repo::new();
-    r.bare_remote();
-    r.config(IDENTITY_CFG);
+    r.hooked(IDENTITY_CFG);
     r.commit_at("bad.txt", "bad", 1_600_200_000); // nonconforming tip
-    r.gcma_ok(&["hook", "install"]);
     let tip = r.git(&["rev-parse", "HEAD"]);
     let remote_spec = format!("{tip}:refs/heads/o2");
     for spec in [
@@ -145,10 +135,8 @@ fn pushes_spelled_as_head_or_a_sha_are_judged() {
 #[test]
 fn rewrite_mode_fixes_a_push_spelled_as_head() {
     let r = Repo::new();
-    r.bare_remote();
-    r.config(&format!("{IDENTITY_CFG}hook: {{mode: rewrite}}\n"));
+    r.hooked(&format!("{IDENTITY_CFG}hook: {{mode: rewrite}}\n"));
     r.commit_at("bad.txt", "bad", 1_600_200_000);
-    r.gcma_ok(&["hook", "install"]);
     let old_tip = r.git(&["rev-parse", "HEAD"]);
     let o = r.git_out(&["push", "-q", "origin", "HEAD"]);
     assert!(!o.status.success(), "the push is aborted after rewriting");
@@ -164,17 +152,10 @@ fn rewrite_mode_fixes_a_push_spelled_as_head() {
 
 // ---------- the hook next to path rules, config errors and other push shapes ----------
 
-fn hook_repo(cfg: &str) -> (Repo, std::path::PathBuf) {
-    let r = Repo::new();
-    let remote = r.bare_remote();
-    r.config(cfg);
-    r.gcma_ok(&["hook", "install"]);
-    (r, remote)
-}
-
 #[test]
 fn verify_mode_blocks_secrets_until_the_history_is_cleaned() {
-    let (r, remote) = hook_repo(SECRETS_CFG);
+    let r = Repo::new();
+    let remote = r.hooked(SECRETS_CFG);
     r.commit_files(
         &[("src/a.rs", "a\n"), ("secrets/key.pem", "k\n")],
         "feature",
@@ -201,7 +182,8 @@ fn verify_mode_blocks_secrets_until_the_history_is_cleaned() {
 
 #[test]
 fn rewrite_mode_removes_secrets_aborts_and_the_retry_succeeds() {
-    let (r, remote) = hook_repo(&format!("{SECRETS_CFG}hook:\n  mode: rewrite\n"));
+    let r = Repo::new();
+    let remote = r.hooked(&format!("{SECRETS_CFG}hook:\n  mode: rewrite\n"));
     r.commit_files(
         &[("src/a.rs", "a\n"), ("secrets/key.pem", "k\n")],
         "feature",
@@ -230,7 +212,8 @@ fn rewrite_mode_removes_secrets_aborts_and_the_retry_succeeds() {
 
 #[test]
 fn a_broken_config_blocks_the_push_and_no_verify_bypasses_the_hook() {
-    let (r, remote) = hook_repo("version: 1\n");
+    let r = Repo::new();
+    let remote = r.hooked("version: 1\n");
     r.config("version: 1\nschedule: {days: [funday]}\nfrom: 2026-01-01\n");
     r.commit_at("a.txt", "a", T0);
     let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
@@ -249,7 +232,8 @@ fn a_broken_config_blocks_the_push_and_no_verify_bypasses_the_hook() {
 
 #[test]
 fn without_any_rules_every_push_passes() {
-    let (r, remote) = hook_repo("version: 1\n");
+    let r = Repo::new();
+    let remote = r.hooked("version: 1\n");
     r.commit_at("a.txt", "a", T0);
     let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
     assert!(o.status.success(), "{}", stderr(&o));
@@ -269,7 +253,8 @@ fn without_a_config_file_every_push_passes() {
 
 #[test]
 fn a_new_branch_of_conforming_commits_is_pushed() {
-    let (r, _) = hook_repo(IDENTITY_CFG);
+    let r = Repo::new();
+    r.hooked(IDENTITY_CFG);
     r.commit_as("a.txt", "a", T0, "Jane Doe", "jane@work.com");
     r.git(&["checkout", "-q", "-b", "feature"]);
     r.commit_as("b.txt", "b", 1_600_100_000, "Jane Doe", "jane@work.com");
@@ -280,11 +265,9 @@ fn a_new_branch_of_conforming_commits_is_pushed() {
 #[test]
 fn a_nonconforming_ancestor_pushed_as_a_revision_is_blocked() {
     let r = Repo::new();
-    r.bare_remote();
-    r.config(IDENTITY_CFG);
+    r.hooked(IDENTITY_CFG);
     r.commit_at("bad.txt", "bad", T0);
     r.commit_as("ok.txt", "ok", 1_600_100_000, "Jane Doe", "jane@work.com");
-    r.gcma_ok(&["hook", "install"]);
     let o = r.git_out(&["push", "-q", "origin", "HEAD~1:refs/heads/main"]);
     assert!(
         !o.status.success(),
@@ -301,10 +284,8 @@ fn a_nonconforming_ancestor_pushed_as_a_revision_is_blocked() {
 #[test]
 fn commits_that_would_only_be_dropped_are_blocked() {
     let r = Repo::new();
-    r.bare_remote();
-    r.config(SECRETS_NO_GITIGNORE_CFG);
+    r.hooked(SECRETS_NO_GITIGNORE_CFG);
     r.commit_files(&[("a.txt", "a\n")], "add a", T0);
-    r.gcma_ok(&["hook", "install"]);
     r.git(&["push", "-q", "-u", "origin", "main"]);
     r.commit_files(&[("secrets/k", "k\n")], "add key", 1_600_100_000);
     let o = r.git_out(&["push", "-q", "origin", "main"]);
@@ -338,7 +319,8 @@ fn a_settled_history_reschedules_only_its_new_commits() {
 
 #[test]
 fn rewrite_mode_prints_the_warnings_of_the_rewrite() {
-    let (r, _remote) = hook_repo(&format!("{SECRETS_CFG}hook:\n  mode: rewrite\n"));
+    let r = Repo::new();
+    r.hooked(&format!("{SECRETS_CFG}hook:\n  mode: rewrite\n"));
     r.commit_files(&[(".gitignore", "target\n"), ("a.txt", "a\n")], "init", T0);
     r.commit_files(&[("secrets/k", "k\n"), ("b.txt", "b\n")], "add b", T0 + 100);
     r.write(".gitignore", "target\nmine\n"); // unstaged local edit
