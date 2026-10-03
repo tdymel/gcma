@@ -52,11 +52,6 @@ pub fn run_pre_push(
     now: i64,
 ) -> Result<PrePushOutcome> {
     let remotes = repo.remotes()?;
-    let Some(branch_ref) = repo.current_branch_ref()? else {
-        return Ok(PrePushOutcome::Proceed); // detached HEAD: no push is judged
-    };
-    // Read once: nothing moves the branch between the pushed refs, as a rewrite ends the loop.
-    let tip = repo.ref_value(&branch_ref)?;
     let mut sent = Vec::new();
     for p in pushed {
         if is_zero_oid(&p.local_sha) {
@@ -75,6 +70,11 @@ pub fn run_pre_push(
     if let Some(pushed_ref) = sends_replaced(repo, &sent)? {
         return Ok(PrePushOutcome::Replaced { pushed_ref });
     }
+    let Some(branch_ref) = repo.current_branch_ref()? else {
+        return Ok(PrePushOutcome::Proceed); // detached HEAD: no rules are judged
+    };
+    // Read once: nothing moves the branch between the pushed refs, as a rewrite ends the loop.
+    let tip = repo.ref_value(&branch_ref)?;
     for s in sent {
         let commit = s.revs.tip.clone();
         let Some(judged) = judged_commit(repo, s.pushed, commit, &branch_ref, tip.as_deref())?

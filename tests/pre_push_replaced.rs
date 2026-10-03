@@ -146,3 +146,19 @@ fn a_tag_on_a_branch_brought_back_by_restore_passes() {
     r.git(&["checkout", "-q", "-b", "other", "origin/main"]);
     assert_passes(&r, &["push", "-q", "origin", "v1"]);
 }
+
+#[test]
+fn a_detached_head_does_not_skip_the_replaced_commits() {
+    let r = tag_left_on_a_replaced_commit();
+    r.git(&["checkout", "-q", "--detach", "v1"]);
+    assert_replaced(&r, &["push", "-q", "origin", "v1"]);
+    let before = r.git(&["ls-remote", "origin"]);
+    let o = r.git_out(&["push", "-q", "origin", "HEAD:refs/heads/old"]);
+    assert!(!o.status.success(), "{}", stderr(&o));
+    let err = stderr(&o);
+    assert!(
+        err.contains("HEAD would push commits that gcma replaced"),
+        "{err}"
+    );
+    assert_eq!(r.git(&["ls-remote", "origin"]), before);
+}
