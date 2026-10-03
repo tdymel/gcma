@@ -66,6 +66,11 @@ fn verdict(outcome: &PrePushOutcome) -> Result<()> {
         } => Err(Error::Nonconforming(format!(
             "gcma rewrote {commits} unpushed commit(s) of {branch_ref} to follow the rules; run `git push` again"
         ))),
+        PrePushOutcome::Replaced { pushed_ref } => Err(Error::Nonconforming(format!(
+            "{pushed_ref} would push commits that gcma replaced when it rewrote a branch; {}, \
+             or undo the rewrite with `gcma restore`, and push again",
+            move_hint(pushed_ref)
+        ))),
         PrePushOutcome::Blocked {
             commits,
             no_upstream,
@@ -79,6 +84,20 @@ fn verdict(outcome: &PrePushOutcome) -> Result<()> {
                  run `gcma apply`{hint} (it rewrites the unpushed part of the branch) and push again"
             )))
         }
+    }
+}
+
+/// How to point a ref left on the replaced commits at the rewritten ones, or drop it.
+fn move_hint(pushed_ref: &str) -> String {
+    if let Some(tag) = pushed_ref.strip_prefix("refs/tags/") {
+        format!("move the tag (`git tag -f {tag} <new commit>`) or delete it (`git tag -d {tag}`)")
+    } else if pushed_ref.starts_with("refs/") {
+        format!(
+            "move the ref (`git update-ref {pushed_ref} <new commit>`) or delete it \
+             (`git update-ref -d {pushed_ref}`)"
+        )
+    } else {
+        "push the rewritten commit instead".to_string()
     }
 }
 
@@ -222,6 +241,23 @@ mod tests {
         assert!(err.contains("add `--from <rev>`"), "{err}");
         let err = verdict(&blocked(false)).unwrap_err().to_string();
         assert!(!err.contains("--from"), "{err}");
+        let replaced = |r: &str| {
+            let outcome = PrePushOutcome::Replaced {
+                pushed_ref: r.into(),
+            };
+            verdict(&outcome).unwrap_err().to_string()
+        };
+        let err = replaced("refs/tags/v1");
+        assert!(
+            err.contains("refs/tags/v1 would push commits that gcma replaced"),
+            "{err}"
+        );
+        assert!(err.contains("`git tag -f v1 <new commit>`"), "{err}");
+        assert!(err.contains("`git tag -d v1`"), "{err}");
+        assert!(err.contains("`gcma restore`"), "{err}");
+        let err = replaced("refs/keep/x");
+        assert!(err.contains("`git update-ref -d refs/keep/x`"), "{err}");
+        assert!(replaced("abc123").contains("push the rewritten commit instead"));
     }
 
     #[test]
