@@ -4,6 +4,12 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::sent::Sent;
+use crate::application::ports::Repository;
+use crate::application::rewrite::list_backups;
+use crate::domain::error::Result;
+use crate::domain::history::plan::HEADS_PREFIX;
+
 /// The commits off every local branch, each with its parents (`History::commits_off_branches`).
 pub(super) type Graph = HashMap<String, Vec<String>>;
 
@@ -42,6 +48,46 @@ pub(super) fn replaced(graph: &Graph, backups: &[(String, String)]) -> HashSet<S
         out.extend(olds.difference(&kept).map(|c| c.to_string()));
     }
     out
+}
+
+/// The first ref outside the branches that would send a commit gcma replaced: the old identities,
+/// times and excluded files. The replaced commits are worked out once, for every pushed ref; a
+/// branch push never sends one, as a local branch holds what it reaches.
+pub(super) fn sends_replaced(repo: &dyn Repository, sent: &[Sent]) -> Result<Option<String>> {
+    let checked: Vec<&Sent> = sent
+        .iter()
+        .filter(|s| !s.pushed.local_ref.starts_with(HEADS_PREFIX))
+        .collect();
+    if checked.is_empty() {
+        return Ok(None);
+    }
+    let backups: Vec<(String, String)> = list_backups(repo)?
+        .into_iter()
+        .map(|b| (b.old, b.new))
+        .collect();
+    if backups.is_empty() {
+        return Ok(None);
+    }
+    let mut tips: Vec<String> = backups
+        .iter()
+        .flat_map(|(old, new)| [old.clone(), new.clone()])
+        .chain(checked.iter().map(|s| s.revs.tip.clone()))
+        .collect();
+    tips.sort();
+    tips.dedup();
+    let graph = repo.commits_off_branches(&tips)?;
+    let gone = replaced(&graph, &backups);
+    for s in checked {
+        let reached = reach(&graph, &s.revs.tip);
+        if !reached.iter().any(|c| gone.contains(*c)) {
+            continue;
+        }
+        // A replaced commit the remote already has is not sent again.
+        if repo.list_range(&s.revs)?.iter().any(|c| gone.contains(c)) {
+            return Ok(Some(s.pushed.local_ref.clone()));
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]

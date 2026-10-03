@@ -106,3 +106,52 @@ fn rewrite_mode_reports_the_tags_it_leaves_on_the_old_commits() {
     assert!(err.contains(": v1"), "{err}");
     assert!(!err.contains("--retag"), "a hook has no --retag: {err}");
 }
+
+/// A second bare remote, `name`, with no remote-tracking refs yet.
+fn new_remote(r: &Repo, name: &str) {
+    let path = r.home.path().join(format!("{name}.git"));
+    let path = path.to_str().unwrap();
+    r.git(&["init", "-q", "--bare", path]);
+    r.git(&["remote", "add", name, path]);
+}
+
+#[test]
+fn tags_pushed_to_a_new_remote_are_judged_from_what_the_other_remotes_have() {
+    let r = hooked(IDENTITY_CFG);
+    r.commit_at("old.txt", "public before the rules", T0);
+    r.git(&["tag", "v0"]);
+    r.git(&["push", "-q", "--no-verify", "-u", "origin", "main"]);
+    r.commit_as("a.txt", "a", T0 + 100, "Jane Doe", "jane@work.com");
+    r.git(&["tag", "v1"]);
+    new_remote(&r, "mirror");
+    for tag in ["v0", "v1"] {
+        let o = r.git_out(&["push", "-q", "mirror", tag]);
+        assert!(o.status.success(), "push {tag}: {}", stderr(&o));
+    }
+    r.commit_at("bad.txt", "bad", T0 + 200);
+    r.git(&["tag", "v2"]);
+    let o = r.git_out(&["push", "-q", "mirror", "v2"]);
+    assert!(!o.status.success(), "the new commit is still judged");
+}
+
+#[test]
+fn many_tags_are_judged_with_one_plan() {
+    let r = hooked(IDENTITY_CFG);
+    for i in 0..30 {
+        let name = format!("f{i}.txt");
+        r.commit_as(&name, &name, T0 + i * 100, "Jane Doe", "jane@work.com");
+        r.git(&["tag", &format!("v{i}")]);
+    }
+    new_remote(&r, "mirror");
+    let trace = r.home.path().join("trace");
+    let o = r
+        .cmd("git")
+        .env("GIT_TRACE", &trace)
+        .args(["push", "-q", "--tags", "mirror"])
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", stderr(&o));
+    let trace = std::fs::read_to_string(trace).unwrap();
+    let ranges = trace.matches("rev-list --topo-order").count();
+    assert!(ranges <= 2, "{ranges} ranges listed for 30 tags");
+}
