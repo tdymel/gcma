@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::sent::Sent;
+use super::sent::{Destination, Sent};
 use crate::application::ports::Repository;
 use crate::application::rewrite::list_backups;
 use crate::domain::error::Result;
@@ -50,10 +50,14 @@ pub(super) fn replaced(graph: &Graph, backups: &[(String, String)]) -> HashSet<S
     out
 }
 
-/// The first ref outside the branches that would send a commit gcma replaced: the old identities,
-/// times and excluded files. The replaced commits are worked out once, for every pushed ref; a
-/// branch push never sends one, as a local branch holds what it reaches.
-pub(super) fn sends_replaced(repo: &dyn Repository, sent: &[Sent]) -> Result<Option<String>> {
+/// The first ref outside the branches that would send `dest` a commit gcma replaced: the old
+/// identities, times and excluded files. The replaced commits are worked out once, for every pushed
+/// ref; a branch push never sends one, as a local branch holds what it reaches.
+pub(super) fn sends_replaced(
+    repo: &dyn Repository,
+    sent: &[Sent],
+    dest: &Destination,
+) -> Result<Option<String>> {
     let checked: Vec<&Sent> = sent
         .iter()
         .filter(|s| !s.pushed.local_ref.starts_with(HEADS_PREFIX))
@@ -82,8 +86,12 @@ pub(super) fn sends_replaced(repo: &dyn Repository, sent: &[Sent]) -> Result<Opt
         if !reached.iter().any(|c| gone.contains(*c)) {
             continue;
         }
-        // A replaced commit the remote already has is not sent again.
-        if repo.list_range(&s.revs)?.iter().any(|c| gone.contains(c)) {
+        // A replaced commit this remote already has is not sent again.
+        if repo
+            .list_range(&dest.lacks(s))?
+            .iter()
+            .any(|c| gone.contains(c))
+        {
             return Ok(Some(s.pushed.local_ref.clone()));
         }
     }

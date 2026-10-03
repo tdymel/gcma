@@ -29,7 +29,7 @@ pub(super) struct Destination<'a> {
     /// `remote` names a configured remote (it is not a URL).
     named: bool,
     /// The named remote has remote-tracking refs (asked only when a ref other than a branch is
-    /// pushed).
+    /// pushed, as only those are checked for replaced commits).
     tracked: bool,
     /// The upstream of the checked-out branch.
     pub upstream: Option<String>,
@@ -44,7 +44,9 @@ pub(super) fn destination<'a>(
 ) -> Result<Destination<'a>> {
     let named = repo.remotes()?.iter().any(|r| r == remote);
     let tracked = named
-        && pushed.iter().any(is_other_ref)
+        && pushed
+            .iter()
+            .any(|p| !p.local_ref.starts_with(HEADS_PREFIX))
         && !repo
             .list_refs(&format!("refs/remotes/{remote}"))?
             .is_empty();
@@ -99,4 +101,18 @@ pub(super) fn unpushed_range(
         RemoteScope::All
     });
     Ok((revs, None))
+}
+
+impl Destination<'_> {
+    /// What `s` sends to this remote: its commits minus the remote's commit for the ref (`base`)
+    /// and the remote's own tracking refs. What other remotes or the upstream have does not count,
+    /// as this remote may not have it.
+    pub(super) fn lacks(&self, s: &Sent) -> RevRange {
+        RevRange {
+            tip: s.revs.tip.clone(),
+            exclude_commits: s.base.iter().cloned().collect(),
+            exclude_remotes: (self.named && self.tracked)
+                .then(|| RemoteScope::Named(self.remote.to_string())),
+        }
+    }
 }

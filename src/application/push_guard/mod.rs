@@ -67,7 +67,7 @@ pub fn run_pre_push(
             base,
         });
     }
-    if let Some(pushed_ref) = replaced::sends_replaced(repo, &sent)? {
+    if let Some(pushed_ref) = replaced::sends_replaced(repo, &sent, &dest)? {
         return Ok(PrePushOutcome::Replaced { pushed_ref });
     }
     let Some(branch_ref) = branch_ref else {
