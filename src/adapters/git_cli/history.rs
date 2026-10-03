@@ -20,12 +20,7 @@ impl History for GitCli {
             .map(String::from)
             .to_vec();
         args.push(range.tip.clone());
-        args.extend(range.exclude_commits.iter().map(|c| format!("^{c}")));
-        match &range.exclude_remotes {
-            None => {}
-            Some(RemoteScope::All) => args.extend(["--not".into(), "--remotes".into()]),
-            Some(RemoteScope::Named(n)) => args.extend(["--not".into(), format!("--remotes={n}")]),
-        }
+        args.extend(exclusions(range));
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
         let out = self.text(&refs)?;
         Ok(out
@@ -33,6 +28,23 @@ impl History for GitCli {
             .filter(|l| !l.is_empty())
             .map(String::from)
             .collect())
+    }
+
+    fn range_meets(&self, range: &RevRange, others: &[String]) -> Result<bool> {
+        if others.is_empty() {
+            return Ok(false);
+        }
+        let in_range = self.list_range(range)?;
+        if in_range.is_empty() {
+            return Ok(false);
+        }
+        // What `others` reach outside the exclusions: a commit of the range they reach is in it.
+        let mut args: Vec<String> = vec!["rev-list".into()];
+        args.extend(others.iter().cloned());
+        args.extend(exclusions(range));
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let reached: HashSet<String> = self.text(&refs)?.lines().map(String::from).collect();
+        Ok(in_range.iter().any(|c| reached.contains(c)))
     }
 
     fn count_reachable(&self, rev: &str) -> Result<usize> {
@@ -128,6 +140,21 @@ fn parse_count(out: &str) -> Result<usize> {
             "`git rev-list --count` printed {out:?}, not a number"
         ))
     })
+}
+
+/// The `rev-list` arguments that leave out what the range excludes.
+fn exclusions(range: &RevRange) -> Vec<String> {
+    let mut args: Vec<String> = range
+        .exclude_commits
+        .iter()
+        .map(|c| format!("^{c}"))
+        .collect();
+    match &range.exclude_remotes {
+        None => {}
+        Some(RemoteScope::All) => args.extend(["--not".into(), "--remotes".into()]),
+        Some(RemoteScope::Named(n)) => args.extend(["--not".into(), format!("--remotes={n}")]),
+    }
+    args
 }
 
 #[cfg(test)]

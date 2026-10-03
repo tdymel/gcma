@@ -134,6 +134,7 @@ impl History for Faulty {
             fn merge_base(&self, a: &str, b: &str) -> Result<Option<String>>;
             fn is_ancestor(&self, ancestor: &str, descendant: &str) -> Result<bool>;
             fn list_range(&self, range: &RevRange) -> Result<Vec<String>>;
+            fn range_meets(&self, range: &RevRange, others: &[String]) -> Result<bool>;
             fn count_reachable(&self, rev: &str) -> Result<usize>;
             fn unpushed_among(&self, oids: &[String], upstream: &str) -> Result<HashSet<String>>;
         }

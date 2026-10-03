@@ -191,6 +191,8 @@ pub trait History {
     fn is_ancestor(&self, ancestor: &str, descendant: &str) -> Result<bool>;
     /// The commits of the range, parents first.
     fn list_range(&self, range: &RevRange) -> Result<Vec<String>>;
+    /// True when a commit of the range is also reachable from one of `others`.
+    fn range_meets(&self, range: &RevRange, others: &[String]) -> Result<bool>;
     fn count_reachable(&self, rev: &str) -> Result<usize>;
     /// Of `oids`, those NOT reachable from `upstream`.
     fn unpushed_among(&self, oids: &[String], upstream: &str) -> Result<HashSet<String>>;
