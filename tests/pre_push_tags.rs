@@ -49,6 +49,11 @@ fn an_annotated_tag_at_the_tip_is_judged() {
     r.git(&["tag", "-a", "v1", "-m", "release"]);
     assert_blocked(&r, "v1");
     assert_blocked(&r, "v1:refs/heads/main");
+    // Only `--retag` takes the tag along to the rewritten commit.
+    let tag = stderr(&r.git_out(&["push", "-q", "origin", "v1"]));
+    assert!(tag.contains("run `gcma apply --retag`"), "{tag}");
+    let branch = stderr(&r.git_out(&["push", "-q", "origin", "main"]));
+    assert!(!branch.contains("--retag"), "{branch}");
 }
 
 #[test]

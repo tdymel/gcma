@@ -74,14 +74,22 @@ fn verdict(outcome: &PrePushOutcome) -> Result<()> {
         PrePushOutcome::Blocked {
             commits,
             no_upstream,
+            follows_branch,
         } => {
             let hint = match no_upstream {
                 true => " (the branch has no upstream: add `--from <rev>`)",
                 false => "",
             };
+            let (retag, what) = match follows_branch {
+                true => ("", "it rewrites the unpushed part of the branch"),
+                false => (
+                    " --retag",
+                    "it rewrites the unpushed part of the branch and moves the tags with it",
+                ),
+            };
             Err(Error::Nonconforming(format!(
                 "{commits} commit(s) about to be pushed do not follow the gcma rules; \
-                 run `gcma apply`{hint} (it rewrites the unpushed part of the branch) and push again"
+                 run `gcma apply{retag}`{hint} ({what}) and push again"
             )))
         }
     }
@@ -229,18 +237,26 @@ mod tests {
             "{err}"
         );
         assert!(err.contains("run `git push` again"), "{err}");
-        let blocked = |no_upstream| PrePushOutcome::Blocked {
+        let blocked = |no_upstream, follows_branch| PrePushOutcome::Blocked {
             commits: 3,
             no_upstream,
+            follows_branch,
         };
-        let err = verdict(&blocked(true)).unwrap_err().to_string();
+        let err = verdict(&blocked(true, true)).unwrap_err().to_string();
         assert!(
             err.contains("3 commit(s) about to be pushed do not follow the gcma rules"),
             "{err}"
         );
-        assert!(err.contains("add `--from <rev>`"), "{err}");
-        let err = verdict(&blocked(false)).unwrap_err().to_string();
+        assert!(
+            err.contains("run `gcma apply` (the branch has no upstream: add `--from <rev>`)"),
+            "{err}"
+        );
+        let err = verdict(&blocked(false, true)).unwrap_err().to_string();
         assert!(!err.contains("--from"), "{err}");
+        assert!(!err.contains("--retag"), "{err}");
+        let err = verdict(&blocked(false, false)).unwrap_err().to_string();
+        assert!(err.contains("run `gcma apply --retag`"), "{err}");
+        assert!(err.contains("moves the tags"), "{err}");
         let replaced = |r: &str| {
             let outcome = PrePushOutcome::Replaced {
                 pushed_ref: r.into(),

@@ -36,6 +36,9 @@ pub enum PrePushOutcome {
         commits: usize,
         /// The branch has no upstream, so `gcma apply` needs `--from`.
         no_upstream: bool,
+        /// The push names the branch (or `HEAD`, or a revision of it), so pushing again after
+        /// `gcma apply` sends the rewritten commits; a tag needs `gcma apply --retag` to follow.
+        follows_branch: bool,
     },
 }
 
@@ -118,6 +121,7 @@ pub fn run_pre_push(
         return Ok(PrePushOutcome::Blocked {
             commits: built.plan.entries.len() + built.plan.dropped.len(),
             no_upstream: dest.upstream.is_none(),
+            follows_branch: g.follows_branch,
         });
     }
     Ok(PrePushOutcome::Proceed)
