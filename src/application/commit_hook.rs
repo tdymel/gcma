@@ -36,9 +36,9 @@ pub enum PostCommitOutcome {
     Rewritten {
         commits: usize,
         backup_id: Option<String>,
-        /// What went wrong after the branch moved (`ApplyReport::warnings`), e.g. the index could
-        /// not follow a rewrite with path rules.
-        warnings: Vec<String>,
+        /// What the plan and the rewrite have to tell: tags left on the old commits, the secrets
+        /// note, what went wrong after the branch moved (e.g. the index could not follow).
+        notices: Vec<String>,
     },
 }
 
@@ -98,14 +98,15 @@ fn respread(
         return Ok(PostCommitOutcome::Unchanged);
     }
     let report = apply(repo, &built.plan, &ApplyOptions::new(now))?;
-    Ok(if report.noop {
-        PostCommitOutcome::Unchanged
-    } else {
-        PostCommitOutcome::Rewritten {
-            commits: report.rewritten,
-            backup_id: report.backup_id,
-            warnings: report.warnings,
-        }
+    if report.noop {
+        return Ok(PostCommitOutcome::Unchanged);
+    }
+    let mut notices = built.warnings;
+    notices.extend(report.notices());
+    Ok(PostCommitOutcome::Rewritten {
+        commits: report.rewritten,
+        backup_id: report.backup_id,
+        notices,
     })
 }
 

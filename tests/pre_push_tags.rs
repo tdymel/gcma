@@ -91,3 +91,20 @@ fn a_tag_unrelated_to_the_branch_or_not_on_a_commit_is_ignored() {
     assert_passes(&r, "elsewhere");
     assert_passes(&r, "tree");
 }
+
+#[test]
+fn rewrite_mode_reports_the_tags_it_leaves_on_the_old_commits() {
+    let r = hooked(&format!("{IDENTITY_CFG}hook: {{mode: rewrite}}\n"));
+    r.commit_at("bad.txt", "bad", T0);
+    r.git(&["tag", "v1"]);
+    let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
+    assert!(!o.status.success());
+    let err = stderr(&o);
+    assert!(err.contains("run `git push` again"), "{err}");
+    assert!(
+        err.contains("gcma: pre-push: tags/notes point at commits that will be rewritten"),
+        "{err}"
+    );
+    assert!(err.contains(": v1"), "{err}");
+    assert!(!err.contains("--retag"), "a hook has no --retag: {err}");
+}

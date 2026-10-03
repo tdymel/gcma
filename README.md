@@ -176,6 +176,10 @@ rewrite of the branch, so in `rewrite` mode a nonconforming tag push is blocked 
 branches, and tags on commits outside the branch (or on no commit) are ignored. Skip it once with `git push --no-verify`.
 Remember that config errors block pushes too.
 
+After a rewrite both hooks tell what `apply` would warn about, one `gcma: <hook>: <line>` line each on stderr (e.g.
+`gcma: pre-push: ...`): tags and notes left on the old commits, notes refs that could not be read, the note on removed
+paths, and a working copy or index that could not follow.
+
 ### Post-commit hook (opt-in)
 
 `gcma hook install --post-commit` installs the `pre-push` hook and a `post-commit` one (`hook uninstall` removes both; a
@@ -188,8 +192,8 @@ clean them up with `gcma restore <id> --prune`.
 - It acts only with `hook: { mode: rewrite }` and a `schedule`; in `verify` mode it does nothing (a commit cannot be
   blocked), and `pre-push` stays the safety net. The unpushed range is `upstream..HEAD`; without an upstream it is every
   commit on no remote-tracking ref, and with neither upstream nor remote it does nothing (use `gcma apply --from root`).
-- It never fails the commit and is silent unless something is wrong (`gcma: post-commit skipped: <reason>` on stderr, and
-  `gcma: post-commit: <warning>` when, with path rules, the index or `.gitignore` could not follow). It skips quietly on a
+- It never fails the commit and is silent unless something is wrong or worth knowing (`gcma: post-commit skipped:
+  <reason>` on stderr, and the `gcma: post-commit: <line>` lines above). It skips quietly on a
   detached HEAD, during a rebase, merge, cherry-pick or revert, with staged changes, and when the window has no time left.
   With `GCMA_DEBUG` set (non-empty) it prints one line on what it did: `gcma: post-commit: skipped (<reason>)` or
   `gcma: post-commit: rewrote N commit(s), backup <id>`.

@@ -2,8 +2,8 @@
 
 use crate::application::planning::{PlanOptions, RangeSpec, build_plan};
 use crate::application::ports::{RemoteScope, Repository};
-use crate::application::rewrite::{ApplyOptions, SECRETS_NOTE, apply};
-use crate::domain::error::{Error, Result};
+use crate::application::rewrite::{ApplyOptions, apply};
+use crate::domain::error::Result;
 use crate::domain::history::commit::is_zero_oid;
 use crate::domain::history::plan::HEADS_PREFIX;
 use crate::domain::settings::{Config, HookMode};
@@ -16,20 +16,37 @@ pub struct PushedRef {
     pub remote_sha: String,
 }
 
-/// `Ok(())` lets the push proceed; an error aborts it. `now` is the current unix time. What a
-/// rewrite has to tell besides (its warnings, the secrets note) is added to `warnings`, whether the
-/// push proceeds or not.
+/// What the hook decided. Only `Proceed` lets the push go on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrePushOutcome {
+    Proceed,
+    /// `rewrite` mode fixed the branch; the push is aborted so that pushing again sends the new
+    /// commits.
+    Rewritten {
+        branch_ref: String,
+        commits: usize,
+        /// What the plan and the rewrite have to tell (tags left behind, the secrets note, ...).
+        notices: Vec<String>,
+    },
+    /// Nonconforming commits that the hook does not fix.
+    Blocked {
+        commits: usize,
+        /// The branch has no upstream, so `gcma apply` needs `--from`.
+        no_upstream: bool,
+    },
+}
+
+/// Judges (and in `rewrite` mode fixes) what the push would send. `now` is the current unix time.
 pub fn run_pre_push(
     repo: &dyn Repository,
     cfg: &Config,
     remote: &str,
     pushed: &[PushedRef],
     now: i64,
-    warnings: &mut Vec<String>,
-) -> Result<()> {
+) -> Result<PrePushOutcome> {
     let remotes = repo.remotes()?;
     let Some(branch_ref) = repo.current_branch_ref()? else {
-        return Ok(()); // detached HEAD: no push is judged
+        return Ok(PrePushOutcome::Proceed); // detached HEAD: no push is judged
     };
     // Read once: nothing moves the branch between the pushed refs, as a rewrite ends the loop.
     let tip = repo.ref_value(&branch_ref)?;
@@ -58,22 +75,23 @@ pub fn run_pre_push(
         }
         if rewrite {
             let report = apply(repo, &built.plan, &ApplyOptions::new(now))?;
-            warnings.extend(report.warnings);
-            if report.paths_removed {
-                warnings.push(SECRETS_NOTE.to_string());
+            if report.noop {
+                continue;
             }
-            if !report.noop {
-                return Err(Error::Nonconforming(format!(
-                    "gcma rewrote {} unpushed commit(s) of {branch_ref} to follow the rules; run `git push` again",
-                    report.rewritten
-                )));
-            }
-            continue;
+            let mut notices = built.warnings;
+            notices.extend(report.notices());
+            return Ok(PrePushOutcome::Rewritten {
+                branch_ref,
+                commits: report.rewritten,
+                notices,
+            });
         }
-        let n = built.plan.entries.len() + built.plan.dropped.len();
-        return blocked(repo, &branch_ref, n);
+        return Ok(PrePushOutcome::Blocked {
+            commits: built.plan.entries.len() + built.plan.dropped.len(),
+            no_upstream: repo.upstream_oid(&branch_ref)?.is_none(),
+        });
     }
-    Ok(())
+    Ok(PrePushOutcome::Proceed)
 }
 
 /// The commit a judged push sends.
@@ -145,17 +163,4 @@ fn unpushed_range(
         false => RemoteScope::All,
     };
     Ok(RangeSpec::unpushed(tip, branch_ref, Some(scope)))
-}
-
-/// The push is refused: always an `Err` (or the failure to read the upstream).
-fn blocked(repo: &dyn Repository, branch_ref: &str, n: usize) -> Result<()> {
-    let hint = if repo.upstream_oid(branch_ref)?.is_none() {
-        " (the branch has no upstream: add `--from <rev>`)"
-    } else {
-        ""
-    };
-    Err(Error::Nonconforming(format!(
-        "{n} commit(s) about to be pushed do not follow the gcma rules; \
-         run `gcma apply`{hint} (it rewrites the unpushed part of the branch) and push again"
-    )))
 }

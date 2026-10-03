@@ -310,7 +310,11 @@ fn path_rules_keep_the_working_copy_and_index_in_step() {
     r.git(&["add", "-f", "secrets/key.pem", "src.txt"]);
     let o = r.git_out(&["commit", "-q", "-m", "feature"]);
     assert!(o.status.success(), "{}", stderr(&o));
-    assert_eq!(stderr(&o), "");
+    assert!(
+        stderr(&o).starts_with("gcma: post-commit: paths were removed from the rewritten commits"),
+        "the secrets note is printed: {}",
+        stderr(&o)
+    );
     assert!(
         !r.git(&["ls-tree", "-r", "--name-only", "HEAD"])
             .contains("secrets/")
@@ -318,4 +322,20 @@ fn path_rules_keep_the_working_copy_and_index_in_step() {
     assert!(r.path().join("secrets/key.pem").exists());
     assert_scheduled(&r.log());
     assert!(!r.git(&["status", "--porcelain"]).contains("src.txt"));
+}
+
+#[test]
+fn a_tag_left_on_an_old_commit_is_reported() {
+    let r = hooked("");
+    commit_ok(&r, "a.txt");
+    r.git(&["tag", "v1"]);
+    let o = commit(&r, "b.txt");
+    assert!(o.status.success(), "{}", stderr(&o));
+    let err = stderr(&o);
+    assert!(
+        err.contains("gcma: post-commit: tags/notes point at commits that will be rewritten"),
+        "{err}"
+    );
+    assert!(err.contains(": v1"), "{err}");
+    assert!(!err.contains("--retag"), "a hook has no --retag: {err}");
 }

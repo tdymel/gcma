@@ -8,7 +8,7 @@ use crate::adapters::cli_support::session::{Session, now};
 use crate::adapters::git_cli::NESTED_ENV;
 use crate::adapters::hook_installer::{self, Hook};
 use crate::application::commit_hook::{self, PostCommitOutcome, Skip};
-use crate::application::push_guard::{self, PushedRef};
+use crate::application::push_guard::{self, PrePushOutcome, PushedRef};
 use crate::domain::error::{Error, Result};
 
 pub fn run(s: &Session, cmd: HookCmd) -> Result<()> {
@@ -46,26 +46,47 @@ fn pre_push(s: &Session, args: &[String]) -> Result<()> {
     let mut stdin = String::new();
     std::io::stdin().read_to_string(&mut stdin)?;
     let remote = args.first().map(String::as_str).unwrap_or("");
-    let mut warnings = Vec::new();
-    let verdict = push_guard::run_pre_push(
-        &repo,
-        &cfg,
-        remote,
-        &parse_pushed_refs(&stdin),
-        now(),
-        &mut warnings,
-    );
-    for line in warnings {
-        eprintln!("gcma: pre-push: {line}");
+    let outcome = push_guard::run_pre_push(&repo, &cfg, remote, &parse_pushed_refs(&stdin), now())?;
+    if let PrePushOutcome::Rewritten { notices, .. } = &outcome {
+        for line in notices {
+            eprintln!("gcma: pre-push: {line}");
+        }
     }
-    verdict
+    verdict(&outcome)
+}
+
+/// Whether the push goes on; a refusal says what to do next.
+fn verdict(outcome: &PrePushOutcome) -> Result<()> {
+    match outcome {
+        PrePushOutcome::Proceed => Ok(()),
+        PrePushOutcome::Rewritten {
+            branch_ref,
+            commits,
+            ..
+        } => Err(Error::Nonconforming(format!(
+            "gcma rewrote {commits} unpushed commit(s) of {branch_ref} to follow the rules; run `git push` again"
+        ))),
+        PrePushOutcome::Blocked {
+            commits,
+            no_upstream,
+        } => {
+            let hint = match no_upstream {
+                true => " (the branch has no upstream: add `--from <rev>`)",
+                false => "",
+            };
+            Err(Error::Nonconforming(format!(
+                "{commits} commit(s) about to be pushed do not follow the gcma rules; \
+                 run `gcma apply`{hint} (it rewrites the unpushed part of the branch) and push again"
+            )))
+        }
+    }
 }
 
 /// Set (non-empty) to have the post-commit hook say what it did.
 const DEBUG_ENV: &str = "GCMA_DEBUG";
 
 /// The commit is done and must stay done: whatever goes wrong here (even a panic) is one line on
-/// stderr, and the exit code stays 0. Otherwise the hook is silent, except for warnings and, with
+/// stderr, and the exit code stays 0. Otherwise the hook is silent, except for its notices and, with
 /// `GCMA_DEBUG`, one line on what it did.
 fn post_commit(s: &Session) {
     if std::env::var_os(NESTED_ENV).is_some() {
@@ -90,7 +111,7 @@ fn post_commit(s: &Session) {
     }
 }
 
-/// What the post-commit hook prints (after `gcma: post-commit: `): its warnings always, and with
+/// What the post-commit hook prints (after `gcma: post-commit: `): its notices always, and with
 /// `debug` first a summary.
 fn outcome_lines(outcome: &PostCommitOutcome, debug: bool) -> Vec<String> {
     let summary = match outcome {
@@ -105,14 +126,14 @@ fn outcome_lines(outcome: &PostCommitOutcome, debug: bool) -> Vec<String> {
             backup_id.as_deref().unwrap_or("?")
         ),
     };
-    let warnings = match outcome {
-        PostCommitOutcome::Rewritten { warnings, .. } => warnings.as_slice(),
+    let notices = match outcome {
+        PostCommitOutcome::Rewritten { notices, .. } => notices.as_slice(),
         _ => &[],
     };
     debug
         .then_some(summary)
         .into_iter()
-        .chain(warnings.iter().cloned())
+        .chain(notices.iter().cloned())
         .collect()
 }
 
@@ -176,11 +197,39 @@ mod tests {
     }
 
     #[test]
-    fn without_debug_only_the_warnings_are_printed() {
+    fn the_pre_push_verdict_says_what_to_do_next() {
+        assert!(verdict(&PrePushOutcome::Proceed).is_ok());
+        let rewritten = PrePushOutcome::Rewritten {
+            branch_ref: "refs/heads/main".into(),
+            commits: 2,
+            notices: vec!["a notice".into()],
+        };
+        let err = verdict(&rewritten).unwrap_err().to_string();
+        assert!(
+            err.contains("gcma rewrote 2 unpushed commit(s) of refs/heads/main"),
+            "{err}"
+        );
+        assert!(err.contains("run `git push` again"), "{err}");
+        let blocked = |no_upstream| PrePushOutcome::Blocked {
+            commits: 3,
+            no_upstream,
+        };
+        let err = verdict(&blocked(true)).unwrap_err().to_string();
+        assert!(
+            err.contains("3 commit(s) about to be pushed do not follow the gcma rules"),
+            "{err}"
+        );
+        assert!(err.contains("add `--from <rev>`"), "{err}");
+        let err = verdict(&blocked(false)).unwrap_err().to_string();
+        assert!(!err.contains("--from"), "{err}");
+    }
+
+    #[test]
+    fn without_debug_only_the_notices_are_printed() {
         let rewritten = PostCommitOutcome::Rewritten {
             commits: 3,
             backup_id: Some("20260101T000000Z-aaa-bbb".into()),
-            warnings: vec!["resetting the index failed".into()],
+            notices: vec!["resetting the index failed".into()],
         };
         assert_eq!(
             outcome_lines(&rewritten, true),
