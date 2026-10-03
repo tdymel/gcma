@@ -1,7 +1,7 @@
 //! Ports: what the use cases need from the outside world. Adapters implement these traits.
 //! Everything is expressed in domain terms; nothing here mentions a particular git binary or library.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::domain::error::Result;
 use crate::domain::history::commit::{Commit, NewCommit};
@@ -191,8 +191,9 @@ pub trait History {
     fn is_ancestor(&self, ancestor: &str, descendant: &str) -> Result<bool>;
     /// The commits of the range, parents first.
     fn list_range(&self, range: &RevRange) -> Result<Vec<String>>;
-    /// True when a commit of the range is also reachable from one of `others`.
-    fn range_meets(&self, range: &RevRange, others: &[String]) -> Result<bool>;
+    /// The commits reachable from `tips` but from no local branch, each with its parents (which
+    /// may be on a branch).
+    fn commits_off_branches(&self, tips: &[String]) -> Result<HashMap<String, Vec<String>>>;
     fn count_reachable(&self, rev: &str) -> Result<usize>;
     /// Of `oids`, those NOT reachable from `upstream`.
     fn unpushed_among(&self, oids: &[String], upstream: &str) -> Result<HashSet<String>>;

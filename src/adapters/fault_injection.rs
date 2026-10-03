@@ -1,7 +1,7 @@
 //! Fault injection for the apply use case: a repository that behaves like the real one except for
 //! one deliberate defect, to prove that verification stops a bad rewrite before any ref moves.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
 use delegate::delegate;
@@ -134,7 +134,7 @@ impl History for Faulty {
             fn merge_base(&self, a: &str, b: &str) -> Result<Option<String>>;
             fn is_ancestor(&self, ancestor: &str, descendant: &str) -> Result<bool>;
             fn list_range(&self, range: &RevRange) -> Result<Vec<String>>;
-            fn range_meets(&self, range: &RevRange, others: &[String]) -> Result<bool>;
+            fn commits_off_branches(&self, tips: &[String]) -> Result<HashMap<String, Vec<String>>>;
             fn count_reachable(&self, rev: &str) -> Result<usize>;
             fn unpushed_among(&self, oids: &[String], upstream: &str) -> Result<HashSet<String>>;
         }

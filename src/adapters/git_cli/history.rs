@@ -1,6 +1,6 @@
 //! `History` over `rev-list`, `merge-base`, `diff` and `log`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::runner::{GitCli, lines_input};
 use crate::application::ports::{History, RemoteScope, RevRange};
@@ -30,21 +30,21 @@ impl History for GitCli {
             .collect())
     }
 
-    fn range_meets(&self, range: &RevRange, others: &[String]) -> Result<bool> {
-        if others.is_empty() {
-            return Ok(false);
+    fn commits_off_branches(&self, tips: &[String]) -> Result<HashMap<String, Vec<String>>> {
+        if tips.is_empty() {
+            return Ok(HashMap::new());
         }
-        let in_range = self.list_range(range)?;
-        if in_range.is_empty() {
-            return Ok(false);
-        }
-        // What `others` reach outside the exclusions: a commit of the range they reach is in it.
-        let mut args: Vec<String> = vec!["rev-list".into()];
-        args.extend(others.iter().cloned());
-        args.extend(exclusions(range));
-        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let reached: HashSet<String> = self.text(&refs)?.lines().map(String::from).collect();
-        Ok(in_range.iter().any(|c| reached.contains(c)))
+        let mut args = vec!["rev-list", "--parents"];
+        args.extend(tips.iter().map(String::as_str));
+        args.extend(["--not", "--branches"]);
+        let out = self.text(&args)?;
+        Ok(out
+            .lines()
+            .filter_map(|line| {
+                let mut oids = line.split_whitespace().map(String::from);
+                Some((oids.next()?, oids.collect()))
+            })
+            .collect())
     }
 
     fn count_reachable(&self, rev: &str) -> Result<usize> {

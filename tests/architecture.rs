@@ -94,7 +94,7 @@ const APPLICATION_PLACES: &[(&str, &str)] = &[
     ("planning", "src/application/planning/**"),
     ("rewrite", "src/application/rewrite/**"),
     ("llm", "src/application/llm/**"),
-    ("push_guard", "src/application/push_guard.rs"),
+    ("push_guard", "src/application/push_guard/**"),
     ("commit_hook", "src/application/commit_hook.rs"),
 ];
 

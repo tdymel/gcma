@@ -104,3 +104,45 @@ fn rewrite_mode_blocks_the_tags_its_rewrite_left_behind() {
     assert_replaced(&r, &["push", "-q", "--tags", "origin"]);
     assert_passes(&r, &["push", "-q", "origin", "main"]);
 }
+
+#[test]
+fn a_tag_on_commits_a_rewrite_kept_passes() {
+    let r = hooked(IDENTITY_CFG);
+    r.commit_as("a.txt", "a", T0, "Jane Doe", "jane@work.com");
+    r.git(&["push", "-q", "-u", "origin", "main"]);
+    r.git(&["checkout", "-q", "-b", "feature"]);
+    r.commit_as("b.txt", "b", T0 + 100, "Jane Doe", "jane@work.com"); // kept by the rewrite
+    r.commit_at("bad.txt", "bad", T0 + 200);
+    r.gcma_ok(&["apply", "--from", "main"]);
+    r.git(&["tag", "ft", "feature"]);
+    r.git(&["checkout", "-q", "main"]);
+    assert_passes(&r, &["push", "-q", "origin", "ft"]);
+}
+
+#[test]
+fn a_commit_a_backup_replaced_but_a_branch_still_holds_passes() {
+    let r = Repo::new();
+    r.hooked(&berlin_cfg("hook:\n  mode: rewrite\n"));
+    r.gcma_ok(&["hook", "install", "--post-commit"]);
+    let commit = |name: &str| {
+        r.write(name, "x\n");
+        r.git(&["add", name]);
+        r.git(&["commit", "-q", "-m", name]);
+    };
+    commit("base.txt");
+    r.git(&["push", "-q", "-u", "origin", "main"]);
+    commit("a.txt");
+    r.git(&["tag", "vA"]);
+    r.git(&["checkout", "-q", "-b", "feature"]);
+    commit("b.txt"); // feature's backup keeps the old `b`, whose parent is main's tip
+    r.git(&["checkout", "-q", "-b", "other", "origin/main"]);
+    assert_passes(&r, &["push", "-q", "origin", "vA"]);
+}
+
+#[test]
+fn a_tag_on_a_branch_brought_back_by_restore_passes() {
+    let r = tag_left_on_a_replaced_commit();
+    r.gcma_ok(&["restore", &r.backup_id()]);
+    r.git(&["checkout", "-q", "-b", "other", "origin/main"]);
+    assert_passes(&r, &["push", "-q", "origin", "v1"]);
+}
