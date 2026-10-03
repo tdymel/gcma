@@ -1,7 +1,7 @@
-//! The outside world of a repository: ssh signing and bare remotes.
+//! Signing with ssh keys.
 
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::path::PathBuf;
+use std::process::Command;
 
 use super::repo::Repo;
 
@@ -17,28 +17,6 @@ pub fn ssh_keygen_or_skip() -> bool {
         eprintln!("skipping: ssh-keygen not available");
     }
     present
-}
-
-/// The tip of `branch` in a bare repository.
-pub fn remote_tip(remote: &Path, branch: &str) -> String {
-    let o = Command::new("git")
-        .arg("--git-dir")
-        .arg(remote)
-        .args(["rev-parse", branch])
-        .output()
-        .unwrap();
-    String::from_utf8_lossy(&o.stdout).trim().to_string()
-}
-
-/// The files of `main` in a bare repository, one path per line.
-pub fn remote_files(remote: &Path) -> String {
-    let o = Command::new("git")
-        .arg("--git-dir")
-        .arg(remote)
-        .args(["ls-tree", "-r", "--name-only", "main"])
-        .output()
-        .unwrap();
-    String::from_utf8_lossy(&o.stdout).to_string()
 }
 
 impl Repo {
@@ -66,28 +44,5 @@ impl Repo {
             allowed.to_str().unwrap(),
         ]);
         allowed
-    }
-
-    /// Adds a bare repository as `origin` and returns its path.
-    pub fn bare_remote(&self) -> PathBuf {
-        let remote = self.home.path().join("remote.git");
-        let o = Command::new("git")
-            .args(["init", "-q", "--bare", "-b", "main"])
-            .arg(&remote)
-            .stdout(Stdio::null())
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .output()
-            .unwrap();
-        assert!(o.status.success());
-        self.git(&["remote", "add", "origin", remote.to_str().unwrap()]);
-        remote
-    }
-
-    /// A bare remote (`origin`), the config `cfg` and the pre-push hook; returns the remote.
-    pub fn hooked(&self, cfg: &str) -> PathBuf {
-        let remote = self.bare_remote();
-        self.config(cfg);
-        self.gcma_ok(&["hook", "install"]);
-        remote
     }
 }

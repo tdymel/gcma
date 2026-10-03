@@ -10,11 +10,7 @@ const REWRITE: &str = "hook:\n  mode: rewrite\n";
 
 /// A repository with a bare `origin`, the schedule in rewrite mode and both hooks installed.
 fn hooked(extra: &str) -> Repo {
-    let r = Repo::new();
-    r.bare_remote();
-    r.config(&berlin_cfg(&format!("{REWRITE}{extra}")));
-    r.gcma_ok(&["hook", "install", "--post-commit"]);
-    r
+    Repo::hooked_post_commit(&berlin_cfg(&format!("{REWRITE}{extra}")))
 }
 
 /// A real `git commit` (the hook runs inside it) of a new file at the current time.
@@ -172,10 +168,7 @@ fn a_missing_binary_does_not_fail_the_commit() {
 
 #[test]
 fn verify_mode_does_nothing() {
-    let r = Repo::new();
-    r.bare_remote();
-    r.config(&berlin_cfg("")); // hook.mode defaults to verify
-    r.gcma_ok(&["hook", "install", "--post-commit"]);
+    let r = Repo::hooked_post_commit(&berlin_cfg("")); // hook.mode defaults to verify
     let first = r.commit_at("a.txt", "a", T0);
     assert_eq!(r.git(&["rev-parse", "HEAD"]), first);
     assert_eq!(r.log()[0].ct, T0);
@@ -184,10 +177,7 @@ fn verify_mode_does_nothing() {
 
 #[test]
 fn without_a_schedule_there_is_nothing_to_distribute() {
-    let r = Repo::new();
-    r.bare_remote();
-    r.config(&format!("{IDENTITY_CFG}{REWRITE}"));
-    r.gcma_ok(&["hook", "install", "--post-commit"]);
+    let r = Repo::hooked_post_commit(&format!("{IDENTITY_CFG}{REWRITE}"));
     commit_ok(&r, "a.txt");
     assert_eq!(r.backup_count(), 0);
     assert_eq!(

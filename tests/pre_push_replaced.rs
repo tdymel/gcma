@@ -6,12 +6,6 @@ mod common;
 
 use common::*;
 
-fn hooked(cfg: &str) -> Repo {
-    let r = Repo::new();
-    r.hooked(cfg);
-    r
-}
-
 fn assert_passes(r: &Repo, args: &[&str]) {
     let o = r.git_out(args);
     assert!(o.status.success(), "{args:?}: {}", stderr(&o));
@@ -19,7 +13,7 @@ fn assert_passes(r: &Repo, args: &[&str]) {
 
 /// `a` pushed, then the secret (tagged `v1`) and `b` local, and the branch rewritten by `apply`.
 fn tag_left_on_a_replaced_commit() -> Repo {
-    let r = hooked(SECRETS_CFG);
+    let r = Repo::hooked(SECRETS_CFG);
     r.commit_files(&[("a.txt", "a\n")], "a", T0);
     r.git(&["push", "-q", "-u", "origin", "main"]);
     r.commit_files(
@@ -86,7 +80,7 @@ fn a_tag_unrelated_to_the_backups_passes() {
 
 #[test]
 fn rewrite_mode_blocks_the_tags_its_rewrite_left_behind() {
-    let r = hooked(&format!("{SECRETS_CFG}hook: {{mode: rewrite}}\n"));
+    let r = Repo::hooked(&format!("{SECRETS_CFG}hook: {{mode: rewrite}}\n"));
     r.commit_files(&[("a.txt", "a\n")], "a", T0);
     r.git(&["push", "-q", "-u", "origin", "main"]);
     r.commit_files(
@@ -107,7 +101,7 @@ fn rewrite_mode_blocks_the_tags_its_rewrite_left_behind() {
 
 #[test]
 fn a_tag_on_commits_a_rewrite_kept_passes() {
-    let r = hooked(IDENTITY_CFG);
+    let r = Repo::hooked(IDENTITY_CFG);
     r.commit_as("a.txt", "a", T0, "Jane Doe", "jane@work.com");
     r.git(&["push", "-q", "-u", "origin", "main"]);
     r.git(&["checkout", "-q", "-b", "feature"]);
@@ -121,9 +115,7 @@ fn a_tag_on_commits_a_rewrite_kept_passes() {
 
 #[test]
 fn a_commit_a_backup_replaced_but_a_branch_still_holds_passes() {
-    let r = Repo::new();
-    r.hooked(&berlin_cfg("hook:\n  mode: rewrite\n"));
-    r.gcma_ok(&["hook", "install", "--post-commit"]);
+    let r = Repo::hooked_post_commit(&berlin_cfg("hook:\n  mode: rewrite\n"));
     let commit = |name: &str| {
         r.write(name, "x\n");
         r.git(&["add", name]);
