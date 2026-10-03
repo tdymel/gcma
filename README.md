@@ -172,13 +172,19 @@ commit writes move between backends; refs, signing and hooks always use git. Mea
 In `rewrite` mode it rewrites them and aborts the push so you push again. It judges what a push would send of the
 checked-out branch: the branch itself, `git push origin HEAD`, a revision of the branch (`HEAD~1:main`), and tags or other
 refs whose commit is part of the branch (`git push origin v1`, `--tags`, `v1:refs/heads/main`). A tag cannot follow a
-rewrite of the branch, so in `rewrite` mode a nonconforming tag push is blocked like in `verify` mode. Deletes, other
-branches, and tags on commits outside the branch (or on no commit) are ignored, with one exception: a tag or other ref
-(any push but a branch) that would send commits a gcma rewrite replaced is blocked in both modes, as it would upload the
-old identities, times and excluded files. Replaced commits are the ones the backups of **any** branch keep
-(`refs/gcma/backup/*/old`) that are neither part of the checked-out branch nor already on the remote. Move the tag to the
-rewritten commit (`git tag -f v1 <new commit>`), delete it, or `gcma restore`. Skip it once with `git push --no-verify`.
-Remember that config errors block pushes too.
+rewrite of the branch, so in `rewrite` mode a nonconforming tag push is blocked like in `verify` mode, and the hook says
+to run `gcma apply --retag`, which moves the tags with the branch. A tag pushed to a remote without remote-tracking refs
+(a new one, or a URL) sends what neither any remote nor the branch's upstream has, so history already published
+elsewhere is not judged again; the tags of one history are judged with one plan. Deletes, other branches, and tags on
+commits outside the branch (or on no commit) are ignored, with one exception: a tag or other ref (any push but a branch)
+that would send commits a gcma rewrite replaced is blocked in both modes, even on a detached HEAD, as it would upload the
+old identities, times and excluded files.
+
+**Replaced commits** are, for each backup of **any** branch, the commits its `old` (`refs/gcma/backup/*/old`) reaches
+and its `new` does not (a rewrite keeps the commits that already follow the rules, so those are not replaced), unless a
+local branch still holds them (after `gcma restore`, or a branch built on them); one already on the remote is not sent
+again. Move the tag to the rewritten commit (`git tag -f v1 <new commit>`), delete it, or `gcma restore`. Skip it once
+with `git push --no-verify`. Remember that config errors block pushes too.
 
 After a rewrite both hooks tell what `apply` would warn about, one `gcma: <hook>: <line>` line each on stderr (e.g.
 `gcma: pre-push: ...`): tags and notes left on the old commits, notes refs that could not be read, the note on removed
@@ -201,8 +207,9 @@ clean them up with `gcma restore <id> --prune`.
   detached HEAD, during a rebase, merge, cherry-pick or revert, with staged changes, and when the window has no time left.
   With `GCMA_DEBUG` set (non-empty) it prints one line on what it did: `gcma: post-commit: skipped (<reason>)` or
   `gcma: post-commit: rewrote N commit(s), backup <id>`.
-- Hook rewrites do not use `--retag`, so tags on unpushed commits keep pointing at the old commits: tag after the hook
-  ran, or after pushing.
+- Hook rewrites do not use `--retag`, and every commit re-times all unpushed ones, so a tag on an unpushed commit can be
+  left on a commit that the next commit's rewrite replaces, and the pre-push hook then blocks pushing it (see
+  **Replaced commits** under [Hook](#hook)). Tag after pushing, or after your last commit right before pushing.
 - The id `git commit` prints is the one git made, before the hook's rewrite (`git log` shows the new one). For
   `git commit --amend`, git's `post-rewrite` hook and `notes.rewrite` likewise receive the pre-rewrite id.
 
