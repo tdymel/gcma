@@ -173,7 +173,11 @@ In `rewrite` mode it rewrites them and aborts the push so you push again. It jud
 checked-out branch: the branch itself, `git push origin HEAD`, a revision of the branch (`HEAD~1:main`), and tags or other
 refs whose commit is part of the branch (`git push origin v1`, `--tags`, `v1:refs/heads/main`). A tag cannot follow a
 rewrite of the branch, so in `rewrite` mode a nonconforming tag push is blocked like in `verify` mode. Deletes, other
-branches, and tags on commits outside the branch (or on no commit) are ignored. Skip it once with `git push --no-verify`.
+branches, and tags on commits outside the branch (or on no commit) are ignored, with one exception: a tag or other ref
+(any push but a branch) that would send commits a gcma rewrite replaced is blocked in both modes, as it would upload the
+old identities, times and excluded files. Replaced commits are the ones the backups of **any** branch keep
+(`refs/gcma/backup/*/old`) that are neither part of the checked-out branch nor already on the remote. Move the tag to the
+rewritten commit (`git tag -f v1 <new commit>`), delete it, or `gcma restore`. Skip it once with `git push --no-verify`.
 Remember that config errors block pushes too.
 
 After a rewrite both hooks tell what `apply` would warn about, one `gcma: <hook>: <line>` line each on stderr (e.g.
