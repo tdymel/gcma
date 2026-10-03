@@ -12,7 +12,7 @@ use crate::application::rewrite::{ApplyOptions, apply};
 use crate::domain::error::Result;
 use crate::domain::history::commit::is_zero_oid;
 use crate::domain::settings::{Config, HookMode};
-use sent::{Sent, destination, unpushed_range};
+use sent::{Sent, destination, unpublished_range};
 
 /// What the hook decided. Only `Proceed` lets the push go on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,7 +60,7 @@ pub fn run_pre_push(
         let Some(commit) = repo.resolve_commit(&p.local_sha)? else {
             continue; // a tree or a blob
         };
-        let (revs, base) = unpushed_range(repo, p, commit, &dest)?;
+        let (revs, base) = unpublished_range(repo, p, commit, &dest)?;
         sent.push(Sent {
             pushed: p,
             revs,

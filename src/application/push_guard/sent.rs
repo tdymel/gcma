@@ -1,5 +1,5 @@
-//! What a push sends: the pushed refs and, for each, the range of commits that are not on the
-//! remote yet.
+//! What a push sends: the pushed refs and, for each, the commits that no remote has yet (judged by
+//! the rules) and those that the remote pushed to lacks (checked for replaced commits).
 
 use crate::application::ports::{RemoteScope, Repository, RevRange};
 use crate::domain::error::Result;
@@ -17,9 +17,10 @@ pub struct PushedRef {
 /// A pushed ref and the commits it would send.
 pub(super) struct Sent<'a> {
     pub pushed: &'a PushedRef,
-    /// `tip` is the pushed object peeled to a commit (an annotated tag pushes its tag object).
+    /// The commits published nowhere yet (`unpublished_range`). `tip` is the pushed object peeled
+    /// to a commit (an annotated tag pushes its tag object).
     pub revs: RevRange,
-    /// The commit the range starts after, when it is a single one.
+    /// The remote's commit for the ref, when we have it: the range starts after it.
     pub base: Option<String>,
 }
 
@@ -62,17 +63,11 @@ pub(super) fn destination<'a>(
     })
 }
 
-/// A tag or another ref that is neither a branch nor `HEAD`.
-fn is_other_ref(p: &PushedRef) -> bool {
-    p.local_ref.starts_with("refs/") && !p.local_ref.starts_with(HEADS_PREFIX)
-}
-
-/// The commits the push would send: `remote_sha..commit`, or for a remote sha we do not have
-/// (a new branch or tag) everything not on the remote's tracking refs; and the commit the range
-/// starts after, when it is a single one. A tag (or other ref) pushed to a remote without tracking
-/// refs (a new one, or a URL) sends what neither any remote nor the branch's upstream has: history
-/// already published elsewhere is not judged again.
-pub(super) fn unpushed_range(
+/// The commits of the push that are published nowhere yet, which the rules judge: those that
+/// neither the remote's commit for the ref (when we have it), nor any remote-tracking ref, nor the
+/// upstream reaches. History already on some remote is not judged again, so a mirror or a fork can
+/// take what is public elsewhere. Also the remote's commit for the ref, if we have it.
+pub(super) fn unpublished_range(
     repo: &dyn Repository,
     p: &PushedRef,
     commit: String,
@@ -82,25 +77,12 @@ pub(super) fn unpushed_range(
         true => None,
         false => repo.resolve_commit(&p.remote_sha)?,
     };
-    let mut revs = RevRange {
+    let revs = RevRange {
         tip: commit,
-        exclude_commits: Vec::new(),
-        exclude_remotes: None,
+        exclude_commits: known_remote.iter().chain(&dest.upstream).cloned().collect(),
+        exclude_remotes: Some(RemoteScope::All),
     };
-    if let Some(pushed) = known_remote {
-        revs.exclude_commits.push(pushed.clone());
-        return Ok((revs, Some(pushed)));
-    }
-    let other_ref = is_other_ref(p);
-    revs.exclude_remotes = Some(if dest.named && (dest.tracked || !other_ref) {
-        RemoteScope::Named(dest.remote.to_string())
-    } else {
-        if other_ref {
-            revs.exclude_commits.extend(dest.upstream.clone());
-        }
-        RemoteScope::All
-    });
-    Ok((revs, None))
+    Ok((revs, known_remote))
 }
 
 impl Destination<'_> {
