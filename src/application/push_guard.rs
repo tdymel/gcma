@@ -1,7 +1,7 @@
 //! The pre-push policy: judge (and in `rewrite` mode fix) the commits about to be pushed.
 
 use crate::application::planning::{PlanOptions, RangeSpec, build_plan};
-use crate::application::ports::{RemoteScope, Repository, RevRange};
+use crate::application::ports::{RemoteScope, Repository};
 use crate::application::rewrite::{ApplyOptions, apply, list_backups};
 use crate::domain::error::Result;
 use crate::domain::history::commit::is_zero_oid;
@@ -142,13 +142,8 @@ fn sends_replaced(
     if replaced.is_empty() {
         return Ok(false);
     }
-    let mut exclude_commits = range.exclude_commits.clone();
-    exclude_commits.extend(tip.map(String::from));
-    let sent = RevRange {
-        tip: range.tip.clone(),
-        exclude_commits,
-        exclude_remotes: range.exclude_remotes.clone(),
-    };
+    let mut sent = range.revs.clone();
+    sent.exclude_commits.extend(tip.map(String::from));
     repo.range_meets(&sent, replaced)
 }
 
