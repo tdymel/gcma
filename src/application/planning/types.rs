@@ -3,8 +3,7 @@
 use crate::application::ports::RevRange;
 use crate::domain::history::plan::Plan;
 
-/// An explicit range (used by the hooks, see `RangeSpec::unpushed`): the commits of `revs`, taken as
-/// part of `branch_ref`.
+/// An explicit range (used by the hooks): the commits of `revs`, taken as part of `branch_ref`.
 #[derive(Debug, Clone)]
 pub struct RangeSpec {
     pub revs: RevRange,

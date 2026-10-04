@@ -3,7 +3,7 @@
 //! need a force push), and the hook never blocks anything: it only acts in `hook.mode: rewrite`.
 
 use crate::application::planning::{PlanOptions, RangeSpec, build_plan};
-use crate::application::ports::{RemoteScope, Repository};
+use crate::application::ports::{RemoteScope, Repository, RevRange};
 use crate::application::rewrite::{ApplyOptions, apply};
 use crate::domain::error::{Error, Result};
 use crate::domain::settings::{Config, HookMode};
@@ -68,11 +68,19 @@ pub fn run_post_commit(repo: &dyn Repository, cfg: &Config, now: i64) -> Result<
     if upstream.is_none() && repo.remotes()?.is_empty() {
         return Ok(skipped(Skip::NoUpstream));
     }
-    let mut range = RangeSpec::unpushed(tip.clone(), branch_ref, Some(RemoteScope::All));
-    if let Some(up) = upstream {
-        let base = repo.merge_base(&tip, &up)?;
-        range = range.excluding(up, base);
-    }
+    let base = match &upstream {
+        Some(up) => repo.merge_base(&tip, up)?,
+        None => None,
+    };
+    let range = RangeSpec {
+        revs: RevRange {
+            tip,
+            exclude_commits: upstream.into_iter().collect(),
+            exclude_remotes: Some(RemoteScope::All),
+        },
+        branch_ref,
+        base,
+    };
     // `all` re-times every commit of the range, not only the nonconforming ones; the range itself
     // keeps the pushed commits out, and `apply` refuses to move them again.
     let opts = PlanOptions {

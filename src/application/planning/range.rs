@@ -1,7 +1,7 @@
 //! Resolving which commits a plan covers.
 
-use super::types::{PlanOptions, RangeSpec};
-use crate::application::ports::{RemoteScope, Repository, RevRange};
+use super::types::PlanOptions;
+use crate::application::ports::{Repository, RevRange};
 use crate::domain::error::{Error, Result};
 
 pub(super) struct RangeInfo {
@@ -12,30 +12,6 @@ pub(super) struct RangeInfo {
     pub upstream: Option<String>,
     /// The commits of the range, parents first.
     pub order: Vec<String>,
-}
-
-impl RangeSpec {
-    /// The commits of `branch_ref` up to `tip` that are on none of the remote-tracking refs of
-    /// `remotes`; `excluding` narrows it further.
-    pub fn unpushed(tip: String, branch_ref: String, remotes: Option<RemoteScope>) -> RangeSpec {
-        RangeSpec {
-            revs: RevRange {
-                tip,
-                exclude_commits: Vec::new(),
-                exclude_remotes: remotes,
-            },
-            branch_ref,
-            base: None,
-        }
-    }
-
-    /// Leaves out what is reachable from `pushed`, a commit the remote is known to have; the range
-    /// then starts after `base`.
-    pub fn excluding(mut self, pushed: String, base: Option<String>) -> RangeSpec {
-        self.revs.exclude_commits.push(pushed);
-        self.base = base;
-        self
-    }
 }
 
 pub(super) fn resolve(repo: &dyn Repository, opts: &PlanOptions) -> Result<RangeInfo> {
