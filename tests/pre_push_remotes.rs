@@ -57,6 +57,22 @@ fn tags_pushed_to_a_new_remote_are_judged_from_what_the_other_remotes_have() {
 }
 
 #[test]
+fn a_local_upstream_does_not_hide_its_unpushed_commits() {
+    let r = Repo::hooked(IDENTITY_CFG);
+    r.commit_as("a.txt", "a", T0, "Jane Doe", "jane@work.com");
+    r.push_ok(&["-u", "origin", "main"]);
+    r.commit_at("bad.txt", "bad", T0 + 100); // on main, not pushed
+    r.git(&["checkout", "-q", "-b", "feat", "--track", "main"]);
+    r.commit_as("b.txt", "b", T0 + 200, "Jane Doe", "jane@work.com");
+    // `gcma apply` starts at the upstream, which has the commit too: the hook asks for `--from`.
+    r.push_blocked(
+        &["origin", "feat"],
+        "run `gcma apply` (the upstream is a local branch that has the commits too: add \
+         `--from <rev>`)",
+    );
+}
+
+#[test]
 fn a_replaced_commit_on_origin_is_blocked_on_its_way_to_a_new_remote() {
     let r = Repo::hooked(SECRETS_CFG);
     r.commit_files(&[("a.txt", "a\n")], "a", T0);
