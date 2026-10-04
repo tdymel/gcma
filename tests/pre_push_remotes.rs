@@ -93,6 +93,29 @@ fn history_only_another_remote_has_is_judged_on_its_way_to_a_new_one() {
 }
 
 #[test]
+fn no_verify_is_offered_only_when_every_blocked_commit_is_on_a_remote() {
+    for backend in BACKENDS {
+        let r = Repo::hooked(&format!("{SECRETS_CFG}backend: {backend}\n"));
+        r.commit_files(&[("a.txt", "a\n")], "a", T0);
+        r.push_ok(&["-u", "origin", "main"]);
+        r.commit_files(&[("secrets/old", "o\n")], "old key", T0 + 100);
+        r.add_remote("fork");
+        push_unhooked(&r, "fork", "main"); // only the fork has it
+        r.commit_files(&[("secrets/k", "k\n")], "add key", T0 + 200); // on no remote
+        let err = r.push_blocked(
+            &["origin", "main"],
+            "2 commit(s) about to be pushed do not follow the gcma rules; 1 of them are on \
+             another remote already: rewrite them with `gcma apply --from <rev> \
+             --rewrite-pushed`",
+        );
+        assert!(
+            !err.contains("--no-verify"),
+            "{backend}: it would upload the key: {err}"
+        );
+    }
+}
+
+#[test]
 fn commits_taken_from_a_peer_are_judged_on_their_way_to_origin() {
     let r = Repo::hooked(IDENTITY_CFG);
     r.commit_as("a.txt", "a", T0, "Jane Doe", "jane@work.com");
@@ -111,11 +134,12 @@ fn a_local_upstream_does_not_hide_its_unpushed_commits() {
     r.commit_at("bad.txt", "bad", T0 + 100); // on main, not pushed
     r.git(&["checkout", "-q", "-b", "feat", "--track", "main"]);
     r.commit_as("b.txt", "b", T0 + 200, "Jane Doe", "jane@work.com");
-    // `gcma apply` starts at the upstream, which has the commit too: the hook asks for `--from`.
+    // `gcma apply` starts at the upstream, which has the commit too, and refuses to rewrite it
+    // there without `--rewrite-pushed`: the hook says to fix the upstream first.
     r.push_blocked(
         &["origin", "feat"],
-        "run `gcma apply` (the upstream is a local branch that has the commits too: add \
-         `--from <rev>`)",
+        "the upstream is a local branch that has them too: run `gcma apply` on it and rebase this \
+         branch onto it, or run `gcma apply --from <rev> --rewrite-pushed`",
     );
 }
 
@@ -128,11 +152,11 @@ fn rewrite_mode_leaves_what_a_local_upstream_has_too_to_gcma_apply() {
     r.git(&["checkout", "-q", "--track", "-b", "topic", "main"]);
     r.commit_at("bad2.txt", "bad too", T0 + 200);
     let tip = r.git(&["rev-parse", "HEAD"]);
-    let err = r.push_blocked(
+    r.push_blocked(
         &["-u", "origin", "topic"],
-        "(the upstream is a local branch that has the commits too: add `--from <rev>`)",
+        "run `gcma apply` on it and rebase this branch onto it, or run `gcma apply --from <rev> \
+         --rewrite-pushed`",
     );
-    assert!(!err.contains("--rewrite-pushed"), "{err}");
     assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
 }
 
