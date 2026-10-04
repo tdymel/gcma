@@ -37,7 +37,7 @@ pub enum PrePushOutcome {
     Blocked {
         commits: usize,
         /// Why `gcma apply`, which starts at the upstream, needs `--from` to reach the commits
-        /// (and, for published ones, `--rewrite-pushed`).
+        /// (and, when `NeedsFrom::needs_rewrite_pushed`, `--rewrite-pushed` too).
         needs_from: Option<NeedsFrom>,
         /// What the push names: the branch (or `HEAD`, or a revision of it), so pushing again after
         /// `gcma apply` sends the rewritten commits; tags, which need `gcma apply --retag` to
@@ -51,18 +51,20 @@ pub enum PrePushOutcome {
 pub enum NeedsFrom {
     /// The branch has no upstream to start from.
     NoUpstream,
-    /// The upstream is a local branch that has (some of) the commits too.
+    /// The upstream is a local branch that has (some of) the commits too, and no remote has any.
     LocalUpstream,
-    /// Another remote has (some of) the commits already: rewriting them takes `--rewrite-pushed`
-    /// too.
+    /// Other remotes have every one of the commits already, so pushing them as they are uploads
+    /// nothing new to anyone.
     Published,
+    /// Other remotes have `published` of the commits already, but not all of them.
+    PartlyPublished { published: usize },
 }
 
 impl NeedsFrom {
     /// Whether `gcma apply` refuses the commits without `--rewrite-pushed`, which a hook cannot
     /// pass: they are on the upstream or on a remote already.
-    fn needs_rewrite_pushed(self) -> bool {
-        matches!(self, NeedsFrom::LocalUpstream | NeedsFrom::Published)
+    pub fn needs_rewrite_pushed(self) -> bool {
+        !matches!(self, NeedsFrom::NoUpstream)
     }
 }
 
@@ -162,16 +164,18 @@ pub fn run_pre_push(
 /// a remote has already (what only another remote has is judged on its way to this one).
 fn needs_from(repo: &dyn Repository, dest: &Destination, plan: &Plan) -> Result<Option<NeedsFrom>> {
     let planned: Vec<String> = plan.touched_oids().cloned().collect();
-    let has_some = |upstream: Option<&str>| -> Result<bool> {
+    let had = |upstream: Option<&str>| -> Result<usize> {
         let unpushed = repo.unpushed_among(&planned, upstream)?;
-        Ok(planned.iter().any(|c| !unpushed.contains(c)))
+        Ok(planned.iter().filter(|c| !unpushed.contains(*c)).count())
     };
-    if has_some(None)? {
-        return Ok(Some(NeedsFrom::Published));
+    match had(None)? {
+        0 => {}
+        n if n == planned.len() => return Ok(Some(NeedsFrom::Published)),
+        published => return Ok(Some(NeedsFrom::PartlyPublished { published })),
     }
     Ok(match &dest.upstream {
         None => Some(NeedsFrom::NoUpstream),
         Some(up) if up.remote => None,
-        Some(up) => has_some(Some(&up.commit))?.then_some(NeedsFrom::LocalUpstream),
+        Some(up) => (had(Some(&up.commit))? > 0).then_some(NeedsFrom::LocalUpstream),
     })
 }

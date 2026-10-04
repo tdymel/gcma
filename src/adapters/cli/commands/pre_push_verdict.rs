@@ -27,13 +27,6 @@ pub(super) fn verdict(outcome: &PrePushOutcome) -> Result<()> {
             needs_from,
             kind,
         } => {
-            let hint = match needs_from {
-                Some(NeedsFrom::NoUpstream) => " (the branch has no upstream: add `--from <rev>`)",
-                Some(NeedsFrom::LocalUpstream) => {
-                    " (the upstream is a local branch that has the commits too: add `--from <rev>`)"
-                }
-                Some(NeedsFrom::Published) | None => "",
-            };
             let rewrites = "it rewrites the unpushed part of the branch";
             let (retag, what, then) = match kind {
                 RefKind::Branch => ("", rewrites.to_string(), String::new()),
@@ -50,15 +43,32 @@ pub(super) fn verdict(outcome: &PrePushOutcome) -> Result<()> {
             };
             let rules =
                 format!("{commits} commit(s) about to be pushed do not follow the gcma rules");
-            if *needs_from == Some(NeedsFrom::Published) {
-                return Err(Error::Nonconforming(format!(
-                    "{rules}; they are on another remote already: push them with `--no-verify`, \
-                     or rewrite them with `gcma apply{retag} --from <rev> --rewrite-pushed` \
-                     ({what}){then} and push again"
-                )));
-            }
+            let pushed = needs_from.is_some_and(NeedsFrom::needs_rewrite_pushed);
+            let rewrite_pushed = if pushed {
+                " --from <rev> --rewrite-pushed"
+            } else {
+                ""
+            };
+            let apply = format!("`gcma apply{retag}{rewrite_pushed}`");
+            let lead = match needs_from {
+                Some(NeedsFrom::Published) => "they are on another remote already: push them with \
+                     `--no-verify`, or rewrite them with "
+                    .to_string(),
+                Some(NeedsFrom::PartlyPublished { published }) => {
+                    format!("{published} of them are on another remote already: rewrite them with ")
+                }
+                Some(NeedsFrom::LocalUpstream) => "the upstream is a local branch that has them \
+                     too: run `gcma apply` on it and rebase this branch onto it, or run "
+                    .to_string(),
+                Some(NeedsFrom::NoUpstream) | None => "run ".to_string(),
+            };
+            let hint = if *needs_from == Some(NeedsFrom::NoUpstream) {
+                " (the branch has no upstream: add `--from <rev>`)"
+            } else {
+                ""
+            };
             Err(Error::Nonconforming(format!(
-                "{rules}; run `gcma apply{retag}`{hint} ({what}){then} and push again"
+                "{rules}; {lead}{apply}{hint} ({what}){then} and push again"
             )))
         }
     }
@@ -121,8 +131,28 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(
-            err.contains("(the upstream is a local branch that has the commits too: add `--from"),
+            err.contains(
+                "the upstream is a local branch that has them too: run `gcma apply` on it and \
+                 rebase this branch onto it, or run `gcma apply --from <rev> --rewrite-pushed` \
+                 (it rewrites"
+            ),
             "{err}"
+        );
+        assert!(!err.contains("--no-verify"), "{err}");
+        let partly = Some(NeedsFrom::PartlyPublished { published: 1 });
+        let err = verdict(&blocked(partly, RefKind::Branch))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(
+                "1 of them are on another remote already: rewrite them with `gcma apply --from \
+                 <rev> --rewrite-pushed` (it rewrites"
+            ),
+            "{err}"
+        );
+        assert!(
+            !err.contains("--no-verify"),
+            "not all of them are pushed: {err}"
         );
         let err = verdict(&blocked(Some(NeedsFrom::Published), RefKind::Branch))
             .unwrap_err()
