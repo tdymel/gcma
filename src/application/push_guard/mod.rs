@@ -79,11 +79,8 @@ pub fn run_pre_push(
     let tip = repo.ref_value(&branch_ref)?;
     let mut groups = Vec::new();
     for s in &sent {
-        let commit = s.revs.tip.clone();
-        if let Some(judged) =
-            judge::judged_commit(repo, s.pushed, commit, &branch_ref, tip.as_deref())?
-        {
-            judge::add_to_groups(repo, &mut groups, s, judged)?;
+        if let Some(kind) = judge::kind(repo, s, &branch_ref, tip.as_deref())? {
+            judge::add_to_groups(repo, &mut groups, s, kind)?;
         }
     }
     for g in groups {

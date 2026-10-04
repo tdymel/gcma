@@ -1,6 +1,6 @@
 //! Which pushes the rules judge, and which of them one plan covers.
 
-use super::sent::{PushedRef, Sent};
+use super::sent::Sent;
 use crate::application::ports::{Repository, RevRange};
 use crate::domain::error::Result;
 use crate::domain::history::plan::HEADS_PREFIX;
@@ -29,27 +29,30 @@ impl RefKind {
     }
 }
 
-/// The commit a judged push sends.
-pub(super) struct Judged {
-    /// The pushed object peeled to a commit (an annotated tag pushes its tag object).
-    pub commit: String,
-    pub kind: RefKind,
-}
-
-/// Which pushes are judged, and the commit they send. The checked-out branch is judged by name, as
-/// `HEAD` (which is what `git push origin HEAD` and `HEAD:<ref>` report) or as a raw revision that is
-/// part of it (`git push origin HEAD~1:main` reports `HEAD~1`). Other branches are ignored, unless
-/// they point at the tip. Any other ref (a tag, `refs/<anything>`) is judged when its commit is the
-/// tip or an ancestor of it; one that points at a commit that is not part of the branch is not
-/// judged (but see `sends_replaced`). `commit` is the pushed object peeled to a commit.
-pub(super) fn judged_commit(
+/// Whether the push of `s` is judged, and what it names. The checked-out branch is judged by name,
+/// as `HEAD` (which is what `git push origin HEAD` and `HEAD:<ref>` report) or as a raw revision
+/// that is part of it (`git push origin HEAD~1:main` reports `HEAD~1`). Other branches are ignored,
+/// unless they point at the tip. Any other ref (a tag, `refs/<anything>`) is judged when its commit
+/// is the tip or an ancestor of it; one that points at a commit that is not part of the branch is
+/// not judged (but see `sends_replaced`).
+pub(super) fn kind(
     repo: &dyn Repository,
-    p: &PushedRef,
-    commit: String,
+    s: &Sent,
     branch_ref: &str,
     tip: Option<&str>,
-) -> Result<Option<Judged>> {
-    let r = p.local_ref.as_str();
+) -> Result<Option<RefKind>> {
+    let r = s.pushed.local_ref.as_str();
+    let commit = s.revs.tip.as_str();
+    let judged = if r == branch_ref || r == "HEAD" || tip == Some(commit) {
+        true
+    } else if r.starts_with(HEADS_PREFIX) {
+        false
+    } else {
+        match tip {
+            Some(t) => repo.is_ancestor(commit, t)?,
+            None => false,
+        }
+    };
     let kind = if r == branch_ref || r == "HEAD" || !r.starts_with("refs/") {
         RefKind::Branch
     } else if r.starts_with(TAGS_PREFIX) {
@@ -57,18 +60,7 @@ pub(super) fn judged_commit(
     } else {
         RefKind::Other(r.to_string())
     };
-    let at_tip = tip == Some(commit.as_str());
-    let judged = if r == branch_ref || r == "HEAD" || at_tip {
-        true
-    } else if r.starts_with(HEADS_PREFIX) {
-        false
-    } else {
-        match tip {
-            Some(t) => repo.is_ancestor(&commit, t)?,
-            None => false,
-        }
-    };
-    Ok(judged.then_some(Judged { commit, kind }))
+    Ok(judged.then_some(kind))
 }
 
 /// Judged pushes that one plan covers: those whose commits are part of the range of `revs`, the
@@ -81,34 +73,32 @@ pub(super) struct Group {
     pub kind: RefKind,
 }
 
-/// Adds a judged push to the group that covers it, or starts a new group.
+/// Adds the judged push of `s`, of `kind`, to the group that covers it, or starts a new group.
 pub(super) fn add_to_groups(
     repo: &dyn Repository,
     groups: &mut Vec<Group>,
-    sent: &Sent,
-    judged: Judged,
+    s: &Sent,
+    kind: RefKind,
 ) -> Result<()> {
+    let commit = &s.revs.tip;
     let same = |g: &Group| {
-        g.revs.exclude_commits == sent.revs.exclude_commits
-            && g.revs.exclude_remotes == sent.revs.exclude_remotes
+        g.revs.exclude_commits == s.revs.exclude_commits
+            && g.revs.exclude_remotes == s.revs.exclude_remotes
     };
     for g in groups.iter_mut().filter(|g| same(g)) {
-        let below = g.revs.tip == judged.commit || repo.is_ancestor(&judged.commit, &g.revs.tip)?;
-        if below || repo.is_ancestor(&g.revs.tip, &judged.commit)? {
+        let below = &g.revs.tip == commit || repo.is_ancestor(commit, &g.revs.tip)?;
+        if below || repo.is_ancestor(&g.revs.tip, commit)? {
             if !below {
-                g.revs.tip = judged.commit;
+                g.revs.tip = commit.clone();
             }
-            g.kind = std::mem::replace(&mut g.kind, RefKind::Branch).join(judged.kind);
+            g.kind = std::mem::replace(&mut g.kind, RefKind::Branch).join(kind);
             return Ok(());
         }
     }
     groups.push(Group {
-        revs: RevRange {
-            tip: judged.commit,
-            ..sent.revs.clone()
-        },
-        base: sent.base.clone(),
-        kind: judged.kind,
+        revs: s.revs.clone(),
+        base: s.base.clone(),
+        kind,
     });
     Ok(())
 }
