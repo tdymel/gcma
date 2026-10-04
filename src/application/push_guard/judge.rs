@@ -1,9 +1,11 @@
 //! Which pushes the rules judge, and which of them one plan covers.
 
+use std::collections::HashSet;
+
 use super::sent::Sent;
 use crate::application::ports::{Repository, RevRange};
 use crate::domain::error::Result;
-use crate::domain::history::plan::HEADS_PREFIX;
+use crate::domain::history::plan::{HEADS_PREFIX, Plan};
 use crate::domain::history::tag::TAGS_PREFIX;
 
 /// What a judged push names, which tells how its ref follows a rewrite of the branch.
@@ -101,6 +103,18 @@ pub(super) fn add_to_groups(
         kind,
     });
     Ok(())
+}
+
+/// What the rewrite of `plan` (made for a group of `group` kind) has to take along: the group's
+/// kind joined with that of every judged push (`judged`: its commit and kind) whose commit the plan
+/// rewrites or drops. A push that excludes less than the group's (a new tag or branch next to the
+/// pushed branch) is grouped apart, but it would stay on the old commit all the same.
+pub(super) fn plan_kind(group: RefKind, judged: &[(String, RefKind)], plan: &Plan) -> RefKind {
+    let touched: HashSet<&String> = plan.touched_oids().collect();
+    judged
+        .iter()
+        .filter(|(commit, _)| touched.contains(commit))
+        .fold(group, |k, (_, other)| k.join(other.clone()))
 }
 
 #[cfg(test)]

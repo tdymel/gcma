@@ -90,18 +90,16 @@ pub fn run_pre_push(
     // Read once: nothing moves the branch between the pushed refs, as a rewrite ends the loop.
     let tip = repo.ref_value(&branch_ref)?;
     let mut groups = Vec::new();
+    let mut judged = Vec::new();
     for s in &sent {
         if let Some(kind) = judge::kind(repo, s, &branch_ref, tip.as_deref())? {
-            judge::add_to_groups(repo, &mut groups, s, kind)?;
+            judge::add_to_groups(repo, &mut groups, s, kind.clone())?;
+            judged.push((s.revs.tip.clone(), kind));
         }
     }
     for g in groups {
-        // Rewriting only fixes the push when the pushed commit is the branch tip and the push
-        // follows the branch (a tag or another ref would stay on the old commit); the plan is
-        // built once, with the strict (clean index) preconditions only when we are going to write.
-        let rewrite = cfg.hook.mode == HookMode::Rewrite
-            && g.kind == RefKind::Branch
-            && tip.as_deref() == Some(g.revs.tip.as_str());
+        // The plan is built without the strict (clean index) preconditions: `apply` checks them
+        // when there is something to write.
         let range = RangeSpec {
             revs: g.revs.clone(),
             branch_ref: branch_ref.clone(),
@@ -109,13 +107,19 @@ pub fn run_pre_push(
         };
         let opts = PlanOptions {
             range: Some(range),
-            strict: rewrite,
             ..PlanOptions::new(now)
         };
         let built = build_plan(repo, cfg, &opts)?;
         if built.plan.is_empty() {
             continue;
         }
+        // Rewriting only fixes the push when the pushed commit is the branch tip and every pushed
+        // ref on the rewritten commits follows the branch (a tag or another ref would stay on the
+        // old commit).
+        let kind = judge::plan_kind(g.kind, &judged, &built.plan);
+        let rewrite = cfg.hook.mode == HookMode::Rewrite
+            && kind == RefKind::Branch
+            && tip.as_deref() == Some(g.revs.tip.as_str());
         if rewrite {
             let report = apply(repo, &built.plan, &ApplyOptions::new(now))?;
             if report.noop {
@@ -132,7 +136,7 @@ pub fn run_pre_push(
         return Ok(PrePushOutcome::Blocked {
             commits: built.plan.entries.len() + built.plan.dropped.len(),
             needs_from: needs_from(repo, &dest, &g.revs, &built.plan)?,
-            kind: g.kind,
+            kind,
         });
     }
     Ok(PrePushOutcome::Proceed)
