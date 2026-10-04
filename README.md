@@ -26,8 +26,9 @@ gcma hook install [--force] [--post-commit] | uninstall   # pre-push hook, optio
 ```
 
 By default the range is `upstream..HEAD` (unpushed commits). Without an upstream pass `--from <rev>` (exclusive) or
-`--from root`. Commits already on the upstream need `--rewrite-pushed`. Commits that already conform are left alone, so
-running `apply` twice is a no-op and the hook only touches new commits. Every other commit of the range is rewritten,
+`--from root`. Commits already on a remote (any remote-tracking ref, upstream or not) or on the upstream need
+`--rewrite-pushed`. Commits that already conform are left alone, so running `apply` twice is a no-op and the hook only
+touches new commits. Every other commit of the range is rewritten,
 and with a `schedule` it gets a fresh time even if its old one was already inside the hours (a commit that only needs a new
 message or identity is rescheduled too), together with every descendant of a nonconforming commit.
 
@@ -178,12 +179,16 @@ commit writes move between backends; refs, signing and hooks always use git. Mea
 - **New for the rules**: the pushed commits that neither the remote's commit for the ref, nor the remote's own
   remote-tracking refs (`refs/remotes/<remote>/*`), nor the branch's upstream (only when it is a remote-tracking ref)
   reach. What only another remote has is new: commits fetched from a peer are judged on their way to `origin`, and
-  history only `origin` has is judged on its way to a fresh mirror unless the upstream has it (push it with
-  `--no-verify`). A local upstream (`--track main`) hides nothing; when it has blocked commits, the hook asks for
-  `gcma apply --from <rev>`.
+  history only `origin` has is judged on its way to a fresh mirror unless the upstream has it.
+- **Blocked commits another remote has**: the hook says to push them with `--no-verify`, or to rewrite them with
+  `gcma apply --from <rev> --rewrite-pushed` (`rewrite` mode does not rewrite them either).
+- **A local upstream** (`--track main`) hides nothing; when it has blocked commits too, the hook asks for
+  `gcma apply --from <rev>` (`rewrite` mode leaves them to it).
 - **When the push cannot follow a rewrite** (`rewrite` mode blocks it like `verify` mode): a push that is not the branch
   tip (`HEAD~1:main`); tags, for which the hook says to run `gcma apply --retag` (it moves the tags with the branch);
   another branch or ref, which has to be moved to the rewritten commit by hand after `gcma apply`, and the hook says how.
+  This holds for every ref of the push on the commits the rewrite would replace, also when it is pushed together with
+  the branch (`git push origin main v1`, `--follow-tags`, `git push origin main rel`).
 - **Ignored**: deletes, other branches not at the branch tip, tags on commits outside the branch or on no commit, and
   everything on a detached HEAD, except replaced commits.
 - **Always blocked**, in both modes and even on a detached HEAD: a tag or other ref (any push but a branch) that would
