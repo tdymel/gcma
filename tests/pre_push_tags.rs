@@ -22,12 +22,10 @@ fn an_annotated_tag_at_the_tip_is_judged() {
     let r = Repo::hooked(IDENTITY_CFG);
     r.commit_at("bad.txt", "bad", T0);
     r.git(&["tag", "-a", "v1", "-m", "release"]);
-    r.push_blocked(&["origin", "v1"], NONCONFORMING);
-    r.push_blocked(&["origin", "v1:refs/heads/main"], NONCONFORMING);
     // Only `--retag` takes the tag along to the rewritten commit.
-    let tag = stderr(&r.git_out(&["push", "-q", "origin", "v1"]));
-    assert!(tag.contains("run `gcma apply --retag`"), "{tag}");
-    let branch = stderr(&r.git_out(&["push", "-q", "origin", "main"]));
+    r.push_blocked(&["origin", "v1"], "run `gcma apply --retag`");
+    r.push_blocked(&["origin", "v1:refs/heads/main"], NONCONFORMING);
+    let branch = r.push_blocked(&["origin", "main"], NONCONFORMING);
     assert!(!branch.contains("--retag"), "{branch}");
 }
 
@@ -83,16 +81,14 @@ fn another_branch_or_ref_at_the_tip_is_judged_and_has_to_be_moved_by_hand() {
             "`git update-ref refs/keep/x <new commit>`",
         ),
     ] {
-        r.push_blocked(&["origin", spec], NONCONFORMING);
-        let err = stderr(&r.git_out(&["push", "-q", "origin", spec]));
+        let err = r.push_blocked(&["origin", spec], NONCONFORMING);
         assert!(!err.contains("--retag"), "--retag moves only tags: {err}");
         assert!(err.contains("run `gcma apply`"), "{err}");
         assert!(err.contains(how), "{spec}: {err}");
     }
     // With a tag in the same push, the other ref still has to be moved by hand.
     r.git(&["tag", "v1"]);
-    let err = stderr(&r.git_out(&["push", "-q", "origin", "v1", "feature"]));
-    assert!(err.contains("`git branch -f feature"), "{err}");
+    r.push_blocked(&["origin", "v1", "feature"], "`git branch -f feature");
 }
 
 #[test]
@@ -100,10 +96,7 @@ fn rewrite_mode_reports_the_tags_it_leaves_on_the_old_commits() {
     let r = Repo::hooked(&format!("{IDENTITY_CFG}hook: {{mode: rewrite}}\n"));
     r.commit_at("bad.txt", "bad", T0);
     r.git(&["tag", "v1"]);
-    let o = r.git_out(&["push", "-q", "-u", "origin", "main"]);
-    assert!(!o.status.success());
-    let err = stderr(&o);
-    assert!(err.contains("run `git push` again"), "{err}");
+    let err = r.push_blocked(&["-u", "origin", "main"], "run `git push` again");
     assert!(
         err.contains("gcma: pre-push: tags/notes point at commits that will be rewritten"),
         "{err}"

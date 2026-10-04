@@ -75,12 +75,7 @@ fn rewrite_mode_blocks_the_tags_its_rewrite_left_behind() {
         T0 + 100,
     );
     r.git(&["tag", "v1"]);
-    let o = r.git_out(&["push", "-q", "origin", "main"]);
-    assert!(
-        stderr(&o).contains("run `git push` again"),
-        "{}",
-        stderr(&o)
-    );
+    r.push_blocked(&["origin", "main"], "run `git push` again");
     r.push_blocked(&["--tags", "origin"], V1_REPLACED);
     r.push_ok(&["origin", "main"]);
 }

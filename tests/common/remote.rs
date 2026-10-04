@@ -85,8 +85,8 @@ impl Repo {
     }
 
     /// `git push -q <args>`, which the hooks refuse saying `expected`: the remote (the first
-    /// argument that is not an option) is left as it was.
-    pub fn push_blocked(&self, args: &[&str], expected: &str) {
+    /// argument that is not an option) is left as it was. Returns what the push printed on stderr.
+    pub fn push_blocked(&self, args: &[&str], expected: &str) -> String {
         let remote = args.iter().find(|a| !a.starts_with('-')).expect("a remote");
         let before = self.git(&["ls-remote", remote]);
         let o = self.git_out(&[&["push", "-q"], args].concat());
@@ -98,6 +98,7 @@ impl Repo {
             before,
             "push {args:?}: nothing may reach the remote"
         );
+        err
     }
 
     fn remote_path(&self, name: &str) -> PathBuf {
