@@ -34,11 +34,13 @@ impl History for GitCli {
         if tips.is_empty() {
             return Ok(HashMap::new());
         }
-        let mut args = vec!["rev-list", "--parents"];
-        args.extend(tips.iter().map(String::as_str));
-        args.extend(["--not", "--branches"]);
-        let out = self.text(&args)?;
-        Ok(out
+        // The tips go through stdin: every backup's commits are among them, more than a command
+        // line holds. The `--not` there applies to `--branches` only, not to what stdin lists.
+        let out = self.run_stdin(
+            &["rev-list", "--parents", "--stdin", "--not", "--branches"],
+            lines_input(tips).as_bytes(),
+        )?;
+        Ok(String::from_utf8_lossy(&out)
             .lines()
             .filter_map(|line| {
                 let mut oids = line.split_whitespace().map(String::from);
@@ -166,5 +168,36 @@ mod tests {
         assert_eq!(parse_count("42\n").unwrap(), 42);
         assert!(matches!(parse_count(""), Err(Error::Git(_))));
         assert!(matches!(parse_count("fatal"), Err(Error::Git(_))));
+    }
+
+    #[test]
+    fn any_number_of_tips_fits() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let o = std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir.path())
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_AUTHOR_NAME", "Me")
+                .env("GIT_AUTHOR_EMAIL", "me@home.org")
+                .env("GIT_COMMITTER_NAME", "Me")
+                .env("GIT_COMMITTER_EMAIL", "me@home.org")
+                .stdin(std::process::Stdio::null())
+                .output()
+                .unwrap();
+            assert!(o.status.success(), "{args:?}");
+            String::from_utf8_lossy(&o.stdout).trim().to_string()
+        };
+        git(&["init", "-q", "-b", "main"]);
+        let tree = git(&["mktree"]);
+        let commit = git(&["commit-tree", &tree, "-m", "off every branch"]);
+        let repo = GitCli::open(dir.path()).unwrap();
+        // About 4 MB of oids: more than a command line holds.
+        let tips = vec![commit.clone(); 100_000];
+        let graph = repo.commits_off_branches(&tips).unwrap();
+        assert_eq!(graph.len(), 1);
+        assert!(graph[&commit].is_empty());
     }
 }
