@@ -181,3 +181,21 @@ fn rewrite_mode_blocks_another_branch_or_a_tag_pushed_with_the_pushed_branch() {
         );
     }
 }
+
+#[test]
+fn rewrite_mode_rewrites_a_first_push_whose_new_tag_is_below_the_rewritten_commits() {
+    for backend in BACKENDS {
+        let cfg = format!("{IDENTITY_CFG}hook: {{mode: rewrite}}\nbackend: {backend}\n");
+        let r = Repo::hooked(&cfg);
+        let a = r.commit_as("a.txt", "a", T0, "Jane Doe", "jane@work.com");
+        r.git(&["tag", "v0"]);
+        r.commit_at("bad.txt", "bad", T0 + 100);
+        let tip = r.git(&["rev-parse", "HEAD"]);
+        // The tag is on a commit the rewrite keeps: it needs no `--retag`.
+        let err = r.push_blocked(&["-u", "origin", "main", "v0"], "run `git push` again");
+        assert!(!err.contains("--retag"), "{backend}: {err}");
+        assert_ne!(r.git(&["rev-parse", "HEAD"]), tip, "{backend}");
+        assert_eq!(r.git(&["rev-parse", "v0"]), a, "{backend}");
+        r.push_ok(&["-u", "origin", "main", "v0"]);
+    }
+}
