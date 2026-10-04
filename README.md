@@ -168,18 +168,26 @@ commit writes move between backends; refs, signing and hooks always use git. Mea
 
 ## Hook
 
-`gcma hook install` adds a `pre-push` hook. In `verify` mode it blocks pushes of nonconforming commits ("run `gcma apply`").
-In `rewrite` mode it rewrites them and aborts the push so you push again. It judges what a push would send of the
-checked-out branch: the branch itself, `git push origin HEAD`, a revision of the branch (`HEAD~1:main`), and tags or other
-refs whose commit is part of the branch (`git push origin v1`, `--tags`, `v1:refs/heads/main`). A tag cannot follow a
-rewrite of the branch, so in `rewrite` mode a nonconforming tag push is blocked like in `verify` mode, and the hook says
-to run `gcma apply --retag`, which moves the tags with the branch; another branch or ref has to be moved to the rewritten
-commit by hand after `gcma apply`, and the hook says how. The rules judge only what no remote (nor the branch's
-upstream) has yet, whatever remote the push goes to, so history already published elsewhere is not judged again: a
-mirror or a fork can take it; the tags of one history are judged with one plan. Deletes, other branches (unless they
-point at the checked-out branch's tip), and tags on commits outside the branch (or on no commit) are ignored, with one
-exception: a tag or other ref (any push but a branch) that would send commits a gcma rewrite replaced is blocked in both
-modes, even on a detached HEAD, as it would upload the old identities, times and excluded files.
+`gcma hook install` adds a `pre-push` hook: in `verify` mode it blocks pushes of nonconforming commits ("run
+`gcma apply`"), in `rewrite` mode it rewrites them and aborts the push so you push again.
+
+- **Judged**: what the push sends of the checked-out branch: the branch itself, `git push origin HEAD`, a revision of
+  the branch (`HEAD~1:main`), tags or other refs whose commit is part of the branch (`git push origin v1`, `--tags`,
+  `v1:refs/heads/main`), and other branches that point at the branch tip. The tags of one history are judged with one
+  plan.
+- **New for the rules**: the pushed commits that neither the remote's commit for the ref, nor the remote's own
+  remote-tracking refs (`refs/remotes/<remote>/*`), nor the branch's upstream (only when it is a remote-tracking ref)
+  reach. What only another remote has is new: commits fetched from a peer are judged on their way to `origin`, and
+  history only `origin` has is judged on its way to a fresh mirror unless the upstream has it (push it with
+  `--no-verify`). A local upstream (`--track main`) hides nothing; when it has blocked commits, the hook asks for
+  `gcma apply --from <rev>`.
+- **When the push cannot follow a rewrite** (`rewrite` mode blocks it like `verify` mode): a push that is not the branch
+  tip (`HEAD~1:main`); tags, for which the hook says to run `gcma apply --retag` (it moves the tags with the branch);
+  another branch or ref, which has to be moved to the rewritten commit by hand after `gcma apply`, and the hook says how.
+- **Ignored**: deletes, other branches not at the branch tip, tags on commits outside the branch or on no commit, and
+  everything on a detached HEAD, except replaced commits.
+- **Always blocked**, in both modes and even on a detached HEAD: a tag or other ref (any push but a branch) that would
+  send replaced commits (below), as it would upload the old identities, times and excluded files.
 
 **Replaced commits** are, for each backup of **any** branch, the commits its `old` (`refs/gcma/backup/*/old`) reaches
 and its `new` does not (a rewrite keeps the commits that already follow the rules, so those are not replaced), unless a
@@ -203,8 +211,8 @@ index alone (path rules aside, as with `apply`). It is the `apply --all` of the 
 clean them up with `gcma restore <id> --prune`.
 
 - It acts only with `hook: { mode: rewrite }` and a `schedule`; in `verify` mode it does nothing (a commit cannot be
-  blocked), and `pre-push` stays the safety net. The unpushed range is `upstream..HEAD`; without an upstream it is every
-  commit on no remote-tracking ref, and with neither upstream nor remote it does nothing (use `gcma apply --from root`).
+  blocked), and `pre-push` stays the safety net. The unpushed range is the commits of `HEAD` on neither the upstream nor
+  any remote-tracking ref; with neither upstream nor remote it does nothing (use `gcma apply --from root`).
 - It never fails the commit and is silent unless something is wrong or worth knowing (`gcma: post-commit skipped:
   <reason>` on stderr, and the `gcma: post-commit: <line>` lines above). It skips quietly on a
   detached HEAD, during a rebase, merge, cherry-pick or revert, with staged changes, and when the window has no time left.
