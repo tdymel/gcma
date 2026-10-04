@@ -158,3 +158,28 @@ fn default_range_rewrites_only_unpushed_commits() {
     assert_eq!(rows[4].an, "Jane Doe");
     r.fsck();
 }
+
+#[test]
+fn commits_on_any_remote_need_the_flag_even_without_an_upstream() {
+    let r = Repo::new();
+    r.linear(3, T0);
+    r.bare_remote();
+    r.git(&["push", "-q", "origin", "main"]); // origin/main, but no upstream
+    r.commit_at("local.txt", "local only", 1_600_900_000);
+    r.config(IDENTITY_CFG);
+    let tip = r.git(&["rev-parse", "HEAD"]);
+    for cmd in ["plan", "apply"] {
+        let o = r.gcma(&[cmd, "--from", "root"]);
+        assert_eq!(Repo::code(&o), 5, "{cmd}: {}", stderr(&o));
+        let err = stderr(&o);
+        assert!(
+            err.contains("3 commit(s) to rewrite are already on a remote (e.g. "),
+            "{cmd}: {err}"
+        );
+        assert!(err.contains("pass --rewrite-pushed"), "{cmd}: {err}");
+    }
+    assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
+    r.gcma_ok(&["apply", "--from", "HEAD~1"]); // only the local commit
+    r.gcma_ok(&["apply", "--from", "root", "--rewrite-pushed"]);
+    assert!(r.log().iter().all(|x| x.an == "Jane Doe"));
+}

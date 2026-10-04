@@ -72,15 +72,24 @@ fn tags_pushed_to_a_new_remote_are_judged_from_what_the_upstream_has() {
 
 #[test]
 fn history_only_another_remote_has_is_judged_on_its_way_to_a_new_one() {
-    let r = Repo::hooked(IDENTITY_CFG);
-    r.commit_at("old.txt", "public before the rules", T0);
-    r.git(&["tag", "v0"]);
-    push_unhooked(&r, "origin", "main"); // no upstream: origin/main is just another remote's ref
-    r.add_remote("mirror");
-    r.push_blocked(&["mirror", "main"], NONCONFORMING);
-    r.push_blocked(&["mirror", "v0"], NONCONFORMING);
-    r.push_ok(&["origin", "main"]); // origin has it
-    r.push_ok(&["origin", "v0"]);
+    for mode in ["verify", "rewrite"] {
+        let r = Repo::hooked(&format!("{IDENTITY_CFG}hook: {{mode: {mode}}}\n"));
+        r.commit_at("old.txt", "public before the rules", T0);
+        r.git(&["tag", "v0"]);
+        push_unhooked(&r, "origin", "main"); // no upstream: origin/main is just another remote's ref
+        r.add_remote("mirror");
+        let tip = r.git(&["rev-parse", "HEAD"]);
+        // `gcma apply` would refuse them without `--rewrite-pushed`, which a hook cannot pass.
+        r.push_blocked(
+            &["mirror", "main"],
+            "they are on another remote already: push them with `--no-verify`, or rewrite them \
+             with `gcma apply --from <rev> --rewrite-pushed`",
+        );
+        r.push_blocked(&["mirror", "v0"], "they are on another remote already");
+        assert_eq!(r.git(&["rev-parse", "HEAD"]), tip, "{mode}");
+        r.push_ok(&["origin", "main"]); // origin has it
+        r.push_ok(&["origin", "v0"]);
+    }
 }
 
 #[test]
