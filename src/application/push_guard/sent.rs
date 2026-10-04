@@ -5,6 +5,7 @@
 use crate::application::ports::{RemoteScope, Repository, RevRange};
 use crate::domain::error::Result;
 use crate::domain::history::commit::is_zero_oid;
+use crate::domain::history::plan::REMOTES_PREFIX;
 
 /// One ref a push is about to update, as git reports it to the hook.
 #[derive(Debug, Clone)]
@@ -56,7 +57,7 @@ pub(super) fn destination<'a>(
     if let Some(name) = upstream_ref {
         upstream = repo.resolve_commit(&name)?.map(|commit| Upstream {
             commit,
-            remote: name.starts_with("refs/remotes/"),
+            remote: name.starts_with(REMOTES_PREFIX),
         });
     }
     Ok(Destination {

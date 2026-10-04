@@ -16,6 +16,9 @@ pub fn is_oid(s: &str) -> bool {
 /// Where local branches live.
 pub const HEADS_PREFIX: &str = "refs/heads/";
 
+/// Where remote-tracking refs live.
+pub const REMOTES_PREFIX: &str = "refs/remotes/";
+
 /// Version 2 added path rules (`paths`, `dropped`, `new_tip`, `Entry::tree`); version 1 plans
 /// are valid version 2 plans without them.
 pub const PLAN_VERSION: u32 = 2;

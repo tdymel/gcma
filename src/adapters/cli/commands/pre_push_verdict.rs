@@ -3,6 +3,8 @@
 
 use crate::application::push_guard::{NeedsFrom, PrePushOutcome, RefKind};
 use crate::domain::error::{Error, Result};
+use crate::domain::history::plan::HEADS_PREFIX;
+use crate::domain::history::tag::TAGS_PREFIX;
 
 /// Whether the push goes on; a refusal says what to do next.
 pub(super) fn verdict(outcome: &PrePushOutcome) -> Result<()> {
@@ -56,12 +58,12 @@ pub(super) fn verdict(outcome: &PrePushOutcome) -> Result<()> {
 
 /// How to point a ref left on the old commits at the rewritten ones, or drop it.
 fn move_hint(pushed_ref: &str) -> String {
-    if let Some(branch) = pushed_ref.strip_prefix("refs/heads/") {
+    if let Some(branch) = pushed_ref.strip_prefix(HEADS_PREFIX) {
         format!(
             "move the branch (`git branch -f {branch} <new commit>`) or delete it \
              (`git branch -D {branch}`)"
         )
-    } else if let Some(tag) = pushed_ref.strip_prefix("refs/tags/") {
+    } else if let Some(tag) = pushed_ref.strip_prefix(TAGS_PREFIX) {
         format!("move the tag (`git tag -f {tag} <new commit>`) or delete it (`git tag -d {tag}`)")
     } else if pushed_ref.starts_with("refs/") {
         format!(
