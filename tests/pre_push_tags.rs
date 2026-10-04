@@ -126,3 +126,56 @@ fn many_tags_are_judged_with_one_plan() {
     let ranges = trace.matches("rev-list --topo-order").count();
     assert!(ranges <= 2, "{ranges} ranges listed for 30 tags");
 }
+
+/// `main` pushed, then a nonconforming commit on it, and `make` (a branch or tag at the tip).
+fn pushed_main_then_bad_tip(cfg: &str, make: &[&str]) -> Repo {
+    let r = Repo::hooked(cfg);
+    r.commit_as("a.txt", "a", T0, "Jane Doe", "jane@work.com");
+    r.push_ok(&["-u", "origin", "main"]);
+    r.commit_at("bad.txt", "bad", T0 + 100);
+    r.git(make);
+    r
+}
+
+const NEW_BRANCH: &[&str] = &["branch", "rel"];
+const NEW_TAG: &[&str] = &["tag", "-a", "v4", "-m", "release"];
+const MOVE_REL: &str = "`git branch -f rel <new commit>`";
+const RETAG: &str = "run `gcma apply --retag`";
+
+#[test]
+fn another_branch_pushed_with_the_pushed_branch_has_to_be_moved_by_hand() {
+    let r = pushed_main_then_bad_tip(IDENTITY_CFG, NEW_BRANCH);
+    r.push_blocked(&["origin", "main", "rel"], MOVE_REL);
+    r.gcma_ok(&["apply"]);
+    r.push_blocked(
+        &["origin", "main", "rel"],
+        "refs/heads/rel would push commits that gcma replaced",
+    );
+}
+
+#[test]
+fn a_tag_pushed_with_the_pushed_branch_needs_retag() {
+    let r = pushed_main_then_bad_tip(IDENTITY_CFG, NEW_TAG);
+    r.push_blocked(&["origin", "main", "v4"], RETAG);
+    r.push_blocked(&["--follow-tags", "origin", "main"], RETAG);
+}
+
+#[test]
+fn rewrite_mode_blocks_another_branch_or_a_tag_pushed_with_the_pushed_branch() {
+    let cfg = format!("{IDENTITY_CFG}hook: {{mode: rewrite}}\n");
+    let cases: [(&[&str], &[&str], &str); 3] = [
+        (NEW_BRANCH, &["origin", "main", "rel"], MOVE_REL),
+        (NEW_TAG, &["origin", "main", "v4"], RETAG),
+        (NEW_TAG, &["--follow-tags", "origin", "main"], RETAG),
+    ];
+    for (make, push, expected) in cases {
+        let r = pushed_main_then_bad_tip(&cfg, make);
+        let tip = r.git(&["rev-parse", "HEAD"]);
+        r.push_blocked(push, expected);
+        assert_eq!(
+            r.git(&["rev-parse", "HEAD"]),
+            tip,
+            "{push:?}: rewriting the branch would leave the other ref behind"
+        );
+    }
+}
