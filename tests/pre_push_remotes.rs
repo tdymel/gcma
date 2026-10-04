@@ -111,6 +111,23 @@ fn a_local_upstream_does_not_hide_its_unpushed_commits() {
 }
 
 #[test]
+fn rewrite_mode_leaves_what_a_local_upstream_has_too_to_gcma_apply() {
+    let r = Repo::hooked(&format!("{IDENTITY_CFG}hook: {{mode: rewrite}}\n"));
+    r.commit_as("a.txt", "a", T0, "Jane Doe", "jane@work.com");
+    r.push_ok(&["-u", "origin", "main"]);
+    r.commit_at("bad.txt", "bad", T0 + 100); // on main, not pushed
+    r.git(&["checkout", "-q", "--track", "-b", "topic", "main"]);
+    r.commit_at("bad2.txt", "bad too", T0 + 200);
+    let tip = r.git(&["rev-parse", "HEAD"]);
+    let err = r.push_blocked(
+        &["-u", "origin", "topic"],
+        "(the upstream is a local branch that has the commits too: add `--from <rev>`)",
+    );
+    assert!(!err.contains("--rewrite-pushed"), "{err}");
+    assert_eq!(r.git(&["rev-parse", "HEAD"]), tip);
+}
+
+#[test]
 fn a_replaced_commit_on_origin_is_blocked_on_its_way_to_a_new_remote() {
     let r = Repo::hooked(SECRETS_CFG);
     r.commit_files(&[("a.txt", "a\n")], "a", T0);
