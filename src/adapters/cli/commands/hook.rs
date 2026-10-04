@@ -8,7 +8,7 @@ use crate::adapters::cli_support::session::{Session, now};
 use crate::adapters::git_cli::NESTED_ENV;
 use crate::adapters::hook_installer::{self, Hook};
 use crate::application::commit_hook::{self, PostCommitOutcome, Skip};
-use crate::application::push_guard::{self, PrePushOutcome, PushedRef, RefKind};
+use crate::application::push_guard::{self, NeedsFrom, PrePushOutcome, PushedRef, RefKind};
 use crate::domain::error::{Error, Result};
 
 pub fn run(s: &Session, cmd: HookCmd) -> Result<()> {
@@ -73,12 +73,15 @@ fn verdict(outcome: &PrePushOutcome) -> Result<()> {
         ))),
         PrePushOutcome::Blocked {
             commits,
-            no_upstream,
+            needs_from,
             kind,
         } => {
-            let hint = match no_upstream {
-                true => " (the branch has no upstream: add `--from <rev>`)",
-                false => "",
+            let hint = match needs_from {
+                Some(NeedsFrom::NoUpstream) => " (the branch has no upstream: add `--from <rev>`)",
+                Some(NeedsFrom::LocalUpstream) => {
+                    " (the upstream is a local branch that has the commits too: add `--from <rev>`)"
+                }
+                None => "",
             };
             let rewrites = "it rewrites the unpushed part of the branch";
             let (retag, what, then) = match kind {
@@ -249,12 +252,12 @@ mod tests {
             "{err}"
         );
         assert!(err.contains("run `git push` again"), "{err}");
-        let blocked = |no_upstream, kind| PrePushOutcome::Blocked {
+        let blocked = |needs_from, kind| PrePushOutcome::Blocked {
             commits: 3,
-            no_upstream,
+            needs_from,
             kind,
         };
-        let err = verdict(&blocked(true, RefKind::Branch))
+        let err = verdict(&blocked(Some(NeedsFrom::NoUpstream), RefKind::Branch))
             .unwrap_err()
             .to_string();
         assert!(
@@ -265,18 +268,18 @@ mod tests {
             err.contains("run `gcma apply` (the branch has no upstream: add `--from <rev>`)"),
             "{err}"
         );
-        let err = verdict(&blocked(false, RefKind::Branch))
+        let err = verdict(&blocked(None, RefKind::Branch))
             .unwrap_err()
             .to_string();
         assert!(!err.contains("--from"), "{err}");
         assert!(!err.contains("--retag"), "{err}");
-        let err = verdict(&blocked(false, RefKind::Tags))
+        let err = verdict(&blocked(None, RefKind::Tags))
             .unwrap_err()
             .to_string();
         assert!(err.contains("run `gcma apply --retag`"), "{err}");
         assert!(err.contains("moves the tags"), "{err}");
         let other = RefKind::Other("refs/heads/feature".into());
-        let err = verdict(&blocked(false, other)).unwrap_err().to_string();
+        let err = verdict(&blocked(None, other)).unwrap_err().to_string();
         assert!(!err.contains("--retag"), "{err}");
         assert!(
             err.contains(

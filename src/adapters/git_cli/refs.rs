@@ -20,9 +20,12 @@ impl RefStore for GitCli {
     }
 
     fn upstream_oid(&self, branch_ref: &str) -> Result<Option<String>> {
-        // `@{upstream}` only resolves with a short branch name, not `refs/heads/<name>`.
-        let short = branch_ref.strip_prefix(HEADS_PREFIX).unwrap_or(branch_ref);
-        self.resolve_commit(&format!("{short}@{{upstream}}"))
+        self.resolve_commit(&upstream_of(branch_ref))
+    }
+
+    fn upstream_ref(&self, branch_ref: &str) -> Result<Option<String>> {
+        let spec = upstream_of(branch_ref);
+        self.try_text(&["rev-parse", "--verify", "-q", "--symbolic-full-name", &spec])
     }
 
     fn list_refs(&self, prefix: &str) -> Result<Vec<(String, String)>> {
@@ -75,4 +78,10 @@ impl RefStore for GitCli {
     fn remotes(&self) -> Result<Vec<String>> {
         Ok(self.text(&["remote"])?.lines().map(String::from).collect())
     }
+}
+
+/// `<branch>@{upstream}`: it only resolves with a short branch name, not `refs/heads/<name>`.
+fn upstream_of(branch_ref: &str) -> String {
+    let short = branch_ref.strip_prefix(HEADS_PREFIX).unwrap_or(branch_ref);
+    format!("{short}@{{upstream}}")
 }

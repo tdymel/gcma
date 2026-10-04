@@ -88,6 +88,7 @@ impl RefStore for Faulty {
             fn ref_value(&self, name: &str) -> Result<Option<String>>;
             fn resolve_commit(&self, rev: &str) -> Result<Option<String>>;
             fn upstream_oid(&self, branch_ref: &str) -> Result<Option<String>>;
+            fn upstream_ref(&self, branch_ref: &str) -> Result<Option<String>>;
             fn list_refs(&self, prefix: &str) -> Result<Vec<(String, String)>>;
         }
     }

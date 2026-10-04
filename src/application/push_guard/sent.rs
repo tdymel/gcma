@@ -33,7 +33,15 @@ pub(super) struct Destination<'a> {
     /// pushed, as only those are checked for replaced commits).
     tracked: bool,
     /// The upstream of the checked-out branch.
-    pub upstream: Option<String>,
+    pub upstream: Option<Upstream>,
+}
+
+/// The upstream of the checked-out branch.
+pub(super) struct Upstream {
+    pub commit: String,
+    /// It is a remote-tracking ref, so what it reaches is published; a local branch (`git checkout
+    /// --track main`) is not.
+    pub remote: bool,
 }
 
 /// Where `remote` (a name or a URL) is, and the upstream of the checked-out branch, if any.
@@ -51,10 +59,17 @@ pub(super) fn destination<'a>(
         && !repo
             .list_refs(&format!("refs/remotes/{remote}"))?
             .is_empty();
-    let upstream = match branch_ref {
-        Some(b) => repo.upstream_oid(b)?,
+    let upstream_ref = match branch_ref {
+        Some(b) => repo.upstream_ref(b)?,
         None => None,
     };
+    let mut upstream = None;
+    if let Some(name) = upstream_ref {
+        upstream = repo.resolve_commit(&name)?.map(|commit| Upstream {
+            commit,
+            remote: name.starts_with("refs/remotes/"),
+        });
+    }
     Ok(Destination {
         remote,
         named,
@@ -65,7 +80,7 @@ pub(super) fn destination<'a>(
 
 /// The commits of the push that are published nowhere yet, which the rules judge: those that
 /// neither the remote's commit for the ref (when we have it), nor any remote-tracking ref, nor the
-/// upstream reaches. History already on some remote is not judged again, so a mirror or a fork can
+/// upstream reaches when it is a remote-tracking ref (a local upstream is unpushed too). History already on some remote is not judged again, so a mirror or a fork can
 /// take what is public elsewhere. Also the remote's commit for the ref, if we have it.
 pub(super) fn unpublished_range(
     repo: &dyn Repository,
@@ -79,13 +94,25 @@ pub(super) fn unpublished_range(
     };
     let revs = RevRange {
         tip: commit,
-        exclude_commits: known_remote.iter().chain(&dest.upstream).cloned().collect(),
+        exclude_commits: known_remote
+            .iter()
+            .chain(dest.published_upstream())
+            .cloned()
+            .collect(),
         exclude_remotes: Some(RemoteScope::All),
     };
     Ok((revs, known_remote))
 }
 
 impl Destination<'_> {
+    /// The commit of the upstream when it is a remote-tracking ref: what it reaches is published.
+    fn published_upstream(&self) -> Option<&String> {
+        self.upstream
+            .as_ref()
+            .filter(|u| u.remote)
+            .map(|u| &u.commit)
+    }
+
     /// What `s` sends to this remote: its commits minus the remote's commit for the ref (`base`)
     /// and the remote's own tracking refs. What other remotes or the upstream have does not count,
     /// as this remote may not have it.

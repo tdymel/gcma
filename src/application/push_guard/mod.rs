@@ -7,13 +7,16 @@ mod sent;
 pub use judge::RefKind;
 pub use sent::PushedRef;
 
+use std::collections::HashSet;
+
 use crate::application::planning::{PlanOptions, RangeSpec, build_plan};
-use crate::application::ports::Repository;
+use crate::application::ports::{Repository, RevRange};
 use crate::application::rewrite::{ApplyOptions, apply};
 use crate::domain::error::Result;
 use crate::domain::history::commit::is_zero_oid;
+use crate::domain::history::plan::Plan;
 use crate::domain::settings::{Config, HookMode};
-use sent::{Sent, destination, unpublished_range};
+use sent::{Destination, Sent, destination, unpublished_range};
 
 /// What the hook decided. Only `Proceed` lets the push go on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,13 +38,22 @@ pub enum PrePushOutcome {
     /// Nonconforming commits that the hook does not fix.
     Blocked {
         commits: usize,
-        /// The branch has no upstream, so `gcma apply` needs `--from`.
-        no_upstream: bool,
+        /// Why `gcma apply`, which starts at the upstream, needs `--from` to reach the commits.
+        needs_from: Option<NeedsFrom>,
         /// What the push names: the branch (or `HEAD`, or a revision of it), so pushing again after
         /// `gcma apply` sends the rewritten commits; tags, which need `gcma apply --retag` to
         /// follow; or another ref, which has to be moved by hand.
         kind: RefKind,
     },
+}
+
+/// Why `gcma apply` does not reach the blocked commits without `--from`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NeedsFrom {
+    /// The branch has no upstream to start from.
+    NoUpstream,
+    /// The upstream is a local branch that has (some of) the commits too.
+    LocalUpstream,
 }
 
 /// Judges (and in `rewrite` mode fixes) what the push would send. `now` is the current unix time.
@@ -91,7 +103,7 @@ pub fn run_pre_push(
             && g.kind == RefKind::Branch
             && tip.as_deref() == Some(g.revs.tip.as_str());
         let range = RangeSpec {
-            revs: g.revs,
+            revs: g.revs.clone(),
             branch_ref: branch_ref.clone(),
             base: g.base,
         };
@@ -119,9 +131,32 @@ pub fn run_pre_push(
         }
         return Ok(PrePushOutcome::Blocked {
             commits: built.plan.entries.len() + built.plan.dropped.len(),
-            no_upstream: dest.upstream.is_none(),
+            needs_from: needs_from(repo, &dest, &g.revs, &built.plan)?,
             kind: g.kind,
         });
     }
     Ok(PrePushOutcome::Proceed)
+}
+
+/// Whether `gcma apply` would miss commits of `plan` (judged from `revs`): it starts where the
+/// upstream does, so it needs `--from` without one, or when a local upstream has them too.
+fn needs_from(
+    repo: &dyn Repository,
+    dest: &Destination,
+    revs: &RevRange,
+    plan: &Plan,
+) -> Result<Option<NeedsFrom>> {
+    let up = match &dest.upstream {
+        None => return Ok(Some(NeedsFrom::NoUpstream)),
+        Some(up) if up.remote => return Ok(None),
+        Some(up) => up,
+    };
+    let on_upstream = RevRange {
+        tip: up.commit.clone(),
+        ..revs.clone()
+    };
+    let on_upstream: HashSet<String> = repo.list_range(&on_upstream)?.into_iter().collect();
+    let planned = plan.entries.iter().map(|e| &e.old_oid).chain(&plan.dropped);
+    let missed = planned.into_iter().any(|c| on_upstream.contains(c));
+    Ok(missed.then_some(NeedsFrom::LocalUpstream))
 }

@@ -105,6 +105,9 @@ pub trait RefStore {
     /// Resolves a revision to a commit id, `None` when it does not resolve.
     fn resolve_commit(&self, rev: &str) -> Result<Option<String>>;
     fn upstream_oid(&self, branch_ref: &str) -> Result<Option<String>>;
+    /// The full name of the branch's upstream (`refs/remotes/…`, or `refs/heads/…` for a local
+    /// one), `None` when it has none or it does not resolve.
+    fn upstream_ref(&self, branch_ref: &str) -> Result<Option<String>>;
     fn list_refs(&self, prefix: &str) -> Result<Vec<(String, String)>>;
     fn update_refs(&self, message: &str, updates: &[RefUpdate]) -> Result<()>;
     fn remotes(&self) -> Result<Vec<String>>;
