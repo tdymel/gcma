@@ -65,7 +65,7 @@ pub fn run_pre_push(
     now: i64,
 ) -> Result<PrePushOutcome> {
     let branch_ref = repo.current_branch_ref()?;
-    let dest = destination(repo, remote, pushed, branch_ref.as_deref())?;
+    let dest = destination(repo, remote, branch_ref.as_deref())?;
     let mut sent = Vec::new();
     for p in pushed {
         if is_zero_oid(&p.local_sha) {

@@ -4,7 +4,6 @@
 use crate::application::ports::{RemoteScope, Repository, RevRange};
 use crate::domain::error::Result;
 use crate::domain::history::commit::is_zero_oid;
-use crate::domain::history::plan::HEADS_PREFIX;
 
 /// One ref a push is about to update, as git reports it to the hook.
 #[derive(Debug, Clone)]
@@ -29,9 +28,6 @@ pub(super) struct Destination<'a> {
     remote: &'a str,
     /// `remote` names a configured remote (it is not a URL).
     named: bool,
-    /// The named remote has remote-tracking refs (asked only when a ref other than a branch is
-    /// pushed, as only those are checked for replaced commits).
-    tracked: bool,
     /// The upstream of the checked-out branch.
     pub upstream: Option<Upstream>,
 }
@@ -48,17 +44,9 @@ pub(super) struct Upstream {
 pub(super) fn destination<'a>(
     repo: &dyn Repository,
     remote: &'a str,
-    pushed: &[PushedRef],
     branch_ref: Option<&str>,
 ) -> Result<Destination<'a>> {
     let named = repo.remotes()?.iter().any(|r| r == remote);
-    let tracked = named
-        && pushed
-            .iter()
-            .any(|p| !p.local_ref.starts_with(HEADS_PREFIX))
-        && !repo
-            .list_refs(&format!("refs/remotes/{remote}"))?
-            .is_empty();
     let upstream_ref = match branch_ref {
         Some(b) => repo.upstream_ref(b)?,
         None => None,
@@ -73,7 +61,6 @@ pub(super) fn destination<'a>(
     Ok(Destination {
         remote,
         named,
-        tracked,
         upstream,
     })
 }
@@ -113,6 +100,13 @@ impl Destination<'_> {
             .map(|u| &u.commit)
     }
 
+    /// The remote-tracking refs of this remote, when it is a named one (a URL is never a glob).
+    /// Without any, `--not --remotes=<name>` excludes nothing.
+    fn tracking(&self) -> Option<RemoteScope> {
+        self.named
+            .then(|| RemoteScope::Named(self.remote.to_string()))
+    }
+
     /// What `s` sends to this remote: its commits minus the remote's commit for the ref (`base`)
     /// and the remote's own tracking refs. What other remotes or the upstream have does not count,
     /// as this remote may not have it.
@@ -120,8 +114,7 @@ impl Destination<'_> {
         RevRange {
             tip: s.revs.tip.clone(),
             exclude_commits: s.base.iter().cloned().collect(),
-            exclude_remotes: (self.named && self.tracked)
-                .then(|| RemoteScope::Named(self.remote.to_string())),
+            exclude_remotes: self.tracking(),
         }
     }
 }
