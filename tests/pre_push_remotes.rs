@@ -1,6 +1,7 @@
-//! The pre-push hook and a second remote (a mirror, a fork): history some remote already has is not
-//! judged by the rules again, but a commit gcma replaced is blocked unless the remote the push goes
-//! to has it.
+//! The pre-push hook and a second remote (a mirror, a fork, a peer): the rules leave out only what
+//! the remote pushed to has (its tracking refs) and what the branch's remote-tracking upstream has,
+//! so commits taken from another remote are judged on their way to this one. A commit gcma replaced
+//! is blocked unless the remote the push goes to has it.
 
 mod common;
 
@@ -11,7 +12,7 @@ fn push_unhooked(r: &Repo, remote: &str, spec: &str) {
 }
 
 #[test]
-fn a_mirror_takes_the_published_history_but_not_a_new_nonconforming_commit() {
+fn a_mirror_takes_what_the_upstream_has_but_not_a_new_nonconforming_commit() {
     let r = Repo::hooked(IDENTITY_CFG);
     r.commit_at("a.txt", "public before the rules", T0);
     r.add_remote("mirror");
@@ -29,7 +30,7 @@ fn a_mirror_takes_the_published_history_but_not_a_new_nonconforming_commit() {
 }
 
 #[test]
-fn a_tag_to_a_fork_with_stale_tracking_refs_is_judged_from_what_any_remote_has() {
+fn a_tag_to_a_fork_with_stale_tracking_refs_is_judged_from_what_the_upstream_has() {
     let r = Repo::hooked(IDENTITY_CFG);
     r.commit_at("a.txt", "a", T0);
     r.add_remote("fork");
@@ -41,7 +42,20 @@ fn a_tag_to_a_fork_with_stale_tracking_refs_is_judged_from_what_any_remote_has()
 }
 
 #[test]
-fn tags_pushed_to_a_new_remote_are_judged_from_what_the_other_remotes_have() {
+fn a_new_branch_to_a_fork_is_judged_from_its_upstream() {
+    let r = Repo::hooked(IDENTITY_CFG);
+    r.commit_at("old.txt", "public before the rules", T0);
+    r.git(&["push", "-q", "--no-verify", "-u", "origin", "main"]);
+    r.git(&["checkout", "-q", "-b", "feat", "--track", "origin/main"]);
+    r.commit_as("a.txt", "a", T0 + 100, "Jane Doe", "jane@work.com");
+    r.add_remote("fork");
+    r.push_ok(&["-u", "fork", "feat"]);
+    r.commit_at("bad.txt", "bad", T0 + 200);
+    r.push_blocked(&["fork", "feat"], NONCONFORMING);
+}
+
+#[test]
+fn tags_pushed_to_a_new_remote_are_judged_from_what_the_upstream_has() {
     let r = Repo::hooked(IDENTITY_CFG);
     r.commit_at("old.txt", "public before the rules", T0);
     r.git(&["tag", "v0"]);
@@ -54,6 +68,30 @@ fn tags_pushed_to_a_new_remote_are_judged_from_what_the_other_remotes_have() {
     r.commit_at("bad.txt", "bad", T0 + 200);
     r.git(&["tag", "v2"]);
     r.push_blocked(&["mirror", "v2"], NONCONFORMING); // the new commit is still judged
+}
+
+#[test]
+fn history_only_another_remote_has_is_judged_on_its_way_to_a_new_one() {
+    let r = Repo::hooked(IDENTITY_CFG);
+    r.commit_at("old.txt", "public before the rules", T0);
+    r.git(&["tag", "v0"]);
+    push_unhooked(&r, "origin", "main"); // no upstream: origin/main is just another remote's ref
+    r.add_remote("mirror");
+    r.push_blocked(&["mirror", "main"], NONCONFORMING);
+    r.push_blocked(&["mirror", "v0"], NONCONFORMING);
+    r.push_ok(&["origin", "main"]); // origin has it
+    r.push_ok(&["origin", "v0"]);
+}
+
+#[test]
+fn commits_taken_from_a_peer_are_judged_on_their_way_to_origin() {
+    let r = Repo::hooked(IDENTITY_CFG);
+    r.commit_as("a.txt", "a", T0, "Jane Doe", "jane@work.com");
+    r.push_ok(&["-u", "origin", "main"]);
+    r.add_remote("peer");
+    r.commit_at("bad.txt", "bad", T0 + 100);
+    push_unhooked(&r, "peer", "main"); // as if fetched from the peer: peer/main has it
+    r.push_blocked(&["origin", "main"], NONCONFORMING);
 }
 
 #[test]
