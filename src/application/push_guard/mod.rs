@@ -115,11 +115,14 @@ pub fn run_pre_push(
         }
         // Rewriting only fixes the push when the pushed commit is the branch tip and every pushed
         // ref on the rewritten commits follows the branch (a tag or another ref would stay on the
-        // old commit).
+        // old commit). Commits a local upstream has too are left to `gcma apply`, which refuses to
+        // rewrite them without a flag a hook cannot pass.
         let kind = judge::plan_kind(g.kind, &judged, &built.plan);
+        let needs_from = needs_from(repo, &dest, &g.revs, &built.plan)?;
         let rewrite = cfg.hook.mode == HookMode::Rewrite
             && kind == RefKind::Branch
-            && tip.as_deref() == Some(g.revs.tip.as_str());
+            && tip.as_deref() == Some(g.revs.tip.as_str())
+            && needs_from != Some(NeedsFrom::LocalUpstream);
         if rewrite {
             let report = apply(repo, &built.plan, &ApplyOptions::new(now))?;
             if report.noop {
@@ -135,7 +138,7 @@ pub fn run_pre_push(
         }
         return Ok(PrePushOutcome::Blocked {
             commits: built.plan.entries.len() + built.plan.dropped.len(),
-            needs_from: needs_from(repo, &dest, &g.revs, &built.plan)?,
+            needs_from,
             kind,
         });
     }
