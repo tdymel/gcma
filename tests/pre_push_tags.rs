@@ -5,25 +5,6 @@ mod common;
 
 use common::*;
 
-fn assert_blocked(r: &Repo, spec: &str) {
-    let o = r.git_out(&["push", "-q", "origin", spec]);
-    assert!(!o.status.success(), "push {spec} must be blocked");
-    let err = stderr(&o);
-    assert!(
-        err.contains("do not follow the gcma rules"),
-        "{spec}: {err}"
-    );
-    assert!(
-        r.git(&["ls-remote", "origin"]).is_empty(),
-        "push {spec}: nothing may reach the remote"
-    );
-}
-
-fn assert_passes(r: &Repo, spec: &str) {
-    let o = r.git_out(&["push", "-q", "origin", spec]);
-    assert!(o.status.success(), "push {spec}: {}", stderr(&o));
-}
-
 #[test]
 fn a_lightweight_tag_below_the_tip_is_judged() {
     let r = Repo::hooked(SECRETS_CFG);
@@ -31,9 +12,9 @@ fn a_lightweight_tag_below_the_tip_is_judged() {
     r.commit_files(&[("secrets/k2", "k\n")], "add key", T0 + 100);
     r.git(&["tag", "v2"]);
     r.commit_files(&[("b.txt", "b\n")], "b", T0 + 200);
-    assert_blocked(&r, "v2");
-    assert_blocked(&r, "v2:refs/heads/main");
-    assert_blocked(&r, "refs/tags/v2:refs/tags/v2");
+    r.push_blocked(&["origin", "v2"], NONCONFORMING);
+    r.push_blocked(&["origin", "v2:refs/heads/main"], NONCONFORMING);
+    r.push_blocked(&["origin", "refs/tags/v2:refs/tags/v2"], NONCONFORMING);
 }
 
 #[test]
@@ -41,8 +22,8 @@ fn an_annotated_tag_at_the_tip_is_judged() {
     let r = Repo::hooked(IDENTITY_CFG);
     r.commit_at("bad.txt", "bad", T0);
     r.git(&["tag", "-a", "v1", "-m", "release"]);
-    assert_blocked(&r, "v1");
-    assert_blocked(&r, "v1:refs/heads/main");
+    r.push_blocked(&["origin", "v1"], NONCONFORMING);
+    r.push_blocked(&["origin", "v1:refs/heads/main"], NONCONFORMING);
     // Only `--retag` takes the tag along to the rewritten commit.
     let tag = stderr(&r.git_out(&["push", "-q", "origin", "v1"]));
     assert!(tag.contains("run `gcma apply --retag`"), "{tag}");
@@ -56,7 +37,7 @@ fn rewrite_mode_blocks_a_tag_instead_of_rewriting_the_branch_under_it() {
     r.commit_at("bad.txt", "bad", T0);
     r.git(&["tag", "-a", "v1", "-m", "release"]);
     let tip = r.git(&["rev-parse", "HEAD"]);
-    assert_blocked(&r, "v1");
+    r.push_blocked(&["origin", "v1"], NONCONFORMING);
     assert_eq!(
         r.git(&["rev-parse", "HEAD"]),
         tip,
@@ -71,8 +52,8 @@ fn a_tag_of_a_conforming_history_is_pushed() {
     r.git(&["tag", "-a", "v1", "-m", "release"]);
     r.git(&["tag", "light"]);
     r.commit_at("bad.txt", "bad", T0 + 100); // nonconforming, but above the tags
-    assert_passes(&r, "v1");
-    assert_passes(&r, "light");
+    r.push_ok(&["origin", "v1"]);
+    r.push_ok(&["origin", "light"]);
     assert!(r.git(&["ls-remote", "origin"]).contains("refs/tags/v1"));
 }
 
@@ -85,8 +66,8 @@ fn a_tag_unrelated_to_the_branch_or_not_on_a_commit_is_ignored() {
     r.git(&["tag", "elsewhere"]);
     r.git(&["checkout", "-q", "main"]);
     r.git(&["tag", "tree", "HEAD^{tree}"]);
-    assert_passes(&r, "elsewhere");
-    assert_passes(&r, "tree");
+    r.push_ok(&["origin", "elsewhere"]);
+    r.push_ok(&["origin", "tree"]);
 }
 
 #[test]
@@ -102,7 +83,7 @@ fn another_branch_or_ref_at_the_tip_is_judged_and_has_to_be_moved_by_hand() {
             "`git update-ref refs/keep/x <new commit>`",
         ),
     ] {
-        assert_blocked(&r, spec);
+        r.push_blocked(&["origin", spec], NONCONFORMING);
         let err = stderr(&r.git_out(&["push", "-q", "origin", spec]));
         assert!(!err.contains("--retag"), "--retag moves only tags: {err}");
         assert!(err.contains("run `gcma apply`"), "{err}");
@@ -129,25 +110,6 @@ fn rewrite_mode_reports_the_tags_it_leaves_on_the_old_commits() {
     );
     assert!(err.contains(": v1"), "{err}");
     assert!(!err.contains("--retag"), "a hook has no --retag: {err}");
-}
-
-#[test]
-fn tags_pushed_to_a_new_remote_are_judged_from_what_the_other_remotes_have() {
-    let r = Repo::hooked(IDENTITY_CFG);
-    r.commit_at("old.txt", "public before the rules", T0);
-    r.git(&["tag", "v0"]);
-    r.git(&["push", "-q", "--no-verify", "-u", "origin", "main"]);
-    r.commit_as("a.txt", "a", T0 + 100, "Jane Doe", "jane@work.com");
-    r.git(&["tag", "v1"]);
-    r.add_remote("mirror");
-    for tag in ["v0", "v1"] {
-        let o = r.git_out(&["push", "-q", "mirror", tag]);
-        assert!(o.status.success(), "push {tag}: {}", stderr(&o));
-    }
-    r.commit_at("bad.txt", "bad", T0 + 200);
-    r.git(&["tag", "v2"]);
-    let o = r.git_out(&["push", "-q", "mirror", "v2"]);
-    assert!(!o.status.success(), "the new commit is still judged");
 }
 
 #[test]

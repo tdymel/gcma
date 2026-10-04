@@ -6,11 +6,6 @@ mod common;
 
 use common::*;
 
-fn assert_passes(r: &Repo, args: &[&str]) {
-    let o = r.git_out(args);
-    assert!(o.status.success(), "{args:?}: {}", stderr(&o));
-}
-
 /// `a` pushed, then the secret (tagged `v1`) and `b` local, and the branch rewritten by `apply`.
 fn tag_left_on_a_replaced_commit() -> Repo {
     let r = Repo::hooked(SECRETS_CFG);
@@ -27,26 +22,17 @@ fn tag_left_on_a_replaced_commit() -> Repo {
     r
 }
 
-fn assert_replaced(r: &Repo, args: &[&str]) {
-    let before = r.git(&["ls-remote", "origin"]);
-    let o = r.git_out(args);
-    assert!(!o.status.success(), "{args:?} must be blocked");
-    let err = stderr(&o);
-    assert!(
-        err.contains("refs/tags/v1 would push commits that gcma replaced"),
-        "{args:?}: {err}"
-    );
-    assert!(err.contains("git tag -f v1 <new commit>"), "{err}");
-    assert_eq!(r.git(&["ls-remote", "origin"]), before, "{args:?}");
-}
+/// What the hook says when `v1` would send a replaced commit, with how to move it.
+const V1_REPLACED: &str = "refs/tags/v1 would push commits that gcma replaced when it rewrote a \
+                           branch; move the tag (`git tag -f v1 <new commit>`)";
 
 #[test]
 fn a_tag_left_on_a_replaced_commit_is_blocked_until_it_is_moved() {
     let r = tag_left_on_a_replaced_commit();
-    assert_replaced(&r, &["push", "-q", "origin", "v1"]);
-    assert_replaced(&r, &["push", "-q", "--tags", "origin"]);
+    r.push_blocked(&["origin", "v1"], V1_REPLACED);
+    r.push_blocked(&["--tags", "origin"], V1_REPLACED);
     r.git(&["tag", "-f", "-a", "v1", "-m", "release", "HEAD~1"]);
-    assert_passes(&r, &["push", "-q", "origin", "v1"]);
+    r.push_ok(&["origin", "v1"]);
     let remote = r.git(&["ls-remote", "origin", "refs/tags/v1^{}"]);
     assert!(
         remote.starts_with(&r.git(&["rev-parse", "HEAD~1"])),
@@ -65,7 +51,7 @@ fn a_replaced_commit_already_on_the_remote_passes() {
         "v1^{}:refs/heads/old",
     ]);
     assert!(o.status.success(), "{}", stderr(&o));
-    assert_passes(&r, &["push", "-q", "origin", "v1"]);
+    r.push_ok(&["origin", "v1"]);
 }
 
 #[test]
@@ -75,7 +61,7 @@ fn a_tag_unrelated_to_the_backups_passes() {
     r.commit_files(&[("c.txt", "c\n")], "c", T0 + 300);
     r.git(&["tag", "elsewhere"]);
     r.git(&["checkout", "-q", "main"]);
-    assert_passes(&r, &["push", "-q", "origin", "elsewhere"]);
+    r.push_ok(&["origin", "elsewhere"]);
 }
 
 #[test]
@@ -95,8 +81,8 @@ fn rewrite_mode_blocks_the_tags_its_rewrite_left_behind() {
         "{}",
         stderr(&o)
     );
-    assert_replaced(&r, &["push", "-q", "--tags", "origin"]);
-    assert_passes(&r, &["push", "-q", "origin", "main"]);
+    r.push_blocked(&["--tags", "origin"], V1_REPLACED);
+    r.push_ok(&["origin", "main"]);
 }
 
 #[test]
@@ -110,7 +96,7 @@ fn a_tag_on_commits_a_rewrite_kept_passes() {
     r.gcma_ok(&["apply", "--from", "main"]);
     r.git(&["tag", "ft", "feature"]);
     r.git(&["checkout", "-q", "main"]);
-    assert_passes(&r, &["push", "-q", "origin", "ft"]);
+    r.push_ok(&["origin", "ft"]);
 }
 
 #[test]
@@ -128,7 +114,7 @@ fn a_commit_a_backup_replaced_but_a_branch_still_holds_passes() {
     r.git(&["checkout", "-q", "-b", "feature"]);
     commit("b.txt"); // feature's backup keeps the old `b`, whose parent is main's tip
     r.git(&["checkout", "-q", "-b", "other", "origin/main"]);
-    assert_passes(&r, &["push", "-q", "origin", "vA"]);
+    r.push_ok(&["origin", "vA"]);
 }
 
 #[test]
@@ -136,21 +122,16 @@ fn a_tag_on_a_branch_brought_back_by_restore_passes() {
     let r = tag_left_on_a_replaced_commit();
     r.gcma_ok(&["restore", &r.backup_id()]);
     r.git(&["checkout", "-q", "-b", "other", "origin/main"]);
-    assert_passes(&r, &["push", "-q", "origin", "v1"]);
+    r.push_ok(&["origin", "v1"]);
 }
 
 #[test]
 fn a_detached_head_does_not_skip_the_replaced_commits() {
     let r = tag_left_on_a_replaced_commit();
     r.git(&["checkout", "-q", "--detach", "v1"]);
-    assert_replaced(&r, &["push", "-q", "origin", "v1"]);
-    let before = r.git(&["ls-remote", "origin"]);
-    let o = r.git_out(&["push", "-q", "origin", "HEAD:refs/heads/old"]);
-    assert!(!o.status.success(), "{}", stderr(&o));
-    let err = stderr(&o);
-    assert!(
-        err.contains("HEAD would push commits that gcma replaced"),
-        "{err}"
+    r.push_blocked(&["origin", "v1"], V1_REPLACED);
+    r.push_blocked(
+        &["origin", "HEAD:refs/heads/old"],
+        "HEAD would push commits that gcma replaced",
     );
-    assert_eq!(r.git(&["ls-remote", "origin"]), before);
 }

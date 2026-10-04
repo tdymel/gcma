@@ -5,6 +5,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::repo::Repo;
+use super::stderr;
+
+/// What the pre-push hook says when the rules block a push.
+pub const NONCONFORMING: &str = "do not follow the gcma rules";
 
 /// The tip of `branch` in a bare repository.
 pub fn remote_tip(remote: &Path, branch: &str) -> String {
@@ -72,6 +76,28 @@ impl Repo {
         assert!(o.status.success());
         self.git(&["remote", "add", name, remote.to_str().unwrap()]);
         remote
+    }
+
+    /// `git push -q <args>`, which the hooks let through.
+    pub fn push_ok(&self, args: &[&str]) {
+        let o = self.git_out(&[&["push", "-q"], args].concat());
+        assert!(o.status.success(), "push {args:?}: {}", stderr(&o));
+    }
+
+    /// `git push -q <args>`, which the hooks refuse saying `expected`: the remote (the first
+    /// argument that is not an option) is left as it was.
+    pub fn push_blocked(&self, args: &[&str], expected: &str) {
+        let remote = args.iter().find(|a| !a.starts_with('-')).expect("a remote");
+        let before = self.git(&["ls-remote", remote]);
+        let o = self.git_out(&[&["push", "-q"], args].concat());
+        assert!(!o.status.success(), "push {args:?} must be blocked");
+        let err = stderr(&o);
+        assert!(err.contains(expected), "push {args:?}: {err}");
+        assert_eq!(
+            self.git(&["ls-remote", remote]),
+            before,
+            "push {args:?}: nothing may reach the remote"
+        );
     }
 
     fn remote_path(&self, name: &str) -> PathBuf {
