@@ -71,16 +71,13 @@ pub(super) fn kind(
 pub(super) struct Group {
     pub revs: RevRange,
     pub base: Option<String>,
-    /// What the pushes of the group name, joined.
-    pub kind: RefKind,
 }
 
-/// Adds the judged push of `s`, of `kind`, to the group that covers it, or starts a new group.
+/// Adds the judged push of `s` to the group that covers it, or starts a new group.
 pub(super) fn add_to_groups(
     repo: &dyn Repository,
     groups: &mut Vec<Group>,
     s: &Sent,
-    kind: RefKind,
 ) -> Result<()> {
     let commit = &s.revs.tip;
     let same = |g: &Group| {
@@ -93,28 +90,27 @@ pub(super) fn add_to_groups(
             if !below {
                 g.revs.tip = commit.clone();
             }
-            g.kind = std::mem::replace(&mut g.kind, RefKind::Branch).join(kind);
             return Ok(());
         }
     }
     groups.push(Group {
         revs: s.revs.clone(),
         base: s.base.clone(),
-        kind,
     });
     Ok(())
 }
 
-/// What the rewrite of `plan` (made for a group of `group` kind) has to take along: the group's
-/// kind joined with that of every judged push (`judged`: its commit and kind) whose commit the plan
-/// rewrites or drops. A push that excludes less than the group's (a new tag or branch next to the
-/// pushed branch) is grouped apart, but it would stay on the old commit all the same.
-pub(super) fn plan_kind(group: RefKind, judged: &[(String, RefKind)], plan: &Plan) -> RefKind {
+/// What the rewrite of `plan` has to take along: the kinds of the judged pushes (`judged`: its
+/// commit and kind) whose commit the plan rewrites or drops, joined (the tip of the plan's group is
+/// one of them). A push on a commit the plan keeps follows nothing, also when it is in the group;
+/// one that excludes less than the group's (a new tag or branch next to the pushed branch) is
+/// grouped apart, but it would stay on the old commit all the same.
+pub(super) fn plan_kind(judged: &[(String, RefKind)], plan: &Plan) -> RefKind {
     let touched: HashSet<&String> = plan.touched_oids().collect();
     judged
         .iter()
         .filter(|(commit, _)| touched.contains(commit))
-        .fold(group, |k, (_, other)| k.join(other.clone()))
+        .fold(RefKind::Branch, |k, (_, other)| k.join(other.clone()))
 }
 
 #[cfg(test)]

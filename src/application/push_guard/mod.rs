@@ -105,7 +105,7 @@ pub fn run_pre_push(
     let mut judged = Vec::new();
     for s in &sent {
         if let Some(kind) = judge::kind(repo, s, &branch_ref, tip.as_deref())? {
-            judge::add_to_groups(repo, &mut groups, s, kind.clone())?;
+            judge::add_to_groups(repo, &mut groups, s)?;
             judged.push((s.revs.tip.clone(), kind));
         }
     }
@@ -131,7 +131,7 @@ pub fn run_pre_push(
         // ref on the rewritten commits follows the branch (a tag or another ref would stay on the
         // old commit). Commits a local upstream or another remote has too are left to `gcma
         // apply`, which refuses to rewrite them without a flag a hook cannot pass.
-        let kind = judge::plan_kind(g.kind, &judged, &built.plan);
+        let kind = judge::plan_kind(&judged, &built.plan);
         let needs_from = needs_from(repo, &dest, &built.plan)?;
         let rewrite = cfg.hook.mode == HookMode::Rewrite
             && kind == RefKind::Branch
