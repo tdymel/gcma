@@ -180,10 +180,13 @@ commit writes move between backends; refs, signing and hooks always use git. Mea
   remote-tracking refs (`refs/remotes/<remote>/*`), nor the branch's upstream (only when it is a remote-tracking ref)
   reach. What only another remote has is new: commits fetched from a peer are judged on their way to `origin`, and
   history only `origin` has is judged on its way to a fresh mirror unless the upstream has it.
-- **Blocked commits another remote has**: the hook says to push them with `--no-verify`, or to rewrite them with
-  `gcma apply --from <rev> --rewrite-pushed` (`rewrite` mode does not rewrite them either).
-- **A local upstream** (`--track main`) hides nothing; when it has blocked commits too, the hook asks for
-  `gcma apply --from <rev>` (`rewrite` mode leaves them to it).
+- **Blocked commits another remote has**: when other remotes have all of them, the hook says to push them with
+  `--no-verify`, or to rewrite them with `gcma apply --from <rev> --rewrite-pushed`; when they have only some, it says
+  how many and offers only the rewrite, as `--no-verify` would upload the others too (`rewrite` mode does not rewrite
+  them either).
+- **A local upstream** (`--track main`) hides nothing; when it has blocked commits too, the hook says to run
+  `gcma apply` on the upstream branch and rebase onto it, or to run `gcma apply --from <rev> --rewrite-pushed` on this
+  branch, which leaves the upstream on the old commits (`rewrite` mode leaves them to it).
 - **When the push cannot follow a rewrite** (`rewrite` mode blocks it like `verify` mode): a push that is not the branch
   tip (`HEAD~1:main`); tags, for which the hook says to run `gcma apply --retag` (it moves the tags with the branch);
   another branch or ref, which has to be moved to the rewritten commit by hand after `gcma apply`, and the hook says how.
