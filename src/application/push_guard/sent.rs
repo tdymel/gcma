@@ -1,5 +1,6 @@
-//! What a push sends: the pushed refs and, for each, the commits that no remote has yet (judged by
-//! the rules) and those that the remote pushed to lacks (checked for replaced commits).
+//! What a push sends: the pushed refs and, for each, the commits that neither the remote pushed to
+//! nor the branch's remote-tracking upstream has (judged by the rules) and those that the remote
+//! pushed to lacks (checked for replaced commits).
 
 use crate::application::ports::{RemoteScope, Repository, RevRange};
 use crate::domain::error::Result;
@@ -16,7 +17,7 @@ pub struct PushedRef {
 /// A pushed ref and the commits it would send.
 pub(super) struct Sent<'a> {
     pub pushed: &'a PushedRef,
-    /// The commits published nowhere yet (`unpublished_range`). `tip` is the pushed object peeled
+    /// The commits new to the remote, as the rules see it (`unpublished_range`). `tip` is the pushed object peeled
     /// to a commit (an annotated tag pushes its tag object).
     pub revs: RevRange,
     /// The remote's commit for the ref, when we have it: the range starts after it.
@@ -65,10 +66,11 @@ pub(super) fn destination<'a>(
     })
 }
 
-/// The commits of the push that are published nowhere yet, which the rules judge: those that
-/// neither the remote's commit for the ref (when we have it), nor any remote-tracking ref, nor the
-/// upstream reaches when it is a remote-tracking ref (a local upstream is unpushed too). History already on some remote is not judged again, so a mirror or a fork can
-/// take what is public elsewhere. Also the remote's commit for the ref, if we have it.
+/// The new commits of the push, which the rules judge: those that neither the remote's commit for
+/// the ref (when we have it), nor the remote's own tracking refs, nor the upstream reaches when it is
+/// a remote-tracking ref (a local upstream is unpushed too). What only another remote has is new
+/// here: a peer's commits must not reach a public remote unjudged. Also the remote's commit for the
+/// ref, if we have it.
 pub(super) fn unpublished_range(
     repo: &dyn Repository,
     p: &PushedRef,
@@ -86,7 +88,7 @@ pub(super) fn unpublished_range(
             .chain(dest.published_upstream())
             .cloned()
             .collect(),
-        exclude_remotes: Some(RemoteScope::All),
+        exclude_remotes: dest.tracking(),
     };
     Ok((revs, known_remote))
 }
