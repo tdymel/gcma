@@ -32,7 +32,7 @@ pub(super) fn verdict(outcome: &PrePushOutcome) -> Result<()> {
                 Some(NeedsFrom::LocalUpstream) => {
                     " (the upstream is a local branch that has the commits too: add `--from <rev>`)"
                 }
-                None => "",
+                Some(NeedsFrom::Published) | None => "",
             };
             let rewrites = "it rewrites the unpushed part of the branch";
             let (retag, what, then) = match kind {
@@ -48,9 +48,17 @@ pub(super) fn verdict(outcome: &PrePushOutcome) -> Result<()> {
                     format!(", then {},", move_hint(r)),
                 ),
             };
+            let rules =
+                format!("{commits} commit(s) about to be pushed do not follow the gcma rules");
+            if *needs_from == Some(NeedsFrom::Published) {
+                return Err(Error::Nonconforming(format!(
+                    "{rules}; they are on another remote already: push them with `--no-verify`, \
+                     or rewrite them with `gcma apply{retag} --from <rev> --rewrite-pushed` \
+                     ({what}){then} and push again"
+                )));
+            }
             Err(Error::Nonconforming(format!(
-                "{commits} commit(s) about to be pushed do not follow the gcma rules; \
-                 run `gcma apply{retag}`{hint} ({what}){then} and push again"
+                "{rules}; run `gcma apply{retag}`{hint} ({what}){then} and push again"
             )))
         }
     }
@@ -114,6 +122,24 @@ mod tests {
             .to_string();
         assert!(
             err.contains("(the upstream is a local branch that has the commits too: add `--from"),
+            "{err}"
+        );
+        let err = verdict(&blocked(Some(NeedsFrom::Published), RefKind::Branch))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(
+                "3 commit(s) about to be pushed do not follow the gcma rules; they are on another \
+                 remote already: push them with `--no-verify`, or rewrite them with `gcma apply \
+                 --from <rev> --rewrite-pushed` (it rewrites"
+            ),
+            "{err}"
+        );
+        let err = verdict(&blocked(Some(NeedsFrom::Published), RefKind::Tags))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("`gcma apply --retag --from <rev> --rewrite-pushed`"),
             "{err}"
         );
         let err = verdict(&blocked(None, RefKind::Branch))

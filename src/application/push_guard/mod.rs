@@ -7,10 +7,8 @@ mod sent;
 pub use judge::RefKind;
 pub use sent::PushedRef;
 
-use std::collections::HashSet;
-
 use crate::application::planning::{PlanOptions, RangeSpec, build_plan};
-use crate::application::ports::{Repository, RevRange};
+use crate::application::ports::Repository;
 use crate::application::rewrite::{ApplyOptions, apply};
 use crate::domain::error::Result;
 use crate::domain::history::commit::is_zero_oid;
@@ -38,7 +36,8 @@ pub enum PrePushOutcome {
     /// Nonconforming commits that the hook does not fix.
     Blocked {
         commits: usize,
-        /// Why `gcma apply`, which starts at the upstream, needs `--from` to reach the commits.
+        /// Why `gcma apply`, which starts at the upstream, needs `--from` to reach the commits
+        /// (and, for published ones, `--rewrite-pushed`).
         needs_from: Option<NeedsFrom>,
         /// What the push names: the branch (or `HEAD`, or a revision of it), so pushing again after
         /// `gcma apply` sends the rewritten commits; tags, which need `gcma apply --retag` to
@@ -54,6 +53,17 @@ pub enum NeedsFrom {
     NoUpstream,
     /// The upstream is a local branch that has (some of) the commits too.
     LocalUpstream,
+    /// Another remote has (some of) the commits already: rewriting them takes `--rewrite-pushed`
+    /// too.
+    Published,
+}
+
+impl NeedsFrom {
+    /// Whether `gcma apply` refuses the commits without `--rewrite-pushed`, which a hook cannot
+    /// pass: they are on the upstream or on a remote already.
+    fn needs_rewrite_pushed(self) -> bool {
+        matches!(self, NeedsFrom::LocalUpstream | NeedsFrom::Published)
+    }
 }
 
 /// Judges (and in `rewrite` mode fixes) what the push would send. `now` is the current unix time.
@@ -105,8 +115,10 @@ pub fn run_pre_push(
             branch_ref: branch_ref.clone(),
             base: g.base,
         };
+        // What another remote has is judged too; whether it may be rewritten is `needs_from`.
         let opts = PlanOptions {
             range: Some(range),
+            rewrite_pushed: true,
             ..PlanOptions::new(now)
         };
         let built = build_plan(repo, cfg, &opts)?;
@@ -115,14 +127,14 @@ pub fn run_pre_push(
         }
         // Rewriting only fixes the push when the pushed commit is the branch tip and every pushed
         // ref on the rewritten commits follows the branch (a tag or another ref would stay on the
-        // old commit). Commits a local upstream has too are left to `gcma apply`, which refuses to
-        // rewrite them without a flag a hook cannot pass.
+        // old commit). Commits a local upstream or another remote has too are left to `gcma
+        // apply`, which refuses to rewrite them without a flag a hook cannot pass.
         let kind = judge::plan_kind(g.kind, &judged, &built.plan);
-        let needs_from = needs_from(repo, &dest, &g.revs, &built.plan)?;
+        let needs_from = needs_from(repo, &dest, &built.plan)?;
         let rewrite = cfg.hook.mode == HookMode::Rewrite
             && kind == RefKind::Branch
             && tip.as_deref() == Some(g.revs.tip.as_str())
-            && needs_from != Some(NeedsFrom::LocalUpstream);
+            && !needs_from.is_some_and(NeedsFrom::needs_rewrite_pushed);
         if rewrite {
             let report = apply(repo, &built.plan, &ApplyOptions::new(now))?;
             if report.noop {
@@ -145,25 +157,21 @@ pub fn run_pre_push(
     Ok(PrePushOutcome::Proceed)
 }
 
-/// Whether `gcma apply` would miss commits of `plan` (judged from `revs`): it starts where the
-/// upstream does, so it needs `--from` without one, or when a local upstream has them too.
-fn needs_from(
-    repo: &dyn Repository,
-    dest: &Destination,
-    revs: &RevRange,
-    plan: &Plan,
-) -> Result<Option<NeedsFrom>> {
-    let up = match &dest.upstream {
-        None => return Ok(Some(NeedsFrom::NoUpstream)),
-        Some(up) if up.remote => return Ok(None),
-        Some(up) => up,
+/// Whether `gcma apply` would miss commits of `plan`: it starts where the upstream does, so it
+/// needs `--from` without one, or when a local upstream has them too; and it refuses commits that
+/// a remote has already (what only another remote has is judged on its way to this one).
+fn needs_from(repo: &dyn Repository, dest: &Destination, plan: &Plan) -> Result<Option<NeedsFrom>> {
+    let planned: Vec<String> = plan.touched_oids().cloned().collect();
+    let has_some = |upstream: Option<&str>| -> Result<bool> {
+        let unpushed = repo.unpushed_among(&planned, upstream)?;
+        Ok(planned.iter().any(|c| !unpushed.contains(c)))
     };
-    let on_upstream = RevRange {
-        tip: up.commit.clone(),
-        ..revs.clone()
-    };
-    let on_upstream: HashSet<String> = repo.list_range(&on_upstream)?.into_iter().collect();
-    let planned = plan.entries.iter().map(|e| &e.old_oid).chain(&plan.dropped);
-    let missed = planned.into_iter().any(|c| on_upstream.contains(c));
-    Ok(missed.then_some(NeedsFrom::LocalUpstream))
+    if has_some(None)? {
+        return Ok(Some(NeedsFrom::Published));
+    }
+    Ok(match &dest.upstream {
+        None => Some(NeedsFrom::NoUpstream),
+        Some(up) if up.remote => None,
+        Some(up) => has_some(Some(&up.commit))?.then_some(NeedsFrom::LocalUpstream),
+    })
 }
