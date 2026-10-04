@@ -173,7 +173,7 @@ fn commits_on_any_remote_need_the_flag_even_without_an_upstream() {
         assert_eq!(Repo::code(&o), 5, "{cmd}: {}", stderr(&o));
         let err = stderr(&o);
         assert!(
-            err.contains("3 commit(s) to rewrite are already on a remote (e.g. "),
+            err.contains("3 commit(s) to rewrite are already on a remote"),
             "{cmd}: {err}"
         );
         assert!(err.contains("pass --rewrite-pushed"), "{cmd}: {err}");

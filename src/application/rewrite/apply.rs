@@ -77,7 +77,7 @@ pub const SECRETS_NOTE: &str = "paths were removed from the rewritten commits on
 /// How `apply` treats what the plan alone does not settle.
 #[derive(Debug, Clone)]
 pub struct ApplyOptions {
-    /// Allow rewriting commits that are already on the upstream (`--rewrite-pushed`).
+    /// Allow rewriting commits that are already on a remote or the upstream (`--rewrite-pushed`).
     pub rewrite_pushed: bool,
     /// Move the tags (and copy the notes) of the rewritten commits along (`--retag`).
     pub retag: bool,

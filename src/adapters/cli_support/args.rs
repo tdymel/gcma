@@ -32,7 +32,7 @@ pub struct RangeArgs {
     /// Exclusive lower bound of the range (`root` = no bound). Required without an upstream.
     #[arg(long)]
     pub from: Option<String>,
-    /// Allow rewriting commits that are already on the upstream.
+    /// Allow rewriting commits that are already on a remote or the upstream.
     #[arg(long)]
     pub rewrite_pushed: bool,
     /// Rewrite every commit in the range, even ones that already conform.

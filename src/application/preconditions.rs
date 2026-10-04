@@ -23,21 +23,24 @@ pub fn check_preconditions(tree: &dyn WorkTree, strict: bool) -> Result<()> {
     Ok(())
 }
 
-/// Commits that are already on the upstream may only be rewritten when the caller allows it
-/// (`allowed`, the CLI's `--rewrite-pushed`; the error message names that flag). `touched` is
-/// everything the rewrite changes or drops.
+/// Commits that are already on the upstream (even a local one) or on any remote (whatever the
+/// upstream) may only be rewritten when the caller allows it (`allowed`, the CLI's
+/// `--rewrite-pushed`; the error message names that flag). `touched` is everything the rewrite
+/// changes or drops.
 pub fn refuse_pushed(
     history: &dyn History,
     touched: &[String],
     upstream: Option<&str>,
     allowed: bool,
 ) -> Result<()> {
-    let Some(up) = upstream else { return Ok(()) };
-    let unpushed = history.unpushed_among(touched, up)?;
+    if allowed {
+        return Ok(());
+    }
+    let unpushed = history.unpushed_among(touched, upstream)?;
     let pushed: Vec<&String> = touched.iter().filter(|o| !unpushed.contains(*o)).collect();
-    if !pushed.is_empty() && !allowed {
+    if !pushed.is_empty() {
         return Err(Error::Pushed(format!(
-            "{} commit(s) to rewrite are already on the upstream (e.g. {}); pass --rewrite-pushed to proceed",
+            "{} commit(s) to rewrite are already on a remote or the upstream (e.g. {}); pass --rewrite-pushed to proceed",
             pushed.len(),
             &pushed[0][..pushed[0].len().min(10)]
         )));

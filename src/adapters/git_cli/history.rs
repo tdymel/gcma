@@ -54,15 +54,20 @@ impl History for GitCli {
         parse_count(&out)
     }
 
-    fn unpushed_among(&self, oids: &[String], upstream: &str) -> Result<HashSet<String>> {
+    fn unpushed_among(&self, oids: &[String], upstream: Option<&str>) -> Result<HashSet<String>> {
         if oids.is_empty() {
             return Ok(HashSet::new());
         }
-        let not = format!("^{upstream}");
-        let out = self.run_stdin(
-            &["rev-list", "--no-walk=unsorted", "--stdin", &not],
-            lines_input(oids).as_bytes(),
-        )?;
+        // As in `commits_off_branches`, the `--not` applies to `--remotes` only, not to stdin.
+        let mut args = vec![
+            "rev-list".to_string(),
+            "--no-walk=unsorted".into(),
+            "--stdin".into(),
+        ];
+        args.extend(upstream.map(|up| format!("^{up}")));
+        args.extend(["--not".into(), "--remotes".into()]);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let out = self.run_stdin(&args, lines_input(oids).as_bytes())?;
         Ok(String::from_utf8_lossy(&out)
             .lines()
             .map(String::from)

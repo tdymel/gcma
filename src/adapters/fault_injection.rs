@@ -137,7 +137,7 @@ impl History for Faulty {
             fn list_range(&self, range: &RevRange) -> Result<Vec<String>>;
             fn commits_off_branches(&self, tips: &[String]) -> Result<HashMap<String, Vec<String>>>;
             fn count_reachable(&self, rev: &str) -> Result<usize>;
-            fn unpushed_among(&self, oids: &[String], upstream: &str) -> Result<HashSet<String>>;
+            fn unpushed_among(&self, oids: &[String], upstream: Option<&str>) -> Result<HashSet<String>>;
         }
     }
     fn all_reachable_from(&self, commits: &[String], tip: &str) -> Result<bool> {

@@ -198,8 +198,9 @@ pub trait History {
     /// may be on a branch).
     fn commits_off_branches(&self, tips: &[String]) -> Result<HashMap<String, Vec<String>>>;
     fn count_reachable(&self, rev: &str) -> Result<usize>;
-    /// Of `oids`, those NOT reachable from `upstream`.
-    fn unpushed_among(&self, oids: &[String], upstream: &str) -> Result<HashSet<String>>;
+    /// Of `oids`, those reachable neither from `upstream` (when given; it may be a local branch)
+    /// nor from any remote-tracking ref.
+    fn unpushed_among(&self, oids: &[String], upstream: Option<&str>) -> Result<HashSet<String>>;
     /// True when everything reachable from `commits` is also reachable from `tip`.
     fn all_reachable_from(&self, commits: &[String], tip: &str) -> Result<bool>;
     /// True when the two commits have identical trees.
