@@ -147,9 +147,11 @@ fn another_branch_pushed_with_the_pushed_branch_has_to_be_moved_by_hand() {
     let r = pushed_main_then_bad_tip(IDENTITY_CFG, NEW_BRANCH);
     r.push_blocked(&["origin", "main", "rel"], MOVE_REL);
     r.gcma_ok(&["apply"]);
-    r.push_blocked(
-        &["origin", "main", "rel"],
-        "refs/heads/rel would push commits that gcma replaced",
+    r.git(&["branch", "-f", "rel", "main"]);
+    r.push_ok(&["origin", "main", "rel"]);
+    assert_eq!(
+        remote_tip(&r.remote(), "rel"),
+        r.git(&["rev-parse", "HEAD"])
     );
 }
 
