@@ -159,3 +159,32 @@ fn a_backup_of_another_branch_is_refused_and_leaves_both_branches_alone() {
     r.git(&["checkout", "-q", "main"]);
     r.gcma_ok(&["restore", &id]);
 }
+
+#[test]
+fn restore_with_a_locally_edited_gitignore_does_not_talk_about_removed_paths() {
+    on_both_backends(|r| {
+        r.commit_files(&[("a.txt", "a\n")], "add a", T0);
+        r.commit_files(
+            &[("secrets/k", "k\n"), ("b.txt", "b\n")],
+            "add b",
+            1_600_100_000,
+        );
+        r.config(SECRETS_CFG);
+        r.gcma_ok(&["apply", "--from", "root"]);
+        let id = r.backup_id_from_refs();
+        std::fs::write(r.path().join(".gitignore"), "secrets/\nlocal\n").unwrap();
+        let o = r.gcma(&["restore", &id]);
+        assert!(o.status.success(), "{}", stderr(&o));
+        let out = format!("{}{}", stdout(&o), stderr(&o));
+        assert!(out.contains("local changes"), "{out}");
+        assert!(!out.contains("removed from history"), "{out}");
+        assert!(
+            !out.contains("HEAD:.gitignore"),
+            "the restored tip has no .gitignore: {out}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(r.path().join(".gitignore")).unwrap(),
+            "secrets/\nlocal\n"
+        );
+    });
+}
