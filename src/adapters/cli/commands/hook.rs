@@ -8,7 +8,7 @@ use crate::adapters::cli_support::session::{Session, now};
 use crate::adapters::git_cli::NESTED_ENV;
 use crate::adapters::hook_installer::{self, Hook};
 use crate::application::commit_hook::{self, PostCommitOutcome, Skip};
-use crate::application::push_guard::{self, PrePushOutcome, PushedRef};
+use crate::application::push_guard::{self, PrePushOutcome, PushedRef, RefKind};
 use crate::domain::error::{Error, Result};
 
 pub fn run(s: &Session, cmd: HookCmd) -> Result<()> {
@@ -74,30 +74,42 @@ fn verdict(outcome: &PrePushOutcome) -> Result<()> {
         PrePushOutcome::Blocked {
             commits,
             no_upstream,
-            follows_branch,
+            kind,
         } => {
             let hint = match no_upstream {
                 true => " (the branch has no upstream: add `--from <rev>`)",
                 false => "",
             };
-            let (retag, what) = match follows_branch {
-                true => ("", "it rewrites the unpushed part of the branch"),
-                false => (
+            let rewrites = "it rewrites the unpushed part of the branch";
+            let (retag, what, then) = match kind {
+                RefKind::Branch => ("", rewrites.to_string(), String::new()),
+                RefKind::Tags => (
                     " --retag",
-                    "it rewrites the unpushed part of the branch and moves the tags with it",
+                    format!("{rewrites} and moves the tags with it"),
+                    String::new(),
+                ),
+                RefKind::Other(r) => (
+                    "",
+                    rewrites.to_string(),
+                    format!(", then {},", move_hint(r)),
                 ),
             };
             Err(Error::Nonconforming(format!(
                 "{commits} commit(s) about to be pushed do not follow the gcma rules; \
-                 run `gcma apply{retag}`{hint} ({what}) and push again"
+                 run `gcma apply{retag}`{hint} ({what}){then} and push again"
             )))
         }
     }
 }
 
-/// How to point a ref left on the replaced commits at the rewritten ones, or drop it.
+/// How to point a ref left on the old commits at the rewritten ones, or drop it.
 fn move_hint(pushed_ref: &str) -> String {
-    if let Some(tag) = pushed_ref.strip_prefix("refs/tags/") {
+    if let Some(branch) = pushed_ref.strip_prefix("refs/heads/") {
+        format!(
+            "move the branch (`git branch -f {branch} <new commit>`) or delete it \
+             (`git branch -D {branch}`)"
+        )
+    } else if let Some(tag) = pushed_ref.strip_prefix("refs/tags/") {
         format!("move the tag (`git tag -f {tag} <new commit>`) or delete it (`git tag -d {tag}`)")
     } else if pushed_ref.starts_with("refs/") {
         format!(
@@ -237,12 +249,14 @@ mod tests {
             "{err}"
         );
         assert!(err.contains("run `git push` again"), "{err}");
-        let blocked = |no_upstream, follows_branch| PrePushOutcome::Blocked {
+        let blocked = |no_upstream, kind| PrePushOutcome::Blocked {
             commits: 3,
             no_upstream,
-            follows_branch,
+            kind,
         };
-        let err = verdict(&blocked(true, true)).unwrap_err().to_string();
+        let err = verdict(&blocked(true, RefKind::Branch))
+            .unwrap_err()
+            .to_string();
         assert!(
             err.contains("3 commit(s) about to be pushed do not follow the gcma rules"),
             "{err}"
@@ -251,12 +265,27 @@ mod tests {
             err.contains("run `gcma apply` (the branch has no upstream: add `--from <rev>`)"),
             "{err}"
         );
-        let err = verdict(&blocked(false, true)).unwrap_err().to_string();
+        let err = verdict(&blocked(false, RefKind::Branch))
+            .unwrap_err()
+            .to_string();
         assert!(!err.contains("--from"), "{err}");
         assert!(!err.contains("--retag"), "{err}");
-        let err = verdict(&blocked(false, false)).unwrap_err().to_string();
+        let err = verdict(&blocked(false, RefKind::Tags))
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("run `gcma apply --retag`"), "{err}");
         assert!(err.contains("moves the tags"), "{err}");
+        let other = RefKind::Other("refs/heads/feature".into());
+        let err = verdict(&blocked(false, other)).unwrap_err().to_string();
+        assert!(!err.contains("--retag"), "{err}");
+        assert!(
+            err.contains(
+                "run `gcma apply` (it rewrites the unpushed part of the branch), then move the \
+                 branch (`git branch -f feature <new commit>`) or delete it \
+                 (`git branch -D feature`), and push again"
+            ),
+            "{err}"
+        );
         let replaced = |r: &str| {
             let outcome = PrePushOutcome::Replaced {
                 pushed_ref: r.into(),

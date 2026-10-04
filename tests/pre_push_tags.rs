@@ -90,6 +90,31 @@ fn a_tag_unrelated_to_the_branch_or_not_on_a_commit_is_ignored() {
 }
 
 #[test]
+fn another_branch_or_ref_at_the_tip_is_judged_and_has_to_be_moved_by_hand() {
+    let r = Repo::hooked(IDENTITY_CFG);
+    r.commit_at("bad.txt", "bad", T0);
+    r.git(&["branch", "feature"]);
+    r.git(&["update-ref", "refs/keep/x", "HEAD"]);
+    for (spec, how) in [
+        ("feature", "`git branch -f feature <new commit>`"),
+        (
+            "refs/keep/x:refs/keep/x",
+            "`git update-ref refs/keep/x <new commit>`",
+        ),
+    ] {
+        assert_blocked(&r, spec);
+        let err = stderr(&r.git_out(&["push", "-q", "origin", spec]));
+        assert!(!err.contains("--retag"), "--retag moves only tags: {err}");
+        assert!(err.contains("run `gcma apply`"), "{err}");
+        assert!(err.contains(how), "{spec}: {err}");
+    }
+    // With a tag in the same push, the other ref still has to be moved by hand.
+    r.git(&["tag", "v1"]);
+    let err = stderr(&r.git_out(&["push", "-q", "origin", "v1", "feature"]));
+    assert!(err.contains("`git branch -f feature"), "{err}");
+}
+
+#[test]
 fn rewrite_mode_reports_the_tags_it_leaves_on_the_old_commits() {
     let r = Repo::hooked(&format!("{IDENTITY_CFG}hook: {{mode: rewrite}}\n"));
     r.commit_at("bad.txt", "bad", T0);

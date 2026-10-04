@@ -4,6 +4,7 @@ mod judge;
 mod replaced;
 mod sent;
 
+pub use judge::RefKind;
 pub use sent::PushedRef;
 
 use crate::application::planning::{PlanOptions, RangeSpec, build_plan};
@@ -36,9 +37,10 @@ pub enum PrePushOutcome {
         commits: usize,
         /// The branch has no upstream, so `gcma apply` needs `--from`.
         no_upstream: bool,
-        /// The push names the branch (or `HEAD`, or a revision of it), so pushing again after
-        /// `gcma apply` sends the rewritten commits; a tag needs `gcma apply --retag` to follow.
-        follows_branch: bool,
+        /// What the push names: the branch (or `HEAD`, or a revision of it), so pushing again after
+        /// `gcma apply` sends the rewritten commits; tags, which need `gcma apply --retag` to
+        /// follow; or another ref, which has to be moved by hand.
+        kind: RefKind,
     },
 }
 
@@ -86,10 +88,10 @@ pub fn run_pre_push(
     }
     for g in groups {
         // Rewriting only fixes the push when the pushed commit is the branch tip and the push
-        // follows the branch (a tag would stay on the old commit); the plan is built once, with
-        // the strict (clean index) preconditions only when we are going to write.
+        // follows the branch (a tag or another ref would stay on the old commit); the plan is
+        // built once, with the strict (clean index) preconditions only when we are going to write.
         let rewrite = cfg.hook.mode == HookMode::Rewrite
-            && g.follows_branch
+            && g.kind == RefKind::Branch
             && tip.as_deref() == Some(g.revs.tip.as_str());
         let range = RangeSpec {
             revs: g.revs,
@@ -121,7 +123,7 @@ pub fn run_pre_push(
         return Ok(PrePushOutcome::Blocked {
             commits: built.plan.entries.len() + built.plan.dropped.len(),
             no_upstream: dest.upstream.is_none(),
-            follows_branch: g.follows_branch,
+            kind: g.kind,
         });
     }
     Ok(PrePushOutcome::Proceed)

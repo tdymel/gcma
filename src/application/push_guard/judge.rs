@@ -4,14 +4,36 @@ use super::sent::{PushedRef, Sent};
 use crate::application::ports::{Repository, RevRange};
 use crate::domain::error::Result;
 use crate::domain::history::plan::HEADS_PREFIX;
+use crate::domain::history::tag::TAGS_PREFIX;
+
+/// What a judged push names, which tells how its ref follows a rewrite of the branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RefKind {
+    /// The branch itself, `HEAD` or a raw revision: after a rewrite of the branch, pushing again
+    /// sends the new commits.
+    Branch,
+    /// Tags, which would still send the old commits; `gcma apply --retag` moves them along.
+    Tags,
+    /// Another branch or ref (the first one): it stays on the old commits until it is moved by hand.
+    Other(String),
+}
+
+impl RefKind {
+    /// The kind of a group of pushes: the one that needs the most to follow a rewrite.
+    fn join(self, other: RefKind) -> RefKind {
+        match (self, other) {
+            (o @ RefKind::Other(_), _) | (_, o @ RefKind::Other(_)) => o,
+            (RefKind::Tags, _) | (_, RefKind::Tags) => RefKind::Tags,
+            _ => RefKind::Branch,
+        }
+    }
+}
 
 /// The commit a judged push sends.
 pub(super) struct Judged {
     /// The pushed object peeled to a commit (an annotated tag pushes its tag object).
     pub commit: String,
-    /// The push names the branch itself, `HEAD` or a raw revision, so after a rewrite of the branch
-    /// pushing again sends the new commits; a tag or another ref would still send the old ones.
-    pub follows_branch: bool,
+    pub kind: RefKind,
 }
 
 /// Which pushes are judged, and the commit they send. The checked-out branch is judged by name, as
@@ -27,12 +49,18 @@ pub(super) fn judged_commit(
     branch_ref: &str,
     tip: Option<&str>,
 ) -> Result<Option<Judged>> {
-    let follows_branch =
-        p.local_ref == branch_ref || p.local_ref == "HEAD" || !p.local_ref.starts_with("refs/");
+    let r = p.local_ref.as_str();
+    let kind = if r == branch_ref || r == "HEAD" || !r.starts_with("refs/") {
+        RefKind::Branch
+    } else if r.starts_with(TAGS_PREFIX) {
+        RefKind::Tags
+    } else {
+        RefKind::Other(r.to_string())
+    };
     let at_tip = tip == Some(commit.as_str());
-    let judged = if p.local_ref == branch_ref || p.local_ref == "HEAD" || at_tip {
+    let judged = if r == branch_ref || r == "HEAD" || at_tip {
         true
-    } else if p.local_ref.starts_with(HEADS_PREFIX) {
+    } else if r.starts_with(HEADS_PREFIX) {
         false
     } else {
         match tip {
@@ -40,10 +68,7 @@ pub(super) fn judged_commit(
             None => false,
         }
     };
-    Ok(judged.then_some(Judged {
-        commit,
-        follows_branch,
-    }))
+    Ok(judged.then_some(Judged { commit, kind }))
 }
 
 /// Judged pushes that one plan covers: those whose commits are part of the range of `revs`, the
@@ -52,8 +77,8 @@ pub(super) fn judged_commit(
 pub(super) struct Group {
     pub revs: RevRange,
     pub base: Option<String>,
-    /// Every push of the group follows the branch (see `Judged`).
-    pub follows_branch: bool,
+    /// What the pushes of the group name, joined.
+    pub kind: RefKind,
 }
 
 /// Adds a judged push to the group that covers it, or starts a new group.
@@ -73,7 +98,7 @@ pub(super) fn add_to_groups(
             if !below {
                 g.revs.tip = judged.commit;
             }
-            g.follows_branch &= judged.follows_branch;
+            g.kind = std::mem::replace(&mut g.kind, RefKind::Branch).join(judged.kind);
             return Ok(());
         }
     }
@@ -83,7 +108,27 @@ pub(super) fn add_to_groups(
             ..sent.revs.clone()
         },
         base: sent.base.clone(),
-        follows_branch: judged.follows_branch,
+        kind: judged.kind,
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RefKind::*;
+
+    #[test]
+    fn a_group_needs_what_its_most_demanding_push_needs() {
+        let other = || Other("refs/heads/x".to_string());
+        assert_eq!(Branch.join(Branch), Branch);
+        assert_eq!(Branch.join(Tags), Tags);
+        assert_eq!(Tags.join(Branch), Tags);
+        assert_eq!(Tags.join(other()), other());
+        assert_eq!(other().join(Tags), other());
+        assert_eq!(
+            other().join(Other("refs/y".into())),
+            other(),
+            "the first one"
+        );
+    }
 }
