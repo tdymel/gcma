@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use super::tag_backup::{KEEP_KIND_PREFIX, MANIFEST_KIND, restore_updates};
-use super::worktree_sync::sync_worktree;
+use super::worktree_sync::{Move, sync_worktree};
 use crate::application::ports::{RefUpdate, Repository};
 use crate::application::preconditions::check_preconditions;
 use crate::domain::error::{Error, Result};
@@ -165,7 +165,7 @@ pub fn restore(repo: &dyn Repository, id: &str, force: bool) -> Result<RestoreRe
     if let (Some(from), Some(to)) = (moved_from.first(), restored.first())
         && from.tree != to.tree
     {
-        warnings.extend(sync_worktree(repo, from, &b.old));
+        warnings.extend(sync_worktree(repo, from, &b.old, Move::Restore));
     }
     Ok(RestoreReport {
         backup: b,

@@ -4,7 +4,7 @@ use super::backups::{NEW_KIND, OLD_KIND, backup_base};
 use super::prepared::{Prepared, prepare};
 use super::tag_backup::apply_updates;
 use super::verify::verify;
-use super::worktree_sync::sync_worktree;
+use super::worktree_sync::{Move, sync_worktree};
 use crate::application::ports::{RefUpdate, Repository};
 use crate::application::preconditions::{check_preconditions, refuse_pushed};
 use crate::application::retag::{self, TagMove};
@@ -121,7 +121,8 @@ pub fn apply(repo: &dyn Repository, plan: &Plan, opts: &ApplyOptions) -> Result<
     }
     if prepared.filter.is_some() {
         // With path rules the tree changed: the index and `.gitignore` must follow the branch.
-        warnings.extend(sync_worktree(repo, &prepared.old_tip, &new_tip));
+        let notes = sync_worktree(repo, &prepared.old_tip, &new_tip, Move::Apply);
+        warnings.extend(notes);
     }
     Ok(ApplyReport {
         rewritten: plan.entries.len(),
