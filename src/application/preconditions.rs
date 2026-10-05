@@ -36,8 +36,7 @@ pub fn refuse_pushed(
     if allowed {
         return Ok(());
     }
-    let unpushed = history.unpushed_among(touched, upstream)?;
-    let pushed: Vec<&String> = touched.iter().filter(|o| !unpushed.contains(*o)).collect();
+    let pushed = pushed_among(history, touched, upstream)?;
     if !pushed.is_empty() {
         return Err(Error::Pushed(format!(
             "{} commit(s) to rewrite are already on a remote or the upstream (e.g. {}); pass --rewrite-pushed to proceed",
@@ -46,4 +45,16 @@ pub fn refuse_pushed(
         )));
     }
     Ok(())
+}
+
+/// The commits of `oids` that are already pushed: those the upstream (even a local one, when
+/// given) or any remote-tracking ref reaches. This is what `refuse_pushed` refuses, so the pre-push
+/// hook asks it too when it decides whether `apply` would refuse.
+pub fn pushed_among<'a>(
+    history: &dyn History,
+    oids: &'a [String],
+    upstream: Option<&str>,
+) -> Result<Vec<&'a String>> {
+    let unpushed = history.unpushed_among(oids, upstream)?;
+    Ok(oids.iter().filter(|o| !unpushed.contains(*o)).collect())
 }
