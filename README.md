@@ -180,13 +180,20 @@ commit writes move between backends; refs, signing and hooks always use git. Mea
   remote-tracking refs (`refs/remotes/<remote>/*`), nor the branch's upstream (only when it is a remote-tracking ref)
   reach. What only another remote has is new: commits fetched from a peer are judged on their way to `origin`, and
   history only `origin` has is judged on its way to a fresh mirror unless the upstream has it.
-- **Blocked commits another remote has**: when other remotes have all of them, the hook says to push them with
-  `--no-verify`, or to rewrite them with `gcma apply --from <rev> --rewrite-pushed`; when they have only some, it says
-  how many and offers only the rewrite, as `--no-verify` would upload the others too (`rewrite` mode does not rewrite
-  them either).
+- **Counted**: the commits that break a rule themselves. A conforming commit on top of one is rewritten too (its parent
+  changes), but it is neither counted nor asked about below.
+- **The `gcma apply` it suggests** adds `--from <rev>` only when `apply` would not reach the commits from the upstream
+  (no upstream, or a local upstream that has some of them), and `--rewrite-pushed` only when the upstream or a remote
+  has some of them already; the note in parentheses says what that command rewrites.
+- **Blocked commits another remote has**: they are still new to the remote pushed to. When other remotes have all of
+  them, the hook leaves the choice to you: if that remote may have them as they are, push with `--no-verify` (which
+  uploads them there unjudged); otherwise rewrite them with `gcma apply --rewrite-pushed`. When other remotes have only
+  some, it says how many and offers only the rewrite, as `--no-verify` would upload the others too (`rewrite` mode does
+  not rewrite them either).
 - **A local upstream** (`--track main`) hides nothing; when it has blocked commits too, the hook says to run
-  `gcma apply` on the upstream branch and rebase onto it, or to run `gcma apply --from <rev> --rewrite-pushed` on this
-  branch, which leaves the upstream on the old commits (`rewrite` mode leaves them to it).
+  `gcma apply` on the upstream branch and rebase onto it (then move the pushed tags or refs left on the old commits),
+  or to run `gcma apply --from <rev> --rewrite-pushed` on this branch, which leaves the upstream on the old commits
+  (`rewrite` mode leaves them to it).
 - **When the push cannot follow a rewrite** (`rewrite` mode blocks it like `verify` mode): a push that is not the branch
   tip (`HEAD~1:main`); tags, for which the hook says to run `gcma apply --retag` (it moves the tags with the branch);
   another branch or ref, which has to be moved to the rewritten commit by hand after `gcma apply`, and the hook says how.
