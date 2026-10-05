@@ -116,6 +116,9 @@ pub(super) fn plan_kind(judged: &[(String, RefKind)], plan: &Plan) -> RefKind {
 #[cfg(test)]
 mod tests {
     use super::RefKind::*;
+    use super::*;
+    use crate::domain::history::plan::{Entry, PIdent};
+    use crate::domain::settings::Signing;
 
     #[test]
     fn a_group_needs_what_its_most_demanding_push_needs() {
@@ -130,5 +133,43 @@ mod tests {
             other(),
             "the first one"
         );
+    }
+
+    #[test]
+    fn a_push_on_a_kept_commit_follows_nothing() {
+        let id = PIdent {
+            name: "Jane".into(),
+            email: "jane@x".into(),
+            time: 0,
+            tz: 0,
+        };
+        let entry = Entry {
+            old_oid: "b".into(),
+            parents: Vec::new(),
+            author: id.clone(),
+            committer: id,
+            message: Vec::new(),
+            tree: None,
+            gitignore: false,
+        };
+        let mut plan = Plan::new(
+            "refs/heads/main".into(),
+            "b".into(),
+            Signing::Strip,
+            vec![entry],
+        );
+        plan.dropped = vec!["d".into()];
+        let judged = |pushes: &[(&str, RefKind)]| {
+            let pushes: Vec<(String, _)> = pushes
+                .iter()
+                .map(|(c, k)| (c.to_string(), k.clone()))
+                .collect();
+            plan_kind(&pushes, &plan)
+        };
+        let other = || Other("refs/heads/x".to_string());
+        assert_eq!(judged(&[("a", Tags), ("b", Branch)]), Branch, "kept tag");
+        assert_eq!(judged(&[("a", other()), ("b", Branch)]), Branch, "kept ref");
+        assert_eq!(judged(&[("a", other()), ("b", Tags)]), Tags);
+        assert_eq!(judged(&[("d", other()), ("b", Branch)]), other(), "dropped");
     }
 }
