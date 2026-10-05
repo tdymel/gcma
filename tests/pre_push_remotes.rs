@@ -95,14 +95,16 @@ fn history_only_another_remote_has_is_judged_on_its_way_to_a_new_one() {
 
 #[test]
 fn no_verify_is_offered_only_when_every_blocked_commit_is_on_a_remote() {
-    for backend in BACKENDS {
-        let r = Repo::hooked(&format!("{SECRETS_CFG}backend: {backend}\n"));
+    for (backend, mode) in modes_on_both_backends() {
+        let cfg = format!("{SECRETS_CFG}hook: {{mode: {mode}}}\nbackend: {backend}\n");
+        let r = Repo::hooked(&cfg);
         r.commit_files(&[("a.txt", "a\n")], "a", T0);
         r.push_ok(&["-u", "origin", "main"]);
         r.commit_files(&[("secrets/old", "o\n")], "old key", T0 + 100);
         r.add_remote("fork");
         push_unhooked(&r, "fork", "main"); // only the fork has it
         r.commit_files(&[("secrets/k", "k\n")], "add key", T0 + 200); // on no remote
+        let tip = r.git(&["rev-parse", "HEAD"]);
         let err = r.push_blocked(
             &["origin", "main"],
             "2 commit(s) about to be pushed do not follow the gcma rules; 1 of them are on \
@@ -110,8 +112,62 @@ fn no_verify_is_offered_only_when_every_blocked_commit_is_on_a_remote() {
         );
         assert!(
             !err.contains("--no-verify"),
-            "{backend}: it would upload the key: {err}"
+            "{backend} {mode}: it would upload the key: {err}"
         );
+        assert_eq!(r.git(&["rev-parse", "HEAD"]), tip, "{backend} {mode}");
+    }
+}
+
+/// Every hook mode on every backend.
+fn modes_on_both_backends() -> impl Iterator<Item = (&'static str, &'static str)> {
+    BACKENDS
+        .iter()
+        .flat_map(|b| ["verify", "rewrite"].map(|m| (*b, m)))
+}
+
+#[test]
+fn a_conforming_commit_on_a_peers_published_one_does_not_count() {
+    for (backend, mode) in modes_on_both_backends() {
+        let cfg = format!("{IDENTITY_CFG}hook: {{mode: {mode}}}\nbackend: {backend}\n");
+        let r = Repo::hooked(&cfg);
+        r.commit_as("a.txt", "a", T0, "Jane Doe", "jane@work.com");
+        r.push_ok(&["-u", "origin", "main"]);
+        r.add_remote("peer");
+        r.commit_at("bad.txt", "bad", T0 + 100);
+        push_unhooked(&r, "peer", "main"); // the peer's commit
+        r.commit_as("good.txt", "good", T0 + 200, "Jane Doe", "jane@work.com");
+        let tip = r.git(&["rev-parse", "HEAD"]);
+        // `--no-verify` would upload the peer's commit and a conforming one; the upstream is a
+        // remote-tracking ref, so `gcma apply` needs no `--from`.
+        r.push_blocked(
+            &["origin", "main"],
+            "1 commit(s) about to be pushed do not follow the gcma rules; they are on another \
+             remote already: if origin may have them as they are, push with `--no-verify`; \
+             otherwise rewrite them with `gcma apply --rewrite-pushed` (it rewrites",
+        );
+        assert_eq!(r.git(&["rev-parse", "HEAD"]), tip, "{backend} {mode}");
+    }
+}
+
+#[test]
+fn a_local_upstream_and_a_fork_with_some_of_the_commits() {
+    for backend in BACKENDS {
+        let r = Repo::hooked(&format!("{IDENTITY_CFG}backend: {backend}\n"));
+        r.commit_as("a.txt", "a", T0, "Jane Doe", "jane@work.com");
+        r.push_ok(&["-u", "origin", "main"]);
+        r.commit_at("bad.txt", "bad", T0 + 100); // on main, not on origin
+        r.add_remote("fork");
+        push_unhooked(&r, "fork", "main"); // the fork has it
+        r.git(&["checkout", "-q", "-b", "feat", "--track", "main"]);
+        r.commit_at("bad2.txt", "bad too", T0 + 200); // on no remote
+        let err = r.push_blocked(
+            &["origin", "feat"],
+            "2 commit(s) about to be pushed do not follow the gcma rules; 1 of them are on \
+             another remote already: the upstream is a local branch that has some of them too: \
+             run `gcma apply` on it and rebase this branch onto it, or run `gcma apply --from \
+             <rev> --rewrite-pushed`",
+        );
+        assert!(!err.contains("--no-verify"), "{backend}: {err}");
     }
 }
 
