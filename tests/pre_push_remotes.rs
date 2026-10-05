@@ -82,8 +82,9 @@ fn history_only_another_remote_has_is_judged_on_its_way_to_a_new_one() {
         // `gcma apply` would refuse them without `--rewrite-pushed`, which a hook cannot pass.
         r.push_blocked(
             &["mirror", "main"],
-            "they are on another remote already: push them with `--no-verify`, or rewrite them \
-             with `gcma apply --from <rev> --rewrite-pushed`",
+            "they are on another remote already: if mirror may have them as they are, push with \
+             `--no-verify`; otherwise rewrite them with `gcma apply --from <rev> \
+             --rewrite-pushed` (the branch has no upstream;",
         );
         r.push_blocked(&["mirror", "v0"], "they are on another remote already");
         assert_eq!(r.git(&["rev-parse", "HEAD"]), tip, "{mode}");
@@ -105,8 +106,7 @@ fn no_verify_is_offered_only_when_every_blocked_commit_is_on_a_remote() {
         let err = r.push_blocked(
             &["origin", "main"],
             "2 commit(s) about to be pushed do not follow the gcma rules; 1 of them are on \
-             another remote already: rewrite them with `gcma apply --from <rev> \
-             --rewrite-pushed`",
+             another remote already: rewrite them with `gcma apply --rewrite-pushed`",
         );
         assert!(
             !err.contains("--no-verify"),
@@ -138,8 +138,9 @@ fn a_local_upstream_does_not_hide_its_unpushed_commits() {
     // there without `--rewrite-pushed`: the hook says to fix the upstream first.
     r.push_blocked(
         &["origin", "feat"],
-        "the upstream is a local branch that has them too: run `gcma apply` on it and rebase this \
-         branch onto it, or run `gcma apply --from <rev> --rewrite-pushed`",
+        "1 commit(s) about to be pushed do not follow the gcma rules; the upstream is a local \
+         branch that has some of them too: run `gcma apply` on it and rebase this branch onto it, \
+         or run `gcma apply --from <rev> --rewrite-pushed`",
     );
 }
 

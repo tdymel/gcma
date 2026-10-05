@@ -7,12 +7,12 @@ mod sent;
 pub use judge::RefKind;
 pub use sent::PushedRef;
 
-use crate::application::planning::{PlanOptions, RangeSpec, build_plan};
+use crate::application::planning::{Built, PlanOptions, RangeSpec, build_plan};
 use crate::application::ports::Repository;
+use crate::application::preconditions::pushed_among;
 use crate::application::rewrite::{ApplyOptions, apply};
 use crate::domain::error::Result;
 use crate::domain::history::commit::is_zero_oid;
-use crate::domain::history::plan::Plan;
 use crate::domain::settings::{Config, HookMode};
 use sent::{Destination, Sent, destination, unpublished_range};
 
@@ -35,10 +35,18 @@ pub enum PrePushOutcome {
     },
     /// Nonconforming commits that the hook does not fix.
     Blocked {
+        /// The commits that break a rule themselves; one that would be rewritten only because its
+        /// parent is does not count.
         commits: usize,
-        /// Why `gcma apply`, which starts at the upstream, needs `--from` to reach the commits
-        /// (and, when `NeedsFrom::needs_rewrite_pushed`, `--rewrite-pushed` too).
-        needs_from: Option<NeedsFrom>,
+        /// Where `gcma apply` has to start to reach the commits it has to rewrite.
+        start: Start,
+        /// `gcma apply` refuses the rewrite without `--rewrite-pushed`, which a hook cannot pass:
+        /// commits it rewrites are on the upstream or on a remote already.
+        rewrite_pushed: bool,
+        /// How many of the `commits` other remotes have already.
+        published: Published,
+        /// The remote the push goes to, as git names it (a remote or a URL).
+        remote: String,
         /// What the push names: the branch (or `HEAD`, or a revision of it), so pushing again after
         /// `gcma apply` sends the rewritten commits; tags, which need `gcma apply --retag` to
         /// follow; or another ref, which has to be moved by hand.
@@ -46,26 +54,35 @@ pub enum PrePushOutcome {
     },
 }
 
-/// Why `gcma apply` does not reach the blocked commits without `--from`.
+/// Where `gcma apply` starts, as far as the blocked commits are concerned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NeedsFrom {
-    /// The branch has no upstream to start from.
+pub enum Start {
+    /// At the upstream, which leaves out none of the commits: plain `gcma apply` reaches them.
+    Upstream,
+    /// The branch has no upstream to start from: `gcma apply` needs `--from <rev>`.
     NoUpstream,
-    /// The upstream is a local branch that has (some of) the commits too, and no remote has any.
+    /// The upstream is a local branch that has some of the commits too, so `gcma apply` starting
+    /// there would miss them: it needs `--from <rev>`, or the upstream is fixed first.
     LocalUpstream,
-    /// Other remotes have every one of the commits already, so pushing them as they are uploads
-    /// nothing new to anyone.
-    Published,
-    /// Other remotes have `published` of the commits already, but not all of them.
-    PartlyPublished { published: usize },
 }
 
-impl NeedsFrom {
-    /// Whether `gcma apply` refuses the commits without `--rewrite-pushed`, which a hook cannot
-    /// pass: they are on the upstream or on a remote already.
-    pub fn needs_rewrite_pushed(self) -> bool {
-        !matches!(self, NeedsFrom::NoUpstream)
+impl Start {
+    /// Whether `gcma apply` needs `--from <rev>` to reach the commits.
+    pub fn needs_from(self) -> bool {
+        self != Start::Upstream
     }
+}
+
+/// How many of the blocked commits other remotes have already.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Published {
+    /// None of them: they are new to every remote.
+    Nowhere,
+    /// Some of them, but not all.
+    Partly(usize),
+    /// Every one of them. They are still new to the remote pushed to: `--no-verify` would upload
+    /// them there unjudged, which is a choice about that remote, not a fix.
+    All,
 }
 
 /// Judges (and in `rewrite` mode fixes) what the push would send. `now` is the current unix time.
@@ -117,7 +134,7 @@ pub fn run_pre_push(
             branch_ref: branch_ref.clone(),
             base: g.base,
         };
-        // What another remote has is judged too; whether it may be rewritten is `needs_from`.
+        // What another remote has is judged too; whether it may be rewritten is `reach`'s.
         let opts = PlanOptions {
             range: Some(range),
             rewrite_pushed: true,
@@ -132,11 +149,11 @@ pub fn run_pre_push(
         // old commit). Commits a local upstream or another remote has too are left to `gcma
         // apply`, which refuses to rewrite them without a flag a hook cannot pass.
         let kind = judge::plan_kind(&judged, &built.plan);
-        let needs_from = needs_from(repo, &dest, &built.plan)?;
+        let reach = reach(repo, &dest, &built)?;
         let rewrite = cfg.hook.mode == HookMode::Rewrite
             && kind == RefKind::Branch
             && tip.as_deref() == Some(g.revs.tip.as_str())
-            && !needs_from.is_some_and(NeedsFrom::needs_rewrite_pushed);
+            && !reach.rewrite_pushed;
         if rewrite {
             let report = apply(repo, &built.plan, &ApplyOptions::new(now))?;
             if report.noop {
@@ -151,31 +168,60 @@ pub fn run_pre_push(
             });
         }
         return Ok(PrePushOutcome::Blocked {
-            commits: built.plan.entries.len() + built.plan.dropped.len(),
-            needs_from,
+            commits: built.nonconforming.len(),
+            start: reach.start,
+            rewrite_pushed: reach.rewrite_pushed,
+            published: reach.published,
+            remote: dest.remote.to_string(),
             kind,
         });
     }
     Ok(PrePushOutcome::Proceed)
 }
 
-/// Whether `gcma apply` would miss commits of `plan`: it starts where the upstream does, so it
-/// needs `--from` without one, or when a local upstream has them too; and it refuses commits that
-/// a remote has already (what only another remote has is judged on its way to this one).
-fn needs_from(repo: &dyn Repository, dest: &Destination, plan: &Plan) -> Result<Option<NeedsFrom>> {
-    let planned: Vec<String> = plan.touched_oids().cloned().collect();
-    let had = |upstream: Option<&str>| -> Result<usize> {
-        let unpushed = repo.unpushed_among(&planned, upstream)?;
-        Ok(planned.iter().filter(|c| !unpushed.contains(*c)).count())
+/// What `gcma apply` needs to rewrite the commits of a plan, and who has them already.
+struct Reach {
+    start: Start,
+    rewrite_pushed: bool,
+    published: Published,
+}
+
+/// What `gcma apply` needs for `built`: it refuses commits that the upstream or a remote has
+/// (asked as `apply` asks it, with the same upstream); it starts where the upstream does, which
+/// misses commits without one or when a local upstream has them too (what a remote-tracking
+/// upstream has is not part of the push's range). Also how many of the nonconforming commits
+/// other remotes have.
+fn reach(repo: &dyn Repository, dest: &Destination, built: &Built) -> Result<Reach> {
+    let touched: Vec<String> = built.plan.touched_oids().cloned().collect();
+    let upstream = dest.upstream.as_ref();
+    let rewrite_pushed =
+        !pushed_among(repo, &touched, upstream.map(|u| u.commit.as_str()))?.is_empty();
+    let start = match upstream {
+        None => Start::NoUpstream,
+        Some(up) if !up.remote && rewrite_pushed && reaches_any(repo, &up.commit, &touched)? => {
+            Start::LocalUpstream
+        }
+        Some(_) => Start::Upstream,
     };
-    match had(None)? {
-        0 => {}
-        n if n == planned.len() => return Ok(Some(NeedsFrom::Published)),
-        published => return Ok(Some(NeedsFrom::PartlyPublished { published })),
-    }
-    Ok(match &dest.upstream {
-        None => Some(NeedsFrom::NoUpstream),
-        Some(up) if up.remote => None,
-        Some(up) => (had(Some(&up.commit))? > 0).then_some(NeedsFrom::LocalUpstream),
+    let own = &built.nonconforming;
+    let published = match pushed_among(repo, own, None)?.len() {
+        0 => Published::Nowhere,
+        n if n == own.len() => Published::All,
+        n => Published::Partly(n),
+    };
+    Ok(Reach {
+        start,
+        rewrite_pushed,
+        published,
     })
+}
+
+/// Whether `tip` reaches any of `oids`.
+fn reaches_any(repo: &dyn Repository, tip: &str, oids: &[String]) -> Result<bool> {
+    for o in oids {
+        if repo.is_ancestor(o, tip)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }

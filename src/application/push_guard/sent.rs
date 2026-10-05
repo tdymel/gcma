@@ -27,10 +27,11 @@ pub(super) struct Sent<'a> {
 
 /// Where the push goes, as far as the ranges need to know.
 pub(super) struct Destination<'a> {
-    remote: &'a str,
+    /// The remote as git names it to the hook: a configured remote or a URL.
+    pub remote: &'a str,
     /// `remote` names a configured remote (it is not a URL).
     named: bool,
-    /// The upstream of the checked-out branch.
+    /// The upstream of the checked-out branch: the commit `apply` reads as its upstream too.
     pub upstream: Option<Upstream>,
 }
 

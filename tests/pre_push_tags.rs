@@ -23,7 +23,7 @@ fn an_annotated_tag_at_the_tip_is_judged() {
     r.commit_at("bad.txt", "bad", T0);
     r.git(&["tag", "-a", "v1", "-m", "release"]);
     // Only `--retag` takes the tag along to the rewritten commit.
-    r.push_blocked(&["origin", "v1"], "run `gcma apply --retag`");
+    r.push_blocked(&["origin", "v1"], "run `gcma apply --retag --from <rev>`");
     r.push_blocked(&["origin", "v1:refs/heads/main"], NONCONFORMING);
     let branch = r.push_blocked(&["origin", "main"], NONCONFORMING);
     assert!(!branch.contains("--retag"), "{branch}");
@@ -83,7 +83,7 @@ fn another_branch_or_ref_at_the_tip_is_judged_and_has_to_be_moved_by_hand() {
     ] {
         let err = r.push_blocked(&["origin", spec], NONCONFORMING);
         assert!(!err.contains("--retag"), "--retag moves only tags: {err}");
-        assert!(err.contains("run `gcma apply`"), "{err}");
+        assert!(err.contains("run `gcma apply --from <rev>`"), "{err}");
         assert!(err.contains(how), "{spec}: {err}");
     }
     // With a tag in the same push, the other ref still has to be moved by hand.
