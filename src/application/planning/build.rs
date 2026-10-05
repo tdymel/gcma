@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::entries::{build_entries, dropped_parents};
+use super::entries::{build_entries, dropped_parents, own_changes};
 use super::pathplan::{self, PathOutcome};
 use super::range::{RangeInfo, resolve};
 use super::timing::{Schedule, load_external_parents, window_for};
@@ -53,8 +53,10 @@ pub fn build_plan(repo: &dyn Repository, cfg: &Config, opts: &PlanOptions) -> Re
         return Ok(nothing_to_do(cfg, &range));
     }
     let (plan, warnings) = assemble(repo, cfg, &range, &loaded, filter.as_ref(), &suffix, opts)?;
+    let nonconforming = own_changes(cfg.signing, &plan, &loaded.commits);
     Ok(Built {
         plan,
+        nonconforming,
         range_len: range.order.len(),
         frozen: range.order.len() - suffix.len(),
         warnings,
@@ -70,6 +72,7 @@ fn nothing_to_do(cfg: &Config, range: &RangeInfo) -> Built {
             cfg.signing,
             Vec::new(),
         ),
+        nonconforming: Vec::new(),
         range_len: range.order.len(),
         frozen: range.order.len(),
         warnings: Vec::new(),

@@ -49,6 +49,10 @@ impl PlanOptions {
 #[derive(Debug)]
 pub struct Built {
     pub plan: Plan,
+    /// The commits of the plan that break a rule themselves: those that change on their own (their
+    /// identities, times, message, signature or tree) and the dropped ones. A conforming commit that
+    /// is rewritten only because its parent is does not count.
+    pub nonconforming: Vec<String>,
     pub range_len: usize,
     pub frozen: usize,
     pub warnings: Vec<String>,
