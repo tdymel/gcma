@@ -1,0 +1,9 @@
+version: 1
+from: 2026-09-21
+to: now
+timezone: Europe/Berlin
+schedule:
+  days: [mon, tue, wed, thu, fri, sat, sun]
+  hours: "18:00-06:00"    # evening until 06:00 the next morning
+  distribution: uniform
+  seed: 2026
